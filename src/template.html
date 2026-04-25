@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>n365 インストール</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 580px; margin: 60px auto; padding: 0 24px; color: #37352f; line-height: 1.7; }
+h1 { font-size: 28px; margin-bottom: 8px; }
+.sub { color: #9b9a97; font-size: 14px; margin-bottom: 40px; }
+.step { display: flex; gap: 16px; margin-bottom: 28px; align-items: flex-start; }
+.step-num { width: 28px; height: 28px; background: #2383e2; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+.step-body h3 { font-size: 16px; margin-bottom: 4px; }
+.step-body p { font-size: 14px; color: #9b9a97; margin: 0; }
+.bm-wrap { background: #f7f7f5; border: 2px dashed #d3d3d0; border-radius: 10px; padding: 28px; text-align: center; margin: 20px 0 32px; }
+.bm-wrap p { font-size: 13px; color: #9b9a97; margin: 0 0 16px; }
+#bm-link { display: inline-flex; align-items: center; gap: 8px; background: #2383e2; color: #fff; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 2px 8px rgba(35,131,226,.3); cursor: grab; }
+hr { border: none; border-top: 1px solid #e9e9e7; margin: 32px 0; }
+.alt { font-size: 13px; color: #9b9a97; }
+code { background: #f0f0ef; padding: 2px 6px; border-radius: 3px; font-size: 12px; font-family: monospace; }
+#copy-area { width: 100%; height: 100px; font-size: 11px; font-family: monospace; border: 1px solid #e9e9e7; border-radius: 4px; padding: 8px; resize: none; word-break: break-all; margin-top: 8px; cursor: pointer; display: block; }
+</style>
+</head>
+<body>
+
+<h1>📋 n365 インストール</h1>
+<p class="sub">SharePoint上で動くNotion風エディタ — データは.mdファイルで保存</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h3>ブックマークバーを表示する</h3>
+    <p>Chrome/Edge: <code>Ctrl+Shift+B</code>（Mac: <code>Cmd+Shift+B</code>）</p>
+  </div>
+</div>
+
+<div class="bm-wrap">
+  <p>↓ このボタンをブックマークバーにドラッグ ↓</p>
+  <a id="bm-link" href="{{BOOKMARKLET_URL}}">📋 n365</a>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h3>SharePointを開く</h3>
+    <p>ブラウザで SharePoint にアクセスしてログインする</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h3>ブックマークをクリック</h3>
+    <p>「📋 n365」をクリックするとアプリが起動。<code>Esc</code> または再クリックで閉じる。<br>
+    データは <code>ドキュメント/n365-pages/</code> に .mdファイルで保存されます。</p>
+  </div>
+</div>
+
+<hr>
+<p class="alt">ドラッグできない場合 — クリックして全選択 → Ctrl+C でコピー後、ブックマークのアドレス欄に貼り付けてください：</p>
+<textarea id="copy-area" readonly onclick="this.select()">{{BOOKMARKLET_URL}}</textarea>
+
+</body>
+</html>
