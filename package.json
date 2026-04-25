@@ -1,0 +1,17 @@
+{
+  "name": "n365",
+  "version": "0.2.0",
+  "description": "SharePoint-backed Notion-like bookmarklet app",
+  "private": true,
+  "scripts": {
+    "build": "node build.js",
+    "test": "vitest run",
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0",
+    "happy-dom": "^14.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}
