@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>n365</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --sidebar-w: 240px;
+  --bg: #fff;
+  --sidebar-bg: #f7f7f5;
+  --text: #37352f;
+  --text-muted: #9b9a97;
+  --border: #e9e9e7;
+  --hover: #efefef;
+  --active: #e4e3e0;
+  --accent: #2383e2;
+  --danger: #eb5757;
+  --radius: 4px;
+  --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: "SFMono-Regular", Menlo, Consolas, "PT Mono", monospace;
+}
+
+body { font-family: var(--font); color: var(--text); background: var(--bg); font-size: 15px; line-height: 1.6; }
+#app { display: flex; height: 100vh; overflow: hidden; }
+
+/* ── Sidebar ─────────────────────────────── */
+#sidebar {
+  width: var(--sidebar-w);
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
+}
+#sidebar-header {
+  padding: 10px 14px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; color: var(--text-muted);
+  border-bottom: 1px solid var(--border); letter-spacing: .04em;
+}
+#sidebar-header .logo { font-size: 18px; }
+#sidebar-scroll { flex: 1; overflow-y: auto; padding: 4px 0; }
+#sidebar-footer { padding: 6px; border-top: 1px solid var(--border); }
+.new-page-btn {
+  width: 100%; padding: 6px 10px; border: none; border-radius: var(--radius);
+  background: transparent; color: var(--text-muted); cursor: pointer;
+  text-align: left; font-size: 13px; display: flex; align-items: center; gap: 6px;
+  font-family: var(--font); transition: background .1s, color .1s;
+}
+.new-page-btn:hover { background: var(--hover); color: var(--text); }
+
+/* Tree */
+.tree-item { position: relative; }
+.tree-row {
+  display: flex; align-items: center; padding: 2px 6px 2px 0;
+  border-radius: var(--radius); cursor: pointer; user-select: none;
+  font-size: 13px; color: var(--text); transition: background .1s; min-height: 28px;
+}
+.tree-row:hover { background: var(--hover); }
+.tree-row.active { background: var(--active); font-weight: 500; }
+.tree-row:hover .tree-actions { opacity: 1; }
+.tree-toggle {
+  width: 20px; height: 20px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: var(--text-muted); border-radius: 3px; transition: transform .15s;
+}
+.tree-toggle:hover { background: rgba(0,0,0,.06); }
+.tree-toggle.open { transform: rotate(90deg); }
+.tree-toggle.leaf { pointer-events: none; }
+.tree-icon { width: 16px; height: 16px; flex-shrink: 0; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+.tree-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 4px; }
+.tree-actions { opacity: 0; display: flex; gap: 1px; flex-shrink: 0; }
+.tree-act {
+  width: 20px; height: 20px; border: none; background: transparent;
+  border-radius: 3px; cursor: pointer; display: flex; align-items: center;
+  justify-content: center; font-size: 13px; color: var(--text-muted); padding: 0; line-height: 1;
+}
+.tree-act:hover { background: rgba(0,0,0,.08); color: var(--text); }
+
+/* ── Main ───────────────────────────────── */
+#main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+#top-bar {
+  height: 44px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 20px; gap: 12px; flex-shrink: 0;
+}
+#breadcrumb {
+  flex: 1; font-size: 13px; color: var(--text-muted);
+  display: flex; align-items: center; gap: 2px; overflow: hidden;
+}
+.bc-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; padding: 2px 4px; border-radius: 3px; }
+.bc-item:hover { background: var(--hover); color: var(--text); }
+.bc-sep { flex-shrink: 0; color: var(--border); }
+#save-status { font-size: 12px; color: var(--text-muted); flex-shrink: 0; min-width: 60px; text-align: right; }
+
+/* Toolbar */
+#toolbar {
+  border-bottom: 1px solid var(--border); padding: 3px 16px;
+  display: none; gap: 1px; flex-shrink: 0; flex-wrap: wrap; align-items: center;
+}
+.tb-btn {
+  border: none; background: transparent; border-radius: var(--radius); cursor: pointer;
+  padding: 4px 7px; font-size: 13px; color: var(--text-muted);
+  display: inline-flex; align-items: center; gap: 4px;
+  transition: background .1s, color .1s; font-family: var(--font); line-height: 1; min-height: 28px;
+}
+.tb-btn:hover { background: var(--hover); color: var(--text); }
+.tb-btn.is-active { background: var(--active); color: var(--text); }
+.tb-sep { width: 1px; height: 18px; background: var(--border); margin: 0 3px; flex-shrink: 0; }
+
+/* Editor area */
+#editor-area { flex: 1; overflow-y: auto; display: flex; justify-content: center; padding: 48px 20px 120px; }
+#editor-inner { width: 100%; max-width: 720px; }
+
+#page-title {
+  font-size: 40px; font-weight: 700; line-height: 1.2; color: var(--text);
+  margin-bottom: 4px; outline: none; border: none; width: 100%;
+  background: transparent; font-family: var(--font); resize: none; overflow: hidden; padding: 0; display: block;
+}
+#page-title::placeholder { color: #c4c2bf; }
+
+/* Content editor (contenteditable) */
+#editor {
+  outline: none; min-height: 200px; font-size: 16px; line-height: 1.7;
+  color: var(--text); caret-color: var(--text);
+}
+#editor:empty::before {
+  content: 'ここに書き始めましょう…'; color: #c4c2bf; pointer-events: none;
+}
+#editor h1 { font-size: 1.875em; font-weight: 700; margin: .8em 0 .1em; line-height: 1.2; }
+#editor h2 { font-size: 1.5em; font-weight: 600; margin: .7em 0 .1em; line-height: 1.3; }
+#editor h3 { font-size: 1.25em; font-weight: 600; margin: .6em 0 .1em; line-height: 1.3; }
+#editor p { margin: .2em 0; }
+#editor ul, #editor ol { padding-left: 1.6em; }
+#editor li + li { margin-top: .2em; }
+#editor blockquote { border-left: 3px solid var(--border); padding-left: 1em; color: var(--text-muted); margin: .5em 0; }
+#editor pre {
+  background: #f0f0ef; border-radius: 6px; padding: 12px 16px;
+  font-family: var(--font-mono); font-size: 13.5px; overflow-x: auto; margin: .5em 0; white-space: pre;
+}
+#editor code {
+  background: rgba(135,131,120,.15); border-radius: 3px; padding: 1px 4px;
+  font-family: var(--font-mono); font-size: 85%;
+}
+#editor pre code { background: none; padding: 0; }
+#editor strong { font-weight: 600; }
+#editor hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
+#editor a { color: var(--accent); text-decoration: underline; }
+
+/* Empty / loading */
+#empty-state {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; min-height: 300px; color: var(--text-muted); gap: 12px; text-align: center;
+}
+#empty-state h2 { font-size: 22px; color: var(--text); }
+#empty-state p { font-size: 14px; }
+#content-area { display: none; }
+
+#loading-overlay {
+  position: fixed; inset: 0; background: rgba(255,255,255,.85);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; font-size: 14px; color: var(--text-muted); gap: 8px;
+}
+#loading-overlay.hidden { display: none; }
+
+/* Toast */
+#toast {
+  position: fixed; bottom: 24px; right: 24px; padding: 10px 16px;
+  border-radius: 6px; font-size: 13px; background: #37352f; color: #fff;
+  box-shadow: 0 4px 16px rgba(0,0,0,.2); z-index: 2000;
+  opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s;
+  pointer-events: none; max-width: 320px;
+}
+#toast.show { opacity: 1; transform: translateY(0); }
+#toast.err { background: var(--danger); }
+
+/* Setup modal */
+#setup-modal { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 3000; }
+#setup-modal.hidden { display: none; }
+.modal-box { background: var(--bg); border-radius: 10px; padding: 32px; max-width: 500px; width: 90%; box-shadow: 0 8px 40px rgba(0,0,0,.2); }
+.modal-box h2 { margin-bottom: 12px; font-size: 20px; }
+.modal-box p { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin-bottom: 8px; }
+.modal-box code { background: #f0f0ef; padding: 2px 5px; border-radius: 3px; font-family: var(--font-mono); font-size: 12px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+.btn { padding: 8px 18px; border-radius: var(--radius); border: none; cursor: pointer; font-size: 14px; font-family: var(--font); transition: opacity .15s; font-weight: 500; }
+.btn:hover { opacity: .85; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-ghost { background: var(--border); color: var(--text); }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d3d3d0; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <aside id="sidebar">
+    <div id="sidebar-header"><span class="logo">📋</span>n365</div>
+    <div id="sidebar-scroll"><div id="page-tree"></div></div>
+    <div id="sidebar-footer">
+      <button class="new-page-btn" id="new-root-btn"><span style="font-size:16px">+</span> ページを追加</button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div id="top-bar">
+      <div id="breadcrumb"></div>
+      <div id="save-status"></div>
+    </div>
+
+    <div id="toolbar">
+      <button class="tb-btn" data-cmd="h1"><b>H1</b></button>
+      <button class="tb-btn" data-cmd="h2"><b>H2</b></button>
+      <button class="tb-btn" data-cmd="h3"><b>H3</b></button>
+      <div class="tb-sep"></div>
+      <button class="tb-btn" data-cmd="bold"><b>B</b></button>
+      <button class="tb-btn" data-cmd="italic"><i>I</i></button>
+      <button class="tb-btn" data-cmd="strike"><s>S</s></button>
+      <button class="tb-btn" data-cmd="inlinecode" style="font-family:var(--font-mono);font-size:12px">&#60;&#47;&#62;</button>
+      <div class="tb-sep"></div>
+      <button class="tb-btn" data-cmd="ul">• リスト</button>
+      <button class="tb-btn" data-cmd="ol">1. リスト</button>
+      <button class="tb-btn" data-cmd="quote">❝ 引用</button>
+      <button class="tb-btn" data-cmd="codeblock" style="font-family:var(--font-mono);font-size:11px">```</button>
+      <div class="tb-sep"></div>
+      <button class="tb-btn" data-cmd="hr">——</button>
+    </div>
+
+    <div id="editor-area">
+      <div id="editor-inner">
+        <div id="empty-state">
+          <div style="font-size:48px">📄</div>
+          <h2>n365</h2>
+          <p>サイドバーからページを選択するか、<br>新しいページを作成してください。</p>
+          <button class="btn btn-primary" id="empty-new-btn">新しいページを作成</button>
+        </div>
+        <div id="content-area">
+          <textarea id="page-title" rows="1" placeholder="タイトルなし"></textarea>
+          <div id="editor" contenteditable="true" spellcheck="false"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="toast"></div>
+<div id="loading-overlay"><span>⏳</span><span id="loading-msg"> 読み込み中...</span></div>
+
+<div id="setup-modal" class="hidden">
+  <div class="modal-box">
+    <h2>🚀 初期セットアップ</h2>
+    <p>SharePoint サイトに <code>Pages</code> リストが見つかりませんでした。</p>
+    <p>「リストを作成」をクリックすると自動作成します（サイト管理者権限が必要）。</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="setup-cancel">後で</button>
+      <button class="btn btn-primary" id="setup-create">リストを作成</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ═══════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════
+const SITE      = 'https://YOUR-TENANT.sharepoint.com/sites/n365';
+const LIST      = 'Pages';
+const SAVE_MS   = 2000;
+
+// ═══════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════
+const S = { pages: [], currentId: null, expanded: new Set(), dirty: false, saving: false, listType: null };
+let saveTimer = null;
+
+// ═══════════════════════════════════════════════
+// SHAREPOINT API
+// ═══════════════════════════════════════════════
+let _digest = null, _digestExp = 0;
+
+async function getDigest() {
+  if (_digest && Date.now() < _digestExp) return _digest;
+  const r = await fetch(SITE + '/_api/contextinfo', {
+    method: 'POST',
+    headers: { Accept: 'application/json;odata=verbose' },
+    credentials: 'include',
+  });
+  if (!r.ok) throw new Error('認証失敗 (' + r.status + ')。SharePointにログインしてください。');
+  const j = await r.json();
+  _digest    = j.d.GetContextWebInformation.FormDigestValue;
+  _digestExp = Date.now() + 25 * 60 * 1000;
+  return _digest;
+}
+
+async function spGet(url) {
+  const r = await fetch(SITE + url, {
+    headers: { Accept: 'application/json;odata=verbose' },
+    credentials: 'include',
+  });
+  if (!r.ok) {
+    let msg = 'HTTP ' + r.status;
+    try { msg = (await r.json())['odata.error'].message.value; } catch {}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+
+async function spWrite(method, url, body) {
+  const digest = await getDigest();
+  const headers = {
+    Accept: 'application/json;odata=verbose',
+    'Content-Type': 'application/json;odata=verbose',
+    'X-RequestDigest': digest,
+  };
+  if (method === 'PATCH')  { headers['X-HTTP-Method'] = 'MERGE';  headers['If-Match'] = '*'; }
+  if (method === 'DELETE') { headers['X-HTTP-Method'] = 'DELETE'; headers['If-Match'] = '*'; }
+  const r = await fetch(SITE + url, {
+    method: 'POST', headers, credentials: 'include',
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) {
+    let msg = 'HTTP ' + r.status;
+    try { msg = (await r.json())['odata.error'].message.value; } catch {}
+    throw new Error(msg);
+  }
+  return r.status === 204 ? null : r.json();
+}
+
+async function fetchListType() {
+  try {
+    const d = await spGet("/_api/web/lists/getbytitle('" + LIST + "')?$select=ListItemEntityTypeFullName");
+    S.listType = d.d.ListItemEntityTypeFullName;
+    return true;
+  } catch { return false; }
+}
+
+async function apiGetPages() {
+  const d = await spGet("/_api/web/lists/getbytitle('" + LIST + "')/items?$select=Id,Title,ParentId,PageType,ContentJson&$orderby=Id asc&$top=5000");
+  return d.d.results;
+}
+
+async function apiCreatePage(title, parentId) {
+  const d = await spWrite('POST', "/_api/web/lists/getbytitle('" + LIST + "')/items", {
+    __metadata: { type: S.listType },
+    Title: title || '無題',
+    ParentId: parentId || 0,
+    PageType: 'page',
+    ContentJson: JSON.stringify({ v: 1, html: '' }),
+  });
+  return d.d;
+}
+
+async function apiUpdatePage(id, title, html) {
+  await spWrite('PATCH', "/_api/web/lists/getbytitle('" + LIST + "')/items(" + id + ")", {
+    __metadata: { type: S.listType },
+    Title: title,
+    ContentJson: JSON.stringify({ v: 1, html: html }),
+  });
+}
+
+async function apiDeleteItem(id) {
+  await spWrite('DELETE', "/_api/web/lists/getbytitle('" + LIST + "')/items(" + id + ")");
+}
+
+async function apiCreateList() {
+  await spWrite('POST', '/_api/web/lists', {
+    __metadata: { type: 'SP.List' }, Title: LIST, BaseTemplate: 100,
+  });
+  for (const [t, k] of [['ParentId', 1], ['PageType', 2], ['ContentJson', 3]]) {
+    await spWrite('POST', "/_api/web/lists/getbytitle('" + LIST + "')/fields", {
+      __metadata: { type: 'SP.Field' }, Title: t, FieldTypeKind: k,
+    }).catch(function(){});
+  }
+}
+
+// ═══════════════════════════════════════════════
+// EDITOR (zero dependencies, contenteditable)
+// ═══════════════════════════════════════════════
+var editorEl;
+
+function editorSetup() {
+  editorEl = document.getElementById('editor');
+
+  editorEl.addEventListener('input', function() {
+    S.dirty = true;
+    setSaveStatus('未保存');
+    scheduleAutoSave();
+  });
+
+  // Enter in pre block → insert newline (not new block)
+  editorEl.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      var block = getBlockAncestor();
+      if (block && block.tagName === 'PRE') {
+        e.preventDefault();
+        document.execCommand('insertHTML', false, '\n');
+        return;
+      }
+    }
+    // Tab inside pre → insert spaces
+    if (e.key === 'Tab') {
+      var b = getBlockAncestor();
+      if (b && b.tagName === 'PRE') {
+        e.preventDefault();
+        document.execCommand('insertHTML', false, '  ');
+      }
+    }
+  });
+
+  editorEl.addEventListener('keyup', refreshToolbar);
+  editorEl.addEventListener('mouseup', refreshToolbar);
+}
+
+function getBlockAncestor() {
+  var sel = window.getSelection();
+  if (!sel.rangeCount) return null;
+  var node = sel.getRangeAt(0).startContainer;
+  while (node && node !== editorEl) {
+    if (node.nodeType === 1 && /^(P|H[1-6]|PRE|BLOCKQUOTE|LI|UL|OL|DIV)$/.test(node.tagName)) return node;
+    node = node.parentNode;
+  }
+  return null;
+}
+
+function execEditorCmd(cmd) {
+  editorEl.focus();
+  var sel = window.getSelection();
+
+  switch (cmd) {
+    case 'h1': case 'h2': case 'h3':
+      document.execCommand('formatBlock', false, cmd);
+      break;
+    case 'bold':
+      document.execCommand('bold');
+      break;
+    case 'italic':
+      document.execCommand('italic');
+      break;
+    case 'strike':
+      document.execCommand('strikeThrough');
+      break;
+    case 'inlinecode':
+      if (sel.rangeCount && !sel.isCollapsed) {
+        var range = sel.getRangeAt(0);
+        var text = range.toString();
+        range.deleteContents();
+        var code = document.createElement('code');
+        code.textContent = text;
+        range.insertNode(code);
+        sel.removeAllRanges();
+        var r2 = document.createRange();
+        r2.selectNodeContents(code);
+        sel.addRange(r2);
+      }
+      break;
+    case 'ul':
+      document.execCommand('insertUnorderedList');
+      break;
+    case 'ol':
+      document.execCommand('insertOrderedList');
+      break;
+    case 'quote':
+      document.execCommand('formatBlock', false, 'blockquote');
+      break;
+    case 'codeblock':
+      document.execCommand('formatBlock', false, 'pre');
+      break;
+    case 'hr':
+      document.execCommand('insertHTML', false, '<hr>');
+      break;
+  }
+  refreshToolbar();
+}
+
+function refreshToolbar() {
+  var checks = {
+    h1:        function() { return document.queryCommandValue('formatBlock').toLowerCase() === 'h1'; },
+    h2:        function() { return document.queryCommandValue('formatBlock').toLowerCase() === 'h2'; },
+    h3:        function() { return document.queryCommandValue('formatBlock').toLowerCase() === 'h3'; },
+    bold:      function() { return document.queryCommandState('bold'); },
+    italic:    function() { return document.queryCommandState('italic'); },
+    strike:    function() { return document.queryCommandState('strikeThrough'); },
+    ul:        function() { return document.queryCommandState('insertUnorderedList'); },
+    ol:        function() { return document.queryCommandState('insertOrderedList'); },
+    quote:     function() { return document.queryCommandValue('formatBlock').toLowerCase() === 'blockquote'; },
+    codeblock: function() { return document.queryCommandValue('formatBlock').toLowerCase() === 'pre'; },
+  };
+  document.querySelectorAll('.tb-btn[data-cmd]').forEach(function(btn) {
+    var fn = checks[btn.dataset.cmd];
+    btn.classList.toggle('is-active', fn ? fn() : false);
+  });
+}
+
+function getEditorContent()     { return editorEl.innerHTML; }
+function setEditorContent(html) { editorEl.innerHTML = html || ''; }
+
+// ═══════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════
+var toastTimer;
+function toast(msg, type, ms) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show' + (type === 'err' ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function() { el.className = ''; }, ms || 3500);
+}
+function setLoading(on, msg) {
+  document.getElementById('loading-msg').textContent = ' ' + (msg || '読み込み中...');
+  document.getElementById('loading-overlay').classList.toggle('hidden', !on);
+}
+function setSaveStatus(t) { document.getElementById('save-status').textContent = t; }
+function autoResize(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
+
+function showFatalError(title, body) {
+  setLoading(false);
+  document.getElementById('empty-state').innerHTML =
+    '<div style="font-size:48px">⚠️</div><h2>' + title + '</h2><p style="max-width:420px;line-height:1.7">' + body + '</p>';
+  document.getElementById('empty-state').style.display = 'flex';
+}
+
+// ═══════════════════════════════════════════════
+// TREE
+// ═══════════════════════════════════════════════
+function childrenOf(pid) {
+  return S.pages.filter(function(p) { return (p.ParentId || 0) === pid; }).sort(function(a,b){ return a.Id - b.Id; });
+}
+
+function makeTreeNode(page, depth) {
+  var kids = childrenOf(page.Id);
+  var hasKids = kids.length > 0;
+  var expanded = S.expanded.has(page.Id);
+  var active   = page.Id === S.currentId;
+
+  var item = document.createElement('div');
+  item.className = 'tree-item';
+
+  var row = document.createElement('div');
+  row.className = 'tree-row' + (active ? ' active' : '');
+  row.style.paddingLeft = (depth * 16 + 6) + 'px';
+
+  var tog = document.createElement('span');
+  tog.className = 'tree-toggle' + (hasKids ? '' : ' leaf') + (expanded ? ' open' : '');
+  tog.innerHTML = hasKids ? '&#9658;' : '';
+  tog.addEventListener('click', function(e) {
+    e.stopPropagation();
+    if (!hasKids) return;
+    S.expanded.has(page.Id) ? S.expanded.delete(page.Id) : S.expanded.add(page.Id);
+    renderTree();
+  });
+
+  var icon = document.createElement('span');
+  icon.className = 'tree-icon'; icon.textContent = '📄';
+
+  var label = document.createElement('span');
+  label.className = 'tree-label'; label.textContent = page.Title || '無題';
+
+  var acts = document.createElement('span');
+  acts.className = 'tree-actions';
+
+  var addBtn = document.createElement('button');
+  addBtn.className = 'tree-act'; addBtn.title = '子ページを追加'; addBtn.innerHTML = '+';
+  addBtn.addEventListener('click', function(e) { e.stopPropagation(); doNewPage(page.Id); });
+
+  var delBtn = document.createElement('button');
+  delBtn.className = 'tree-act'; delBtn.title = 'ページを削除'; delBtn.innerHTML = '&#128465;';
+  delBtn.addEventListener('click', function(e) { e.stopPropagation(); doDeletePage(page.Id); });
+
+  acts.append(addBtn, delBtn);
+  row.append(tog, icon, label, acts);
+  row.addEventListener('click', function() { doSelectPage(page.Id); });
+  item.appendChild(row);
+
+  if (hasKids && expanded) {
+    var sub = document.createElement('div');
+    kids.forEach(function(c) { sub.appendChild(makeTreeNode(c, depth + 1)); });
+    item.appendChild(sub);
+  }
+  return item;
+}
+
+function renderTree() {
+  var wrap = document.getElementById('page-tree');
+  wrap.innerHTML = '';
+  childrenOf(0).forEach(function(p) { wrap.appendChild(makeTreeNode(p, 0)); });
+}
+
+// ═══════════════════════════════════════════════
+// BREADCRUMB
+// ═══════════════════════════════════════════════
+function getAncestors(id) {
+  var map = {}, path = [];
+  S.pages.forEach(function(p) { map[p.Id] = p; });
+  while (id) { var p = map[id]; if (!p) break; path.unshift(p); id = p.ParentId || 0; }
+  return path;
+}
+
+function renderBreadcrumb(id) {
+  var bc = document.getElementById('breadcrumb');
+  bc.innerHTML = '';
+  var path = getAncestors(id);
+  path.forEach(function(p, i) {
+    var s = document.createElement('span');
+    s.className = 'bc-item'; s.textContent = p.Title || '無題';
+    s.addEventListener('click', function() { doSelectPage(p.Id); });
+    bc.appendChild(s);
+    if (i < path.length - 1) {
+      var sep = document.createElement('span');
+      sep.className = 'bc-sep'; sep.textContent = '/';
+      bc.appendChild(sep);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════
+// PAGE ACTIONS
+// ═══════════════════════════════════════════════
+function showContent(on) {
+  document.getElementById('empty-state').style.display  = on ? 'none'  : 'flex';
+  document.getElementById('content-area').style.display = on ? 'block' : 'none';
+  document.getElementById('toolbar').style.display      = on ? 'flex'  : 'none';
+}
+
+async function doSelectPage(id) {
+  if (S.dirty) await doSave();
+  S.currentId = id;
+  var page = S.pages.find(function(p) { return p.Id === id; });
+  if (!page) return;
+
+  showContent(true);
+  var titleEl = document.getElementById('page-title');
+  titleEl.value = page.Title || '';
+  autoResize(titleEl);
+
+  var html = '';
+  try { html = JSON.parse(page.ContentJson || '{}').html || ''; } catch {}
+  setEditorContent(html);
+
+  getAncestors(id).forEach(function(p) { S.expanded.add(p.Id); });
+  renderTree();
+  renderBreadcrumb(id);
+  setSaveStatus(''); S.dirty = false;
+}
+
+async function doNewPage(parentId) {
+  try {
+    setLoading(true, 'ページを作成中...');
+    var p = await apiCreatePage('無題', parentId || 0);
+    S.pages.push(p);
+    if (parentId) S.expanded.add(parentId);
+    renderTree();
+    await doSelectPage(p.Id);
+    var t = document.getElementById('page-title');
+    t.select();
+  } catch(e) {
+    toast('ページ作成に失敗: ' + e.message, 'err');
+  } finally { setLoading(false); }
+}
+
+function collectIds(id) {
+  var result = [id];
+  S.pages.filter(function(p){ return p.ParentId === id; }).forEach(function(c){ result = result.concat(collectIds(c.Id)); });
+  return result;
+}
+
+async function doDeletePage(id) {
+  var page = S.pages.find(function(p){ return p.Id === id; });
+  var name = page ? page.Title || '無題' : '無題';
+  var hasKids = S.pages.some(function(p){ return p.ParentId === id; });
+  var msg = hasKids ? '「' + name + '」と子ページをすべて削除しますか？' : '「' + name + '」を削除しますか？';
+  if (!confirm(msg)) return;
+  try {
+    setLoading(true, '削除中...');
+    var ids = collectIds(id);
+    for (var i = 0; i < ids.length; i++) await apiDeleteItem(ids[i]);
+    S.pages = S.pages.filter(function(p){ return ids.indexOf(p.Id) === -1; });
+    if (ids.indexOf(S.currentId) !== -1) { S.currentId = null; showContent(false); }
+    renderTree();
+    toast('削除しました');
+  } catch(e) {
+    toast('削除に失敗: ' + e.message, 'err');
+  } finally { setLoading(false); }
+}
+
+async function doSave() {
+  if (!S.currentId || !S.dirty || S.saving) return;
+  S.saving = true; setSaveStatus('保存中...');
+  try {
+    var titleEl = document.getElementById('page-title');
+    var title = titleEl.value.trim() || '無題';
+    var html  = getEditorContent();
+    await apiUpdatePage(S.currentId, title, html);
+    var page = S.pages.find(function(p){ return p.Id === S.currentId; });
+    if (page) { page.Title = title; page.ContentJson = JSON.stringify({ v: 1, html: html }); }
+    S.dirty = false; setSaveStatus('保存済み'); renderTree();
+    setTimeout(function() { if (!S.dirty) setSaveStatus(''); }, 2000);
+  } catch(e) {
+    toast('保存に失敗: ' + e.message, 'err'); setSaveStatus('保存失敗');
+  } finally { S.saving = false; }
+}
+
+function scheduleAutoSave() { clearTimeout(saveTimer); saveTimer = setTimeout(doSave, SAVE_MS); }
+
+// ═══════════════════════════════════════════════
+// KEYBOARD SHORTCUTS
+// ═══════════════════════════════════════════════
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault(); clearTimeout(saveTimer); doSave();
+  }
+});
+
+// ═══════════════════════════════════════════════
+// TOOLBAR
+// ═══════════════════════════════════════════════
+document.getElementById('toolbar').addEventListener('click', function(e) {
+  var btn = e.target.closest('.tb-btn');
+  if (btn && btn.dataset.cmd) execEditorCmd(btn.dataset.cmd);
+});
+
+// ═══════════════════════════════════════════════
+// SETUP MODAL
+// ═══════════════════════════════════════════════
+document.getElementById('setup-cancel').addEventListener('click', function() {
+  document.getElementById('setup-modal').classList.add('hidden');
+});
+document.getElementById('setup-create').addEventListener('click', async function() {
+  document.getElementById('setup-modal').classList.add('hidden');
+  setLoading(true, 'リストを作成中...');
+  try {
+    await apiCreateList();
+    await fetchListType();
+    S.pages = await apiGetPages();
+    renderTree(); toast('Pages リストを作成しました ✓');
+  } catch(e) {
+    toast('リスト作成に失敗: ' + e.message, 'err');
+  } finally { setLoading(false); }
+});
+
+// ═══════════════════════════════════════════════
+// TITLE TEXTAREA
+// ═══════════════════════════════════════════════
+(function() {
+  var titleEl = document.getElementById('page-title');
+  titleEl.addEventListener('input', function() {
+    autoResize(titleEl); S.dirty = true; setSaveStatus('未保存'); scheduleAutoSave();
+  });
+  titleEl.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); editorEl.focus(); }
+  });
+})();
+
+// ═══════════════════════════════════════════════
+// EVENT LISTENERS
+// ═══════════════════════════════════════════════
+document.getElementById('new-root-btn').addEventListener('click', function() { doNewPage(0); });
+document.getElementById('empty-new-btn').addEventListener('click', function() { doNewPage(0); });
+
+// ═══════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════
+async function init() {
+  // Must run from SharePoint domain
+  if (!location.hostname.endsWith('sharepoint.com')) {
+    showFatalError(
+      'SharePoint 上で開いてください',
+      'このファイルは SharePoint のドキュメントライブラリに<br>アップロードしてから開く必要があります。<br><br>' +
+      '<strong>手順：</strong> ライブラリに index.html をアップロード<br>' +
+      '→ ファイルを選択 → 「ブラウザーで開く」 または URL末尾に <code>?web=1</code> を付加'
+    );
+    return;
+  }
+
+  setLoading(true);
+  editorSetup();
+
+  try {
+    var exists = await fetchListType();
+    if (!exists) {
+      setLoading(false);
+      document.getElementById('setup-modal').classList.remove('hidden');
+      return;
+    }
+    S.pages = await apiGetPages();
+    renderTree();
+    showContent(false);
+    if (S.pages.length > 0) await doSelectPage(S.pages[0].Id);
+  } catch(e) {
+    showFatalError('初期化エラー', e.message);
+    console.error(e);
+  } finally {
+    setLoading(false);
+  }
+}
+
+init();
+</script>
+</body>
+</html>

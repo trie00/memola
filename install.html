@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>n365 インストール</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 580px; margin: 60px auto; padding: 0 24px; color: #37352f; line-height: 1.7; }
+h1 { font-size: 28px; margin-bottom: 8px; }
+.sub { color: #9b9a97; font-size: 14px; margin-bottom: 40px; }
+.step { display: flex; gap: 16px; margin-bottom: 28px; align-items: flex-start; }
+.step-num { width: 28px; height: 28px; background: #2383e2; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+.step-body h3 { font-size: 16px; margin-bottom: 4px; }
+.step-body p { font-size: 14px; color: #9b9a97; margin: 0; }
+.bm-wrap { background: #f7f7f5; border: 2px dashed #d3d3d0; border-radius: 10px; padding: 28px; text-align: center; margin: 20px 0 32px; }
+.bm-wrap p { font-size: 13px; color: #9b9a97; margin: 0 0 16px; }
+#bm-link { display: inline-flex; align-items: center; gap: 8px; background: #2383e2; color: #fff; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-size: 16px; font-weight: 600; box-shadow: 0 2px 8px rgba(35,131,226,.3); cursor: grab; }
+hr { border: none; border-top: 1px solid #e9e9e7; margin: 32px 0; }
+.alt { font-size: 13px; color: #9b9a97; }
+code { background: #f0f0ef; padding: 2px 6px; border-radius: 3px; font-size: 12px; font-family: monospace; }
+#copy-area { width: 100%; height: 100px; font-size: 11px; font-family: monospace; border: 1px solid #e9e9e7; border-radius: 4px; padding: 8px; resize: none; word-break: break-all; margin-top: 8px; cursor: pointer; display: block; }
+</style>
+
+<style id="n365-css">
+#n365-overlay {
+  position: fixed; inset: 0; z-index: 2147483647; display: flex;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 15px; line-height: 1.6; color: #37352f; background: #fff;
+}
+#n365-overlay *, #n365-overlay *::before, #n365-overlay *::after {
+  box-sizing: border-box; margin: 0; padding: 0;
+}
+
+#n365-sb {
+  width: 240px; background: #f7f7f5; border-right: 1px solid #e9e9e7;
+  display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden;
+}
+#n365-sb-hd {
+  padding: 10px 14px; display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; color: #9b9a97; border-bottom: 1px solid #e9e9e7;
+}
+#n365-x {
+  margin-left: auto; border: none; background: transparent; cursor: pointer;
+  font-size: 16px; color: #9b9a97; padding: 2px 6px; border-radius: 3px; line-height: 1;
+}
+#n365-x:hover { background: #efefef; color: #37352f; }
+#n365-tree-wrap { flex: 1; overflow-y: auto; padding: 4px 0; }
+#n365-sb-ft { padding: 6px; border-top: 1px solid #e9e9e7; }
+
+.n365-nb {
+  width: 100%; padding: 6px 10px; border: none; border-radius: 4px;
+  background: transparent; color: #9b9a97; cursor: pointer; text-align: left;
+  font-size: 13px; display: flex; align-items: center; gap: 6px; font-family: inherit;
+}
+.n365-nb:hover { background: #efefef; color: #37352f; }
+
+.n365-tr {
+  display: flex; align-items: center; padding: 2px 6px 2px 0;
+  border-radius: 4px; cursor: pointer; user-select: none;
+  font-size: 13px; min-height: 28px; transition: background .1s;
+}
+.n365-tr:hover { background: #efefef; }
+.n365-tr.on { background: #e4e3e0; font-weight: 500; }
+.n365-tr:hover .n365-ta { opacity: 1; }
+
+.n365-tog {
+  width: 20px; height: 20px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: #9b9a97; border-radius: 3px; transition: transform .15s;
+}
+.n365-tog.op { transform: rotate(90deg); }
+.n365-tog.lf { pointer-events: none; }
+.n365-ti { width: 16px; flex-shrink: 0; font-size: 13px; text-align: center; }
+.n365-tl {
+  flex: 1; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; padding: 0 4px;
+}
+.n365-ta { opacity: 0; display: flex; gap: 1px; flex-shrink: 0; }
+.n365-tac {
+  width: 20px; height: 20px; border: none; background: transparent;
+  border-radius: 3px; cursor: pointer; display: flex; align-items: center;
+  justify-content: center; font-size: 13px; color: #9b9a97; padding: 0;
+}
+.n365-tac:hover { background: rgba(0,0,0,.08); color: #37352f; }
+
+#n365-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+#n365-top {
+  height: 44px; border-bottom: 1px solid #e9e9e7;
+  display: flex; align-items: center; padding: 0 20px; gap: 12px; flex-shrink: 0;
+}
+#n365-bc {
+  flex: 1; font-size: 13px; color: #9b9a97;
+  display: flex; align-items: center; gap: 2px; overflow: hidden;
+}
+.n365-bi { white-space: nowrap; cursor: pointer; padding: 2px 4px; border-radius: 3px; }
+.n365-bi:hover { background: #efefef; color: #37352f; }
+#n365-ss { font-size: 12px; color: #9b9a97; flex-shrink: 0; min-width: 60px; text-align: right; }
+
+#n365-tb {
+  border-bottom: 1px solid #e9e9e7; padding: 3px 16px;
+  display: none; gap: 1px; flex-shrink: 0; flex-wrap: wrap; align-items: center;
+}
+.n365-b {
+  border: none; background: transparent; border-radius: 4px; cursor: pointer;
+  padding: 4px 7px; font-size: 13px; color: #9b9a97;
+  display: inline-flex; align-items: center; font-family: inherit; line-height: 1; min-height: 28px;
+}
+.n365-b:hover { background: #efefef; color: #37352f; }
+.n365-b.on { background: #e4e3e0; color: #37352f; }
+.n365-bs { width: 1px; height: 18px; background: #e9e9e7; margin: 0 3px; flex-shrink: 0; }
+
+#n365-ea { flex: 1; overflow-y: auto; display: flex; justify-content: center; padding: 48px 20px 120px; }
+#n365-ei { width: 100%; max-width: 720px; }
+#n365-ttl {
+  font-size: 40px; font-weight: 700; line-height: 1.2; color: #37352f; margin-bottom: 4px;
+  outline: none; border: none; width: 100%; background: transparent;
+  font-family: inherit; resize: none; overflow: hidden; padding: 0; display: block;
+}
+#n365-ttl::placeholder { color: #c4c2bf; }
+#n365-ed { outline: none; min-height: 200px; font-size: 16px; line-height: 1.7; }
+#n365-ed:empty::before { content: "ここに書き始めましょう..."; color: #c4c2bf; pointer-events: none; }
+#n365-ed h1 { font-size: 1.875em; font-weight: 700; margin: .8em 0 .1em; line-height: 1.2; }
+#n365-ed h2 { font-size: 1.5em;   font-weight: 600; margin: .7em 0 .1em; }
+#n365-ed h3 { font-size: 1.25em;  font-weight: 600; margin: .6em 0 .1em; }
+#n365-ed p  { margin: .2em 0; }
+#n365-ed ul, #n365-ed ol { padding-left: 1.6em; }
+#n365-ed li + li { margin-top: .2em; }
+#n365-ed blockquote { border-left: 3px solid #e9e9e7; padding-left: 1em; color: #9b9a97; margin: .5em 0; }
+#n365-ed pre {
+  background: #f0f0ef; border-radius: 6px; padding: 12px 16px;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 13.5px; overflow-x: auto; white-space: pre; margin: .5em 0;
+}
+#n365-ed pre code { background: none; padding: 0; }
+#n365-ed code {
+  background: rgba(135,131,120,.15); border-radius: 3px; padding: 1px 4px;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 85%;
+}
+#n365-ed strong { font-weight: 600; }
+#n365-ed hr { border: none; border-top: 1px solid #e9e9e7; margin: 1em 0; }
+
+#n365-em {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100%; min-height: 300px; color: #9b9a97; gap: 12px; text-align: center;
+}
+#n365-em h2 { font-size: 22px; color: #37352f; }
+#n365-ct { display: none; }
+
+#n365-ld {
+  position: absolute; inset: 0; background: rgba(255,255,255,.85);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; color: #9b9a97; gap: 8px;
+}
+#n365-ld.off { display: none; }
+
+#n365-tk {
+  position: fixed; bottom: 24px; right: 24px; padding: 10px 16px;
+  border-radius: 6px; font-size: 13px; background: #37352f; color: #fff;
+  box-shadow: 0 4px 16px rgba(0,0,0,.2); z-index: 2147483648;
+  opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s;
+  pointer-events: none; max-width: 320px;
+}
+#n365-tk.on { opacity: 1; transform: translateY(0); }
+#n365-tk.er { background: #eb5757; }
+
+#n365-md {
+  position: absolute; inset: 0; background: rgba(0,0,0,.4);
+  display: none; align-items: center; justify-content: center;
+}
+#n365-md.on { display: flex; }
+.n365-mb {
+  background: #fff; border-radius: 10px; padding: 32px;
+  max-width: 480px; width: 90%; box-shadow: 0 8px 40px rgba(0,0,0,.2);
+}
+.n365-mb h2 { margin-bottom: 12px; font-size: 20px; }
+.n365-mb p  { color: #9b9a97; font-size: 14px; line-height: 1.6; margin-bottom: 8px; }
+.n365-ma { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+.n365-btn { padding: 8px 18px; border-radius: 4px; border: none; cursor: pointer; font-size: 14px; font-family: inherit; font-weight: 500; }
+.n365-btn.p { background: #2383e2; color: #fff; }
+.n365-btn.s { background: #e9e9e7; color: #37352f; }
+
+#n365-overlay ::-webkit-scrollbar { width: 6px; }
+#n365-overlay ::-webkit-scrollbar-thumb { background: #d3d3d0; border-radius: 3px; }
+
+/* ── DB / Table view ─────────────────────────────────── */
+#n365-dv { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+#n365-dv-hd { padding: 32px 32px 12px; flex-shrink: 0; }
+#n365-dv-ttl { font-size: 32px; font-weight: 700; color: #37352f; }
+#n365-dt-wrap { flex: 1; overflow: auto; padding: 0 16px; }
+#n365-dt { width: 100%; border-collapse: collapse; font-size: 14px; }
+#n365-dt th {
+  text-align: left; padding: 6px 12px; font-size: 12px; font-weight: 600;
+  color: #9b9a97; border-bottom: 2px solid #e9e9e7;
+  white-space: nowrap; background: #fff; position: sticky; top: 0;
+}
+#n365-dt td { padding: 0; border-bottom: 1px solid #f1f1ef; vertical-align: middle; }
+#n365-dt tr:hover td { background: #f9f9f8; }
+.n365-dc {
+  display: block; padding: 7px 12px; outline: none;
+  white-space: nowrap; overflow: hidden; min-width: 120px;
+  cursor: pointer; min-height: 34px; line-height: 20px;
+}
+.n365-dc:focus { background: rgba(35,131,226,.08); cursor: text; white-space: pre-wrap; }
+#n365-dadd {
+  display: flex; align-items: center; gap: 6px;
+  margin: 4px 16px 24px; border: none; background: transparent;
+  color: #9b9a97; cursor: pointer; font-size: 13px;
+  padding: 6px 12px; border-radius: 4px; font-family: inherit;
+}
+#n365-dadd:hover { background: #f1f1ef; color: #37352f; }
+#n365-dt th.n365-th-add {
+  cursor: pointer; color: #b0b0ad; width: 36px; text-align: center;
+  font-size: 18px; font-weight: 300; padding: 2px 8px;
+}
+#n365-dt th.n365-th-add:hover { color: #37352f; background: #f1f1ef; }
+#n365-dt th.n365-th-del, #n365-dt td.n365-td-del { width: 32px; padding: 0; }
+.n365-del-btn {
+  opacity: 0; border: none; background: transparent; cursor: pointer;
+  color: #9b9a97; font-size: 14px; padding: 4px 6px; border-radius: 3px;
+  display: block; margin: auto;
+}
+#n365-dt tr:hover .n365-del-btn { opacity: 1; }
+.n365-del-btn:hover { background: rgba(235,87,87,.12); color: #eb5757; }
+#n365-col-md {
+  position: absolute; inset: 0; background: rgba(0,0,0,.4);
+  display: none; align-items: center; justify-content: center; z-index: 3;
+}
+#n365-col-md.on { display: flex; }
+.n365-col-row { display: flex; flex-direction: column; gap: 4px; }
+.n365-col-row label { font-size: 12px; font-weight: 600; color: #9b9a97; }
+.n365-col-inp, .n365-col-sel {
+  width: 100%; padding: 8px 10px; border: 1px solid #e9e9e7; border-radius: 4px;
+  font-size: 14px; font-family: inherit; outline: none; margin-top: 2px;
+}
+.n365-col-inp:focus, .n365-col-sel:focus { border-color: #2383e2; }
+</style>
+
+</head>
+<body>
+
+<h1>📋 n365 インストール</h1>
+<p class="sub">SharePoint上で動くNotion風エディタ — データは.mdファイルで保存</p>
+
+<div class="step">
+  <div class="step-num">1</div>
+  <div class="step-body">
+    <h3>ブックマークバーを表示する</h3>
+    <p>Chrome/Edge: <code>Ctrl+Shift+B</code>（Mac: <code>Cmd+Shift+B</code>）</p>
+  </div>
+</div>
+
+<div class="bm-wrap">
+  <p>↓ このボタンをブックマークバーにドラッグ ↓</p>
+  <a id="bm-link" href="#">📋 n365</a>
+</div>
+
+<div class="step">
+  <div class="step-num">2</div>
+  <div class="step-body">
+    <h3>SharePointを開く</h3>
+    <p>ブラウザで SharePoint にアクセスしてログインする</p>
+  </div>
+</div>
+
+<div class="step">
+  <div class="step-num">3</div>
+  <div class="step-body">
+    <h3>ブックマークをクリック</h3>
+    <p>「📋 n365」をクリックするとアプリが起動。<code>Esc</code> または再クリックで閉じる。<br>
+    データは <code>ドキュメント/n365-pages/</code> に .mdファイルで保存されます。</p>
+  </div>
+</div>
+
+<hr>
+<p class="alt">ドラッグできない場合 — クリックして全選択 → Ctrl+C でコピー後、ブックマークのアドレス欄に貼り付けてください：</p>
+<textarea id="copy-area" readonly onclick="this.select()"></textarea>
+
+<script>
+function n365Bookmarklet() {
+
+// ── 多重起動防止 ────────────────────────────────────────
+if (document.getElementById('n365-overlay')) {
+  document.getElementById('n365-overlay').remove();
+  var _es = document.getElementById('n365-style');
+  if (_es) _es.remove();
+  return;
+}
+
+// ── SharePointチェック ─────────────────────────────────
+if (!location.hostname.endsWith('sharepoint.com')) {
+  alert('SharePointのページ上でクリックしてください。');
+  return;
+}
+
+// ── サイトURL・フォルダパス自動検出 ──────────────────────
+var _sm = location.href.match(/(https:\/\/[^\/]+\/sites\/[^\/]+)/);
+var SITE = _sm ? _sm[1] : location.origin;
+var SITE_REL = SITE.replace(/https:\/\/[^\/]+/, '');
+var FOLDER = SITE_REL + '/Shared Documents/n365-pages';
+var META = '_meta.json';
+var SAVE_MS = 2000;
+
+// ── CSS ────────────────────────────────────────────────
+var _st = document.createElement('style');
+_st.id = 'n365-style';
+_st.textContent = '<<N365_CSS>>';
+document.head.appendChild(_st);
+
+// ── HTML ───────────────────────────────────────────────
+var _ov = document.createElement('div');
+_ov.id = 'n365-overlay';
+_ov.innerHTML =
+'<aside id="n365-sb">' +
+  '<div id="n365-sb-hd"><span>📋</span>n365<button id="n365-x" title="閉じる(Esc)">✕</button></div>' +
+  '<div id="n365-tree-wrap"><div id="n365-tree"></div></div>' +
+  '<div id="n365-sb-ft">' +
+    '<button class="n365-nb" id="n365-nr"><span>+</span> ページを追加</button>' +
+    '<button class="n365-nb" id="n365-ndb"><span>🗃</span> DBを追加</button>' +
+  '</div>' +
+'</aside>' +
+'<main id="n365-main">' +
+  '<div id="n365-top"><div id="n365-bc"></div><div id="n365-ss"></div></div>' +
+  '<div id="n365-tb">' +
+    '<button class="n365-b" data-cmd="h1"><b>H1</b></button>' +
+    '<button class="n365-b" data-cmd="h2"><b>H2</b></button>' +
+    '<button class="n365-b" data-cmd="h3"><b>H3</b></button>' +
+    '<span class="n365-bs"></span>' +
+    '<button class="n365-b" data-cmd="bold"><b>B</b></button>' +
+    '<button class="n365-b" data-cmd="italic"><i>I</i></button>' +
+    '<button class="n365-b" data-cmd="strike"><s>S</s></button>' +
+    '<button class="n365-b" data-cmd="code" style="font-family:monospace;font-size:11px">&lt;/&gt;</button>' +
+    '<span class="n365-bs"></span>' +
+    '<button class="n365-b" data-cmd="ul">• リスト</button>' +
+    '<button class="n365-b" data-cmd="ol">1. リスト</button>' +
+    '<button class="n365-b" data-cmd="quote">❝ 引用</button>' +
+    '<button class="n365-b" data-cmd="pre" style="font-family:monospace;font-size:11px">```</button>' +
+    '<span class="n365-bs"></span>' +
+    '<button class="n365-b" data-cmd="hr">——</button>' +
+  '</div>' +
+  '<div id="n365-ea"><div id="n365-ei">' +
+    '<div id="n365-em"><div style="font-size:48px">📄</div><h2>n365</h2>' +
+      '<p>サイドバーからページを選択するか、新しいページを作成してください。</p>' +
+      '<div style="display:flex;gap:8px;justify-content:center">' +
+        '<button class="n365-btn p" id="n365-ne">新しいページを作成</button>' +
+        '<button class="n365-btn s" id="n365-ne-db">DBを作成</button>' +
+      '</div>' +
+    '</div>' +
+    '<div id="n365-ct">' +
+      '<textarea id="n365-ttl" rows="1" placeholder="タイトルなし"></textarea>' +
+      '<div id="n365-ed" contenteditable="true" spellcheck="false"></div>' +
+    '</div>' +
+  '</div></div>' +
+  '<div id="n365-dv">' +
+    '<div id="n365-dv-hd"><div id="n365-dv-ttl"></div></div>' +
+    '<div id="n365-dt-wrap">' +
+      '<table id="n365-dt">' +
+        '<thead><tr id="n365-dth-row"></tr></thead>' +
+        '<tbody id="n365-dtb"></tbody>' +
+      '</table>' +
+    '</div>' +
+    '<button id="n365-dadd">＋ 新しい行</button>' +
+  '</div>' +
+  '<div id="n365-ld"><span>⏳</span><span id="n365-lm"> 読み込み中...</span></div>' +
+'</main>' +
+'<div id="n365-md"><div class="n365-mb">' +
+  '<h2>🚀 初期セットアップ</h2>' +
+  '<p>ドキュメントライブラリに <code>n365-pages</code> フォルダを作成してよいですか？<br>ページは .md ファイルとしてここに保存されます。</p>' +
+  '<div class="n365-ma">' +
+    '<button class="n365-btn s" id="n365-mc">キャンセル</button>' +
+    '<button class="n365-btn p" id="n365-mk">フォルダを作成</button>' +
+  '</div>' +
+'</div></div>' +
+'<div id="n365-col-md"><div class="n365-mb">' +
+  '<h2>列を追加</h2>' +
+  '<div style="display:flex;flex-direction:column;gap:16px;margin-bottom:4px">' +
+    '<div class="n365-col-row"><label>列名</label><input id="n365-col-name" class="n365-col-inp" type="text" placeholder="例: ステータス"></div>' +
+    '<div class="n365-col-row"><label>種類</label><select id="n365-col-type" class="n365-col-sel">' +
+      '<option value="2">テキスト</option>' +
+      '<option value="9">数値</option>' +
+      '<option value="4">日付</option>' +
+      '<option value="8">チェックボックス</option>' +
+    '</select></div>' +
+  '</div>' +
+  '<div class="n365-ma">' +
+    '<button class="n365-btn s" id="n365-col-cancel">キャンセル</button>' +
+    '<button class="n365-btn p" id="n365-col-ok">追加</button>' +
+  '</div>' +
+'</div></div>' +
+'<div id="n365-tk"></div>';
+document.body.appendChild(_ov);
+
+// ── helpers ────────────────────────────────────────────
+function g(id) { return document.getElementById('n365-' + id); }
+var _ed = g('ed');
+
+// ── STATE ──────────────────────────────────────────────
+var S = { pages: [], meta: { pages: [] }, currentId: null, currentType: 'page', dbFields: [], dbItems: [], dbList: '', expanded: new Set(), dirty: false, saving: false };
+var _svT = null;
+
+// ── SP API ─────────────────────────────────────────────
+var _dig = null, _digX = 0;
+
+async function getDigest() {
+  if (_dig && Date.now() < _digX) return _dig;
+  var r = await fetch(SITE + '/_api/contextinfo', { method: 'POST', headers: { Accept: 'application/json;odata=verbose' }, credentials: 'include' });
+  if (!r.ok) throw new Error('認証失敗(' + r.status + ')。SharePointにログインしてください。');
+  var j = await r.json();
+  _dig = j.d.GetContextWebInformation.FormDigestValue;
+  _digX = Date.now() + 25 * 60 * 1000;
+  return _dig;
+}
+
+async function readFile(name) {
+  var url = SITE + "/_api/web/GetFileByServerRelativeUrl('" + FOLDER + '/' + name + "')/$value";
+  var r = await fetch(url, { credentials: 'include' });
+  if (!r.ok) throw new Error('読み込み失敗: ' + r.status);
+  return r.text();
+}
+
+async function writeFile(relPath, content) {
+  var d = await getDigest();
+  var lastSlash = relPath.lastIndexOf('/');
+  var folderRel = lastSlash >= 0 ? FOLDER + '/' + relPath.substring(0, lastSlash) : FOLDER;
+  var fileName  = lastSlash >= 0 ? relPath.substring(lastSlash + 1) : relPath;
+  var url = SITE + "/_api/web/GetFolderByServerRelativeUrl('" + folderRel + "')/Files/add(url='" + encodeURIComponent(fileName) + "',overwrite=true)";
+  var r = await fetch(url, { method: 'POST', headers: { 'X-RequestDigest': d }, credentials: 'include', body: content });
+  if (!r.ok) throw new Error('保存失敗: ' + r.status);
+}
+
+async function createFolder(path) {
+  var ok = await spPost('/_api/web/folders', { __metadata: { type: 'SP.Folder' }, ServerRelativeUrl: FOLDER + '/' + path });
+  if (!ok) throw new Error('フォルダ作成失敗');
+}
+
+async function deleteFolderApi(path) {
+  var d = await getDigest();
+  var url = SITE + "/_api/web/GetFolderByServerRelativeUrl('" + FOLDER + '/' + path + "')";
+  var r = await fetch(url, { method: 'POST', headers: { 'X-RequestDigest': d, 'X-HTTP-Method': 'DELETE', 'If-Match': '*' }, credentials: 'include' });
+  if (!r.ok) throw new Error('削除失敗: ' + r.status);
+}
+
+async function spPost(url, body) {
+  var d = await getDigest();
+  var r = await fetch(SITE + url, { method: 'POST', headers: { Accept: 'application/json;odata=verbose', 'Content-Type': 'application/json;odata=verbose', 'X-RequestDigest': d }, credentials: 'include', body: JSON.stringify(body) });
+  return r.ok;
+}
+
+async function ensureFolder() {
+  var r = await fetch(SITE + "/_api/web/GetFolderByServerRelativeUrl('" + FOLDER + "')", { headers: { Accept: 'application/json;odata=verbose' }, credentials: 'include' });
+  if (r.ok) return true; // already exists
+  return spPost('/_api/web/folders', { __metadata: { type: 'SP.Folder' }, ServerRelativeUrl: FOLDER });
+}
+
+// ── SP LIST API ────────────────────────────────────────
+async function createList(listTitle) {
+  var d = await getDigest();
+  var r = await fetch(SITE + '/_api/web/lists', {
+    method: 'POST',
+    headers: { Accept: 'application/json;odata=verbose', 'Content-Type': 'application/json;odata=verbose', 'X-RequestDigest': d },
+    credentials: 'include',
+    body: JSON.stringify({ __metadata: { type: 'SP.List' }, BaseTemplate: 100, Title: listTitle, Description: 'n365 database' })
+  });
+  if (!r.ok) throw new Error('リスト作成失敗: ' + r.status);
+}
+
+async function deleteList(listTitle) {
+  var d = await getDigest();
+  await fetch(SITE + "/_api/web/lists/getbytitle('" + listTitle + "')", {
+    method: 'POST', headers: { 'X-RequestDigest': d, 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' }, credentials: 'include'
+  });
+}
+
+var _etCache = {};
+async function getListEntityType(listTitle) {
+  if (_etCache[listTitle]) return _etCache[listTitle];
+  var r = await fetch(SITE + "/_api/web/lists/getbytitle('" + listTitle + "')?$select=ListItemEntityTypeFullName", { headers: { Accept: 'application/json;odata=verbose' }, credentials: 'include' });
+  if (!r.ok) throw new Error('エンティティタイプ取得失敗');
+  var j = await r.json();
+  _etCache[listTitle] = j.d.ListItemEntityTypeFullName;
+  return _etCache[listTitle];
+}
+
+async function getListFields(listTitle) {
+  var r = await fetch(
+    SITE + "/_api/web/lists/getbytitle('" + listTitle + "')/fields?$filter=Hidden eq false and ReadOnlyField eq false&$select=Title,InternalName,FieldTypeKind",
+    { headers: { Accept: 'application/json;odata=verbose' }, credentials: 'include' }
+  );
+  if (!r.ok) throw new Error('スキーマ取得失敗: ' + r.status);
+  var j = await r.json();
+  return j.d.results.filter(function(f) { return [2, 4, 6, 8, 9].indexOf(f.FieldTypeKind) >= 0; });
+}
+
+async function getListItems(listTitle) {
+  var r = await fetch(
+    SITE + "/_api/web/lists/getbytitle('" + listTitle + "')/items?$orderby=Id&$top=500",
+    { headers: { Accept: 'application/json;odata=verbose' }, credentials: 'include' }
+  );
+  if (!r.ok) throw new Error('データ取得失敗: ' + r.status);
+  var j = await r.json();
+  return j.d.results;
+}
+
+async function createListItem(listTitle, data) {
+  var et = await getListEntityType(listTitle);
+  var d = await getDigest();
+  data.__metadata = { type: et };
+  var r = await fetch(SITE + "/_api/web/lists/getbytitle('" + listTitle + "')/items", {
+    method: 'POST', headers: { Accept: 'application/json;odata=verbose', 'Content-Type': 'application/json;odata=verbose', 'X-RequestDigest': d },
+    credentials: 'include', body: JSON.stringify(data)
+  });
+  if (!r.ok) throw new Error('行追加失敗: ' + r.status);
+  var j = await r.json();
+  return j.d;
+}
+
+async function deleteListItem(listTitle, itemId) {
+  var d = await getDigest();
+  var r = await fetch(SITE + "/_api/web/lists/getbytitle('" + listTitle + "')/items(" + itemId + ")", {
+    method: 'POST', headers: { 'X-RequestDigest': d, 'X-HTTP-Method': 'DELETE', 'If-Match': '*' }, credentials: 'include'
+  });
+  if (!r.ok) throw new Error('削除失敗: ' + r.status);
+}
+
+async function addListField(listTitle, name, typeKind) {
+  var typeMap = { 2: 'SP.FieldText', 4: 'SP.FieldDateTime', 8: 'SP.FieldBoolean', 9: 'SP.FieldNumber' };
+  var d = await getDigest();
+  var r = await fetch(SITE + "/_api/web/lists/getbytitle('" + listTitle + "')/fields", {
+    method: 'POST',
+    headers: { Accept: 'application/json;odata=verbose', 'Content-Type': 'application/json;odata=verbose', 'X-RequestDigest': d },
+    credentials: 'include',
+    body: JSON.stringify({ __metadata: { type: typeMap[typeKind] || 'SP.FieldText' }, FieldTypeKind: parseInt(typeKind), Title: name })
+  });
+  if (!r.ok) throw new Error('列追加失敗: ' + r.status);
+  var j = await r.json();
+  return j.d;
+}
+
+async function updateListItem(listTitle, itemId, data) {
+  var et = await getListEntityType(listTitle);
+  var d = await getDigest();
+  data.__metadata = { type: et };
+  var r = await fetch(SITE + "/_api/web/lists/getbytitle('" + listTitle + "')/items(" + itemId + ")", {
+    method: 'POST', headers: { Accept: 'application/json;odata=verbose', 'Content-Type': 'application/json;odata=verbose', 'X-RequestDigest': d, 'X-HTTP-Method': 'MERGE', 'If-Match': '*' },
+    credentials: 'include', body: JSON.stringify(data)
+  });
+  if (!r.ok) throw new Error('更新失敗: ' + r.status);
+}
+
+// ── META ───────────────────────────────────────────────
+async function loadMeta() {
+  try { return JSON.parse(await readFile(META)); }
+  catch { return { pages: [] }; }
+}
+
+async function saveMeta() {
+  await writeFile(META, JSON.stringify(S.meta, null, 2));
+}
+
+// ── MARKDOWN ↔ HTML ────────────────────────────────────
+
+function htmlToMd(html) {
+  var div = document.createElement('div');
+  div.innerHTML = html;
+  return domWalk(div).replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function domWalk(node) {
+  if (node.nodeType === 3) return node.textContent.replace(/\n/g, ' ');
+  if (node.nodeType !== 1) return '';
+  var tag = node.tagName.toLowerCase();
+  var ch = Array.from(node.childNodes).map(domWalk).join('');
+  if (tag === 'h1') return '\n# ' + ch.trim() + '\n';
+  if (tag === 'h2') return '\n## ' + ch.trim() + '\n';
+  if (tag === 'h3') return '\n### ' + ch.trim() + '\n';
+  if (tag === 'p')  return '\n' + ch.trim() + '\n';
+  if (tag === 'strong' || tag === 'b') return '**' + ch + '**';
+  if (tag === 'em' || tag === 'i')     return '*' + ch + '*';
+  if (tag === 's' || tag === 'del' || tag === 'strike') return '~~' + ch + '~~';
+  if (tag === 'code') {
+    var inPre = node.parentNode && node.parentNode.tagName.toLowerCase() === 'pre';
+    return inPre ? node.textContent : ('`' + node.textContent + '`');
+  }
+  if (tag === 'pre') {
+    var cEl = node.querySelector('code');
+    return '\n```\n' + (cEl ? cEl.textContent : node.textContent) + '\n```\n';
+  }
+  if (tag === 'blockquote') {
+    return '\n' + ch.trim().split('\n').map(function(l){ return '> ' + l; }).join('\n') + '\n';
+  }
+  if (tag === 'ul') {
+    return '\n' + Array.from(node.children).filter(function(c){ return c.tagName.toLowerCase()==='li'; })
+      .map(function(li){ return '- ' + domWalk(li).trim(); }).join('\n') + '\n';
+  }
+  if (tag === 'ol') {
+    return '\n' + Array.from(node.children).filter(function(c){ return c.tagName.toLowerCase()==='li'; })
+      .map(function(li, idx){ return (idx+1) + '. ' + domWalk(li).trim(); }).join('\n') + '\n';
+  }
+  if (tag === 'li')  return ch;
+  if (tag === 'hr')  return '\n---\n';
+  if (tag === 'br')  return '\n';
+  if (tag === 'a')   return '[' + ch + '](' + (node.getAttribute('href') || '') + ')';
+  return ch;
+}
+
+function mdToHtml(md) {
+  if (!md) return '';
+  var lines = md.split('\n'), html = '', i = 0;
+
+  function esc(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function inline(t) {
+    return esc(t)
+      .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g,'<em>$1</em>')
+      .replace(/~~(.+?)~~/g,'<s>$1</s>')
+      .replace(/`(.+?)`/g,'<code>$1</code>')
+      .replace(/\[(.+?)\]\((.+?)\)/g,'<a href="$2">$1</a>');
+  }
+
+  while (i < lines.length) {
+    var ln = lines[i];
+
+    if (ln.trimStart().startsWith('```')) {
+      var code = ''; i++;
+      while (i < lines.length && !lines[i].trimStart().startsWith('```')) { code += lines[i] + '\n'; i++; }
+      html += '<pre><code>' + esc(code) + '</code></pre>'; i++; continue;
+    }
+    var hm = ln.match(/^(#{1,3})\s+(.*)/);
+    if (hm) { var lv = hm[1].length; html += '<h'+lv+'>'+inline(hm[2])+'</h'+lv+'>'; i++; continue; }
+    if (ln.match(/^---+$/) || ln.match(/^\*\*\*+$/)) { html += '<hr>'; i++; continue; }
+    if (ln.startsWith('> ')) {
+      var bq = ''; while (i < lines.length && lines[i].startsWith('> ')) { bq += lines[i].slice(2) + '\n'; i++; }
+      html += '<blockquote>' + mdToHtml(bq.trim()) + '</blockquote>'; continue;
+    }
+    if (ln.match(/^[-*]\s/)) {
+      html += '<ul>';
+      while (i < lines.length && lines[i].match(/^[-*]\s/)) { html += '<li>' + inline(lines[i].replace(/^[-*]\s/,'')) + '</li>'; i++; }
+      html += '</ul>'; continue;
+    }
+    if (ln.match(/^\d+\.\s/)) {
+      html += '<ol>';
+      while (i < lines.length && lines[i].match(/^\d+\.\s/)) { html += '<li>' + inline(lines[i].replace(/^\d+\.\s/,'')) + '</li>'; i++; }
+      html += '</ol>'; continue;
+    }
+    if (ln.trim() === '') { i++; continue; }
+    var para = '';
+    while (i < lines.length && lines[i].trim() !== '' && !lines[i].match(/^#{1,3}\s/) && !lines[i].match(/^---+$/) && !lines[i].startsWith('> ') && !lines[i].match(/^[-*]\s/) && !lines[i].match(/^\d+\.\s/) && !lines[i].trimStart().startsWith('```')) {
+      para += lines[i] + ' '; i++;
+    }
+    if (para.trim()) html += '<p>' + inline(para.trim()) + '</p>';
+  }
+  return html;
+}
+
+function buildMdFile(title, parentId, bodyHtml) {
+  var fm = '---\ntitle: ' + title + '\nparent: ' + (parentId || '') + '\ncreated: ' + new Date().toISOString().slice(0,10) + '\n---\n\n';
+  return fm + htmlToMd(bodyHtml);
+}
+
+function parseMeta(content) {
+  var m = { title: '', parent: '' };
+  if (!content || !content.startsWith('---')) return m;
+  var end = content.indexOf('---', 3);
+  if (end < 0) return m;
+  content.substring(3, end).trim().split('\n').forEach(function(l){
+    var c = l.indexOf(':'); if (c < 0) return;
+    m[l.substring(0,c).trim()] = l.substring(c+1).trim();
+  });
+  return m;
+}
+
+function getBody(content) {
+  if (!content || !content.startsWith('---')) return content || '';
+  var end = content.indexOf('---', 3);
+  return end < 0 ? content : content.substring(end + 3).trim();
+}
+
+// ── PAGE API ───────────────────────────────────────────
+
+function getPathForId(id) {
+  var p = S.meta.pages.find(function(p){ return p.id === id; });
+  return p ? p.path : id;
+}
+
+function getPageParent(id) {
+  var p = S.meta.pages.find(function(p){ return p.id === id; });
+  return p ? (p.parent || '') : '';
+}
+
+async function apiGetPages() {
+  S.meta = await loadMeta();
+  return S.meta.pages.map(function(p){ return { Id: p.id, Title: p.title, ParentId: p.parent || '', Type: p.type || 'page' }; });
+}
+
+async function apiLoadContent(id) {
+  var content = await readFile(getPathForId(id) + '/index.md');
+  return mdToHtml(getBody(content));
+}
+
+async function apiCreatePage(title, parentId) {
+  var id = Date.now().toString();
+  var parentPath = parentId ? getPathForId(parentId) : '';
+  var path = parentPath ? parentPath + '/' + id : id;
+  await createFolder(path);
+  await writeFile(path + '/index.md', buildMdFile(title, parentId || '', ''));
+  S.meta.pages.push({ id: id, title: title, parent: parentId || '', path: path });
+  await saveMeta();
+  return { Id: id, Title: title, ParentId: parentId || '' };
+}
+
+async function apiSavePage(id, title, html) {
+  var path = getPathForId(id);
+  await writeFile(path + '/index.md', buildMdFile(title, getPageParent(id), html));
+  var p = S.meta.pages.find(function(p){ return p.id === id; });
+  if (p) p.title = title;
+  await saveMeta();
+}
+
+async function apiDeletePage(id) {
+  var ids = collectIds(id);
+  var topPage = S.meta.pages.find(function(p){ return p.id === id; });
+  if (topPage) {
+    if (topPage.type === 'database' && topPage.list) {
+      await deleteList(topPage.list).catch(function(){});
+    } else if (topPage.path) {
+      await deleteFolderApi(topPage.path).catch(function(){});
+    }
+  }
+  S.meta.pages = S.meta.pages.filter(function(p){ return ids.indexOf(p.id) < 0; });
+  await saveMeta();
+  return ids;
+}
+
+// ── DB API ─────────────────────────────────────────────
+
+async function apiCreateDb(title, parentId) {
+  var id = Date.now().toString();
+  var listTitle = 'n365-db-' + id;
+  await createList(listTitle);
+  S.meta.pages.push({ id: id, title: title, parent: parentId || '', path: '', type: 'database', list: listTitle });
+  await saveMeta();
+  return { Id: id, Title: title, ParentId: parentId || '', Type: 'database' };
+}
+
+async function apiAddDbRow(listTitle, data) {
+  return await createListItem(listTitle, data);
+}
+
+async function apiUpdateDbRow(listTitle, itemId, data) {
+  await updateListItem(listTitle, itemId, data);
+}
+
+// ── UI helpers ─────────────────────────────────────────
+var _tkT;
+function toast(msg, type, ms) {
+  var el = g('tk'); el.textContent = msg;
+  el.className = 'on' + (type === 'err' ? ' er' : '');
+  clearTimeout(_tkT); _tkT = setTimeout(function(){ el.className = ''; }, ms || 3500);
+}
+function setLoad(on, msg) { g('lm').textContent = ' ' + (msg || '読み込み中...'); g('ld').classList.toggle('off', !on); }
+function setSave(t) { g('ss').textContent = t; }
+function autoR(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
+
+// ── TREE ───────────────────────────────────────────────
+function kidsOf(pid) {
+  return S.pages.filter(function(p){ return (p.ParentId||'') === (pid||''); }).sort(function(a,b){ return a.Id<b.Id?-1:1; });
+}
+
+function mkNode(page, depth) {
+  var isDb = page.Type === 'database';
+  var kids = kidsOf(page.Id), hasK = kids.length > 0, exp = S.expanded.has(page.Id), act = page.Id === S.currentId;
+  var item = document.createElement('div');
+  var row  = document.createElement('div');
+  row.className = 'n365-tr' + (act ? ' on' : '');
+  row.style.paddingLeft = (depth * 16 + 6) + 'px';
+  var tog = document.createElement('span');
+  tog.className = 'n365-tog' + (hasK ? '' : ' lf') + (exp ? ' op' : '');
+  tog.innerHTML = hasK ? '&#9658;' : '';
+  tog.addEventListener('click', function(e){ e.stopPropagation(); if (!hasK) return; S.expanded.has(page.Id)?S.expanded.delete(page.Id):S.expanded.add(page.Id); renderTree(); });
+  var icon = document.createElement('span'); icon.className = 'n365-ti'; icon.textContent = isDb ? '🗃' : '📄';
+  var lbl  = document.createElement('span'); lbl.className  = 'n365-tl'; lbl.textContent = page.Title || '無題';
+  var acts = document.createElement('span'); acts.className = 'n365-ta';
+  if (!isDb) {
+    var ab = document.createElement('button'); ab.className = 'n365-tac'; ab.title = '子ページを追加'; ab.innerHTML = '+';
+    ab.addEventListener('click', function(e){ e.stopPropagation(); doNew(page.Id); });
+    acts.appendChild(ab);
+  }
+  var db = document.createElement('button'); db.className = 'n365-tac'; db.title = '削除'; db.innerHTML = '🗑';
+  db.addEventListener('click', function(e){ e.stopPropagation(); doDel(page.Id); });
+  acts.appendChild(db); row.append(tog, icon, lbl, acts);
+  row.addEventListener('click', function(){ doSelect(page.Id); });
+  item.appendChild(row);
+  if (hasK && exp) { var sub = document.createElement('div'); kids.forEach(function(c){ sub.appendChild(mkNode(c, depth+1)); }); item.appendChild(sub); }
+  return item;
+}
+
+function renderTree() {
+  var w = g('tree'); w.innerHTML = '';
+  kidsOf('').forEach(function(p){ w.appendChild(mkNode(p, 0)); });
+}
+
+// ── BREADCRUMB ─────────────────────────────────────────
+function ancs(id) {
+  var map = {}, path = [];
+  S.pages.forEach(function(p){ map[p.Id] = p; });
+  while (id) { var p = map[id]; if (!p) break; path.unshift(p); id = p.ParentId || ''; }
+  return path;
+}
+function renderBc(id) {
+  var bc = g('bc'); bc.innerHTML = '';
+  ancs(id).forEach(function(p, i) {
+    var s = document.createElement('span'); s.className = 'n365-bi'; s.textContent = p.Title || '無題';
+    s.addEventListener('click', function(){ doSelect(p.Id); }); bc.appendChild(s);
+    if (i < ancs(id).length - 1) { var sep = document.createElement('span'); sep.textContent = '/'; sep.style.color = '#e9e9e7'; bc.appendChild(sep); }
+  });
+}
+
+// ── EDITOR ─────────────────────────────────────────────
+_ed.addEventListener('input', function(){ S.dirty = true; setSave('未保存'); schedSave(); });
+_ed.addEventListener('keydown', function(e){
+  var b = curBlock();
+  if (e.key === 'Enter' && b && b.tagName === 'PRE') { e.preventDefault(); document.execCommand('insertHTML', false, '\n'); }
+  if (e.key === 'Tab'   && b && b.tagName === 'PRE') { e.preventDefault(); document.execCommand('insertHTML', false, '  '); }
+});
+_ed.addEventListener('keyup', refTb);
+_ed.addEventListener('mouseup', refTb);
+
+function curBlock() {
+  var sel = window.getSelection(); if (!sel.rangeCount) return null;
+  var n = sel.getRangeAt(0).startContainer;
+  while (n && n !== _ed) { if (n.nodeType === 1 && /^(P|H[1-6]|PRE|BLOCKQUOTE|LI|UL|OL|DIV)$/.test(n.tagName)) return n; n = n.parentNode; }
+  return null;
+}
+
+function execCmd(cmd) {
+  _ed.focus();
+  var sel = window.getSelection();
+  switch(cmd) {
+    case 'h1': case 'h2': case 'h3': document.execCommand('formatBlock', false, cmd); break;
+    case 'bold':   document.execCommand('bold'); break;
+    case 'italic': document.execCommand('italic'); break;
+    case 'strike': document.execCommand('strikeThrough'); break;
+    case 'code':
+      if (sel.rangeCount && !sel.isCollapsed) {
+        var r = sel.getRangeAt(0), t = r.toString(); r.deleteContents();
+        var c = document.createElement('code'); c.textContent = t; r.insertNode(c);
+      }
+      break;
+    case 'ul':    document.execCommand('insertUnorderedList'); break;
+    case 'ol':    document.execCommand('insertOrderedList'); break;
+    case 'quote': document.execCommand('formatBlock', false, 'blockquote'); break;
+    case 'pre':   document.execCommand('formatBlock', false, 'pre'); break;
+    case 'hr':    document.execCommand('insertHTML', false, '<hr>'); break;
+  }
+  refTb();
+}
+
+function refTb() {
+  var m = {
+    h1: function(){ return document.queryCommandValue('formatBlock').toLowerCase()==='h1'; },
+    h2: function(){ return document.queryCommandValue('formatBlock').toLowerCase()==='h2'; },
+    h3: function(){ return document.queryCommandValue('formatBlock').toLowerCase()==='h3'; },
+    bold:   function(){ return document.queryCommandState('bold'); },
+    italic: function(){ return document.queryCommandState('italic'); },
+    strike: function(){ return document.queryCommandState('strikeThrough'); },
+    ul:     function(){ return document.queryCommandState('insertUnorderedList'); },
+    ol:     function(){ return document.queryCommandState('insertOrderedList'); },
+    quote:  function(){ return document.queryCommandValue('formatBlock').toLowerCase()==='blockquote'; },
+    pre:    function(){ return document.queryCommandValue('formatBlock').toLowerCase()==='pre'; }
+  };
+  _ov.querySelectorAll('.n365-b[data-cmd]').forEach(function(b){ var f=m[b.dataset.cmd]; b.classList.toggle('on', f?f():false); });
+}
+
+// ── PAGE ACTIONS ───────────────────────────────────────
+function showView(mode) {
+  g('ea').style.display = mode !== 'db'    ? 'flex'  : 'none';
+  g('em').style.display = mode === 'empty' ? 'flex'  : 'none';
+  g('ct').style.display = mode === 'page'  ? 'block' : 'none';
+  g('tb').style.display = mode === 'page'  ? 'flex'  : 'none';
+  g('dv').style.display = mode === 'db'    ? 'flex'  : 'none';
+}
+
+async function doSelect(id) {
+  if (S.dirty && S.currentType !== 'database') await doSave();
+  S.currentId = id;
+  var page = S.pages.find(function(p){ return p.Id === id; });
+  if (!page) return;
+  ancs(id).forEach(function(p){ S.expanded.add(p.Id); });
+  renderTree(); renderBc(id);
+  if (page.Type === 'database') {
+    await doSelectDb(id, page);
+  } else {
+    S.currentType = 'page';
+    showView('page');
+    var te = g('ttl'); te.value = page.Title || ''; autoR(te);
+    setLoad(true, 'ページを読み込み中...');
+    try {
+      _ed.innerHTML = await apiLoadContent(id);
+    } catch(e) { _ed.innerHTML = ''; toast('読み込み失敗: ' + e.message, 'err'); }
+    finally { setLoad(false); }
+    setSave(''); S.dirty = false;
+  }
+}
+
+async function doSelectDb(id, page) {
+  S.currentType = 'database';
+  var meta = S.meta.pages.find(function(p){ return p.id === id; });
+  if (!meta || !meta.list) { toast('DBメタ情報が見つかりません', 'err'); return; }
+  showView('db');
+  g('dv-ttl').textContent = page.Title || '無題';
+  setLoad(true, 'データを読み込み中...');
+  try {
+    var results = await Promise.all([getListFields(meta.list), getListItems(meta.list)]);
+    S.dbFields = results[0];
+    S.dbItems  = results[1];
+    S.dbList   = meta.list;
+    renderDbTable();
+  } catch(e) { toast('DB読み込み失敗: ' + e.message, 'err'); }
+  finally { setLoad(false); }
+}
+
+function getDbFields() {
+  return S.dbFields.filter(function(f){ return [2,4,6,8,9].indexOf(f.FieldTypeKind) >= 0; });
+}
+
+function renderDbTable() {
+  var thead = g('dth-row'), tbody = g('dtb');
+  thead.innerHTML = ''; tbody.innerHTML = '';
+  var fields = getDbFields();
+  fields.forEach(function(f){ var th = document.createElement('th'); th.textContent = f.Title; thead.appendChild(th); });
+  var thDel = document.createElement('th'); thDel.className = 'n365-th-del'; thead.appendChild(thDel);
+  var thAdd = document.createElement('th'); thAdd.className = 'n365-th-add'; thAdd.textContent = '+'; thAdd.title = '列を追加';
+  thAdd.addEventListener('click', function(){ g('col-name').value=''; g('col-md').classList.add('on'); g('col-name').focus(); });
+  thead.appendChild(thAdd);
+  S.dbItems.forEach(function(item){ tbody.appendChild(mkDbRow(item, fields)); });
+}
+
+function mkDbRow(item, fields) {
+  var tr = document.createElement('tr');
+  tr.dataset.id = item.Id;
+  fields.forEach(function(f){
+    var td = document.createElement('td');
+    var span = document.createElement('span');
+    span.className = 'n365-dc';
+    span.contentEditable = 'true';
+    span.textContent = item[f.InternalName] != null ? String(item[f.InternalName]) : '';
+    span.dataset.field = f.InternalName;
+    var orig = span.textContent;
+    span.addEventListener('focus', function(){ orig = span.textContent; });
+    span.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); span.blur(); }
+      if (e.key === 'Escape') { span.textContent = orig; span.blur(); }
+    });
+    span.addEventListener('blur', function(){
+      var nv = span.textContent.trim();
+      if (nv === orig.trim()) return;
+      var data = {}; data[f.InternalName] = nv;
+      item[f.InternalName] = nv; orig = nv;
+      setSave('保存中...');
+      apiUpdateDbRow(S.dbList, item.Id, data)
+        .then(function(){ setSave(''); })
+        .catch(function(e){ toast('更新失敗: ' + e.message, 'err'); span.textContent = orig; });
+    });
+    td.appendChild(span); tr.appendChild(td);
+  });
+  var delTd = document.createElement('td'); delTd.className = 'n365-td-del';
+  var delBtn = document.createElement('button'); delBtn.className = 'n365-del-btn'; delBtn.title = '行を削除'; delBtn.textContent = '🗑';
+  delBtn.addEventListener('click', function(){
+    if (!confirm('この行を削除しますか？')) return;
+    setLoad(true, '削除中...');
+    deleteListItem(S.dbList, item.Id)
+      .then(function(){ S.dbItems = S.dbItems.filter(function(i){ return i.Id !== item.Id; }); tr.remove(); toast('削除しました'); })
+      .catch(function(e){ toast('削除失敗: ' + e.message, 'err'); })
+      .finally(function(){ setLoad(false); });
+  });
+  delTd.appendChild(delBtn); tr.appendChild(delTd);
+  return tr;
+}
+
+async function doNew(parentId) {
+  try {
+    setLoad(true, 'ページを作成中...');
+    var p = await apiCreatePage('無題', parentId || '');
+    S.pages.push(p); if (parentId) S.expanded.add(parentId);
+    renderTree(); await doSelect(p.Id); g('ttl').select();
+  } catch(e) { toast('ページ作成に失敗: ' + e.message, 'err'); }
+  finally { setLoad(false); }
+}
+
+function collectIds(id) {
+  var r = [id];
+  S.pages.filter(function(p){ return p.ParentId === id; }).forEach(function(c){ r = r.concat(collectIds(c.Id)); });
+  return r;
+}
+
+async function doDel(id) {
+  var page = S.pages.find(function(p){ return p.Id===id; });
+  var name = page ? (page.Title || '無題') : '無題';
+  var hasK = S.pages.some(function(p){ return p.ParentId===id; });
+  if (!confirm(hasK ? '「'+name+'」と子ページをすべて削除しますか？' : '「'+name+'」を削除しますか？')) return;
+  try {
+    setLoad(true, '削除中...');
+    var ids = await apiDeletePage(id);
+    S.pages = S.pages.filter(function(p){ return ids.indexOf(p.Id) < 0; });
+    if (ids.indexOf(S.currentId) >= 0) { S.currentId = null; showView('empty'); }
+    renderTree(); toast('削除しました');
+  } catch(e) { toast('削除に失敗: ' + e.message, 'err'); }
+  finally { setLoad(false); }
+}
+
+async function doSave() {
+  if (!S.currentId || !S.dirty || S.saving || S.currentType === 'database') return;
+  S.saving = true; setSave('保存中...');
+  try {
+    var te = g('ttl'), title = te.value.trim() || '無題', html = _ed.innerHTML;
+    await apiSavePage(S.currentId, title, html);
+    var p = S.pages.find(function(x){ return x.Id===S.currentId; });
+    if (p) p.Title = title;
+    S.dirty = false; setSave('保存済み'); renderTree();
+    setTimeout(function(){ if (!S.dirty) setSave(''); }, 2000);
+  } catch(e) { toast('保存に失敗: ' + e.message, 'err'); setSave('保存失敗'); }
+  finally { S.saving = false; }
+}
+
+function schedSave() { clearTimeout(_svT); _svT = setTimeout(doSave, SAVE_MS); }
+
+// ── CLOSE ──────────────────────────────────────────────
+function closeApp() {
+  clearTimeout(_svT);
+  if (S.dirty && S.currentType !== 'database' && !confirm('保存していない変更があります。閉じますか？')) return;
+  _ov.remove(); _st.remove();
+  document.removeEventListener('keydown', onKey);
+}
+function onKey(e) {
+  if ((e.ctrlKey||e.metaKey) && e.key==='s') { e.preventDefault(); clearTimeout(_svT); doSave(); }
+  if (e.key==='Escape') closeApp();
+}
+document.addEventListener('keydown', onKey);
+
+// ── WIRING ─────────────────────────────────────────────
+g('x').addEventListener('click', closeApp);
+g('nr').addEventListener('click', function(){ doNew(''); });
+g('ne').addEventListener('click', function(){ doNew(''); });
+
+async function doNewDb(parentId) {
+  try {
+    setLoad(true, 'DBを作成中...');
+    var p = await apiCreateDb('無題DB', parentId || '');
+    S.pages.push({ Id: p.Id, Title: p.Title, ParentId: p.ParentId, Type: 'database' });
+    renderTree(); await doSelect(p.Id);
+  } catch(e) { toast('DB作成に失敗: ' + e.message, 'err'); }
+  finally { setLoad(false); }
+}
+g('ndb').addEventListener('click', function(){ doNewDb(''); });
+g('ne-db').addEventListener('click', function(){ doNewDb(''); });
+
+g('dadd').addEventListener('click', function(){
+  var tbody = g('dtb');
+  if (tbody.querySelector('.n365-dr-new')) return;
+  var fields = getDbFields();
+  var tr = document.createElement('tr');
+  tr.className = 'n365-dr-new';
+  var saved = false;
+  fields.forEach(function(f){
+    var td = document.createElement('td');
+    var span = document.createElement('span');
+    span.className = 'n365-dc';
+    span.contentEditable = 'true';
+    span.dataset.field = f.InternalName;
+    span.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNewRow(); }
+      if (e.key === 'Escape') { tr.remove(); }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        var cells = Array.from(tr.querySelectorAll('.n365-dc'));
+        var next = e.shiftKey ? cells[cells.indexOf(span)-1] : cells[cells.indexOf(span)+1];
+        if (next) next.focus(); else saveNewRow();
+      }
+    });
+    td.appendChild(span); tr.appendChild(td);
+  });
+  var emptyTd = document.createElement('td'); emptyTd.className = 'n365-td-del'; tr.appendChild(emptyTd);
+  tbody.appendChild(tr);
+  var first = tr.querySelector('.n365-dc'); if (first) first.focus();
+
+  async function saveNewRow() {
+    if (saved) return;
+    var data = {};
+    tr.querySelectorAll('.n365-dc').forEach(function(s){ var v=s.textContent.trim(); if(v) data[s.dataset.field]=v; });
+    if (!data.Title) { tr.remove(); return; }
+    saved = true;
+    try {
+      setLoad(true, '追加中...');
+      var item = await apiAddDbRow(S.dbList, data);
+      S.dbItems.push(item); tr.remove();
+      g('dtb').appendChild(mkDbRow(item, fields));
+      toast('行を追加しました');
+    } catch(e) { toast('追加失敗: ' + e.message, 'err'); tr.remove(); saved = false; }
+    finally { setLoad(false); }
+  }
+  tr.addEventListener('focusout', function(e){
+    setTimeout(function(){ if (!tr.contains(document.activeElement)) saveNewRow(); }, 100);
+  });
+});
+g('tb').addEventListener('click', function(e){ var b=e.target.closest('.n365-b'); if(b&&b.dataset.cmd) execCmd(b.dataset.cmd); });
+g('mc').addEventListener('click', function(){ g('md').classList.remove('on'); });
+g('col-cancel').addEventListener('click', function(){ g('col-md').classList.remove('on'); });
+g('col-ok').addEventListener('click', async function(){
+  var name = g('col-name').value.trim();
+  if (!name) { g('col-name').focus(); return; }
+  var typeKind = parseInt(g('col-type').value);
+  g('col-md').classList.remove('on');
+  setLoad(true, '列を追加中...');
+  try {
+    await addListField(S.dbList, name, typeKind);
+    var results = await Promise.all([getListFields(S.dbList), getListItems(S.dbList)]);
+    S.dbFields = results[0]; S.dbItems = results[1];
+    renderDbTable(); toast('列「' + name + '」を追加しました');
+  } catch(e) { toast('列追加失敗: ' + e.message, 'err'); }
+  finally { setLoad(false); }
+});
+g('col-name').addEventListener('keydown', function(e){ if (e.key === 'Enter') g('col-ok').click(); if (e.key === 'Escape') g('col-md').classList.remove('on'); });
+g('mk').addEventListener('click', async function(){
+  g('md').classList.remove('on');
+  setLoad(true, 'フォルダを作成中...');
+  try {
+    await ensureFolder();
+    S.pages = await apiGetPages(); renderTree(); toast('n365-pages フォルダを作成しました');
+  } catch(e) { toast('作成に失敗: ' + e.message, 'err'); }
+  finally { setLoad(false); }
+});
+(function(){
+  var te = g('ttl');
+  te.addEventListener('input', function(){ autoR(te); S.dirty=true; setSave('未保存'); schedSave(); });
+  te.addEventListener('keydown', function(e){ if(e.key==='Enter'){e.preventDefault(); _ed.focus();} });
+})();
+
+// ── INIT ───────────────────────────────────────────────
+async function init() {
+  setLoad(true);
+  try {
+    var r = await fetch(SITE + "/_api/web/GetFolderByServerRelativeUrl('" + FOLDER + "')", { headers: { Accept: 'application/json;odata=verbose' }, credentials: 'include' });
+    if (!r.ok) { setLoad(false); g('md').classList.add('on'); return; }
+    S.pages = await apiGetPages(); renderTree(); showView('empty');
+    if (S.pages.length > 0) await doSelect(S.pages[0].Id);
+  } catch(e) {
+    g('em').innerHTML = '<div style="font-size:48px">⚠️</div><h2>エラー</h2><p>' + e.message + '</p>';
+    g('em').style.display = 'flex'; console.error(e);
+  } finally { setLoad(false); }
+}
+
+init();
+}
+
+var css = document.getElementById('n365-css').textContent.trim();
+var src = n365Bookmarklet.toString().replace("'<<N365_CSS>>'", JSON.stringify(css));
+var url = 'javascript:void((' + encodeURIComponent(src) + ')())';
+document.getElementById('bm-link').href = url;
+document.getElementById('copy-area').value = url;
+</script>
+</body>
+</html>
