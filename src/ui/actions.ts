@@ -159,12 +159,18 @@ export function closeApp(): void {
 export function onKey(e: KeyboardEvent): void {
   if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); clearSaveTimer(); doSave(); }
   if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); openSearchProxy(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'j') { e.preventDefault(); toggleAiProxy(); }
   if (e.key === 'Escape') {
     if (g('qs').classList.contains('on')) { closeSearch(); return; }
     if (g('emoji').classList.contains('on')) { g('emoji').classList.remove('on'); return; }
+    if (g('ai-panel').classList.contains('on')) { void import('./ai-chat').then((m) => m.closeAiPanel()); return; }
     if (isSlashActive()) { closeSlashMenu(); return; }
     closeApp();
   }
+}
+
+function toggleAiProxy(): void {
+  void import('./ai-chat').then((m) => m.toggleAiPanel());
 }
 
 // Late-bound to avoid an actions <-> search-ui circular import edge case.

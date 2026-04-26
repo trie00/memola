@@ -46,6 +46,11 @@ export interface AppState {
   dbFilter: string;
   dbView: 'table' | 'board';
   dbColumnWidths: Record<string, number>;
+  ai: {
+    panelOpen: boolean;
+    messages: { role: 'user' | 'assistant'; content: string }[];
+    loading: boolean;
+  };
   expanded: Set<string>;
   dirty: boolean;
   saving: boolean;
@@ -63,6 +68,7 @@ export const S: AppState = {
   dbFilter: '',
   dbView: 'table',
   dbColumnWidths: {},
+  ai: { panelOpen: false, messages: [], loading: false },
   expanded: new Set<string>(),
   dirty: false,
   saving: false,

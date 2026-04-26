@@ -14,6 +14,10 @@ import {
   togglePageMenu, hidePageMenu, attachPageMenuOutsideClick,
 } from './actions';
 import { openSearch, closeSearch, renderQs, qsMove, qsConfirm, resetQsSel } from './search-ui';
+import {
+  closeAiPanel, toggleAiPanel, sendAiMessage, clearAiHistory,
+  configureApiKey, getQuickPrompts,
+} from './ai-chat';
 import { apiGetPages, apiSetIcon } from '../api/pages';
 import { apiCreateDb } from '../api/db';
 import { ensureFolder } from '../api/sp-core';
@@ -267,6 +271,36 @@ export function attachAll(): void {
     }
   });
   attachPageMenuOutsideClick();
+
+  // AI chat panel
+  g('ai-btn').addEventListener('click', toggleAiPanel);
+  g('ai-close').addEventListener('click', closeAiPanel);
+  g('ai-clear').addEventListener('click', clearAiHistory);
+  g('ai-key').addEventListener('click', configureApiKey);
+  g('ai-send').addEventListener('click', () => {
+    const ta = g('ai-input') as HTMLTextAreaElement;
+    void sendAiMessage(ta.value);
+  });
+  g('ai-input').addEventListener('keydown', (e) => {
+    const ke = e as KeyboardEvent;
+    if (ke.isComposing || ke.keyCode === 229) return;
+    if (ke.key === 'Enter' && !ke.shiftKey) {
+      e.preventDefault();
+      const ta = g('ai-input') as HTMLTextAreaElement;
+      void sendAiMessage(ta.value);
+    }
+  });
+  // Quick chips
+  const chips = g('ai-chips');
+  getQuickPrompts().forEach((p) => {
+    const b = document.createElement('button');
+    b.className = 'n365-ai-chip';
+    b.textContent = p.label;
+    b.addEventListener('click', () => {
+      void sendAiMessage(p.prompt);
+    });
+    chips.appendChild(b);
+  });
 
   // Global keydown
   document.addEventListener('keydown', onKey);

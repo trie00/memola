@@ -19,6 +19,7 @@ export function buildHtml(): string {
         '<button id="n365-sb-toggle" title="サイドバー">' + ICONS.sidebar + '</button>' +
         '<div id="n365-bc"></div>' +
         '<div id="n365-ss"></div>' +
+        '<button id="n365-ai-btn" title="AIチャット">' + ICONS.sparkle + '</button>' +
         '<button id="n365-pgm-btn" title="ページメニュー">' + ICONS.more + '</button>' +
       '</div>' +
       '<div id="n365-tb">' +
@@ -138,6 +139,20 @@ export function buildHtml(): string {
       '<div id="n365-qs-res"></div>' +
     '</div></div>' +
     '<div id="n365-emoji"><div id="n365-emoji-grid"></div><button id="n365-emoji-rm">アイコンを削除</button></div>' +
+    '<aside id="n365-ai-panel">' +
+      '<div id="n365-ai-hd">' +
+        '<span class="n365-ai-title">' + ICONS.sparkle + '<span>AI</span></span>' +
+        '<button id="n365-ai-clear" title="履歴クリア">' + ICONS.trash + '</button>' +
+        '<button id="n365-ai-key" title="APIキー設定">⚙</button>' +
+        '<button id="n365-ai-close" title="閉じる">' + ICONS.close + '</button>' +
+      '</div>' +
+      '<div id="n365-ai-messages"></div>' +
+      '<div id="n365-ai-chips"></div>' +
+      '<div id="n365-ai-inputarea">' +
+        '<textarea id="n365-ai-input" placeholder="質問を入力 (Enterで送信、Shift+Enterで改行)" rows="2"></textarea>' +
+        '<button id="n365-ai-send" title="送信">' + ICONS.send + '</button>' +
+      '</div>' +
+    '</aside>' +
     '<div id="n365-pgm">' +
       '<div class="n365-pgm-item" data-action="export-md">' + ICONS.download + '<span>Markdownでエクスポート</span></div>' +
       '<div class="n365-pgm-item" data-action="export-html">' + ICONS.download + '<span>HTMLでエクスポート</span></div>' +
