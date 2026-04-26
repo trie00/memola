@@ -68,6 +68,15 @@ export async function doPurge(id: string): Promise<void> {
 }
 
 export async function doSave(): Promise<void> {
+  // DB行ページ編集中は専用 saveCurrentRow へ委譲
+  if (S.currentRow && S.dirty && !S.saving) {
+    S.saving = true;
+    try {
+      const m = await import('./row-page');
+      await m.saveCurrentRow();
+    } finally { S.saving = false; }
+    return;
+  }
   if (!S.currentId || !S.dirty || S.saving || S.currentType === 'database') return;
   S.saving = true; setSave('保存中...');
   try {

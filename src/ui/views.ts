@@ -22,6 +22,27 @@ export function showView(mode: 'page' | 'db' | 'empty'): void {
   g('dv').style.display = mode === 'db'    ? 'flex'  : 'none';
 }
 
+/** Render the breadcrumb from a custom list of {label, onClick?} segments. */
+export function renderBcCustom(segments: { label: string; onClick?: () => void }[]): void {
+  const bc = g('bc');
+  bc.innerHTML = '';
+  segments.forEach((seg, i) => {
+    const s = document.createElement('span');
+    s.className = 'n365-bi';
+    s.textContent = seg.label;
+    if (seg.onClick) s.addEventListener('click', seg.onClick);
+    else s.style.cursor = 'default';
+    bc.appendChild(s);
+    if (i < segments.length - 1) {
+      const sep = document.createElement('span');
+      sep.textContent = '/';
+      sep.style.color = '#e9e9e7';
+      sep.style.margin = '0 4px';
+      bc.appendChild(sep);
+    }
+  });
+}
+
 export function renderPageIcon(id: string): void {
   const metaPage = S.meta.pages.find((p) => p.id === id);
   const icon = metaPage ? (metaPage.icon || '') : '';
@@ -39,6 +60,7 @@ export function renderPageIcon(id: string): void {
 
 export async function doSelect(id: string): Promise<void> {
   if (S.dirty && S.currentType !== 'database') await doSave();
+  S.currentRow = null;          // 別のページ/DB 選択時は行ページモードを解除
   S.currentId = id;
   const page = S.pages.find((p) => p.Id === id);
   if (!page) return;
@@ -96,6 +118,8 @@ export async function doSelectDb(id: string, page: Page): Promise<void> {
 
   setLoad(true, 'データを読み込み中...');
   try {
+    // 既存DBに本文用の隠し列が無ければ追加 (errorは無視)
+    void import('../api/db').then((m) => m.ensureRowBodyField(meta.list as string));
     const results = await Promise.all([getListFields(meta.list), getListItems(meta.list)]);
     S.dbFields = results[0];
     S.dbItems  = results[1];
@@ -409,8 +433,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
         openBtn.textContent = '↗';
         openBtn.addEventListener('click', (e) => {
           e.stopPropagation();
-          // DB行→ページ統合は将来実装。現状はトーストで明示
-          toast('行ページ表示は今後対応予定です（' + (item.Title || '無題') + '）');
+          void import('./row-page').then((m) => m.openRowAsPage(S.currentId || '', item));
         });
         td.appendChild(openBtn);
       }

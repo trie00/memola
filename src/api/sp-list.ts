@@ -65,6 +65,8 @@ export async function getListFields(listTitle: string): Promise<ListField[]> {
   const j = (await r.json()) as { d: { results: SPField[] } };
   return j.d.results
     .filter((f) => [2, 3, 4, 6, 8, 9].indexOf(f.FieldTypeKind) >= 0)
+    // Hide n365-internal columns (e.g. _n365_body for row page content)
+    .filter((f) => !(f.InternalName || '').startsWith('_n365_') && !(f.Title || '').startsWith('_n365_'))
     .map((f) => {
       const field: ListField = {
         Title: f.Title,

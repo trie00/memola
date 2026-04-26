@@ -50,6 +50,8 @@ export interface AppState {
   dbFilters: { field: string; op: 'contains' | 'equals' | 'not_empty' | 'empty'; value: string }[];
   dbView: 'table' | 'board';
   dbColumnWidths: Record<string, number>;
+  /** When viewing a DB row as a full page, holds list/item identity. */
+  currentRow: { listTitle: string; itemId: number; dbId: string } | null;
   ai: {
     panelOpen: boolean;
     messages: { role: 'user' | 'assistant'; content: string }[];
@@ -79,6 +81,7 @@ export const S: AppState = {
   dbFilters: [],
   dbView: 'table',
   dbColumnWidths: {},
+  currentRow: null,
   ai: { panelOpen: false, messages: [], loading: false },
   sync: { pageId: null, loadedModified: null, loadedEtag: null, pollTimer: null },
   expanded: new Set<string>(),
