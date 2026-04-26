@@ -6,6 +6,8 @@ import { setLoad, setSave, toast, autoR } from './ui-helpers';
 import { renderTree, ancs, renderBc } from './tree';
 import { apiLoadContent, apiLoadFileMeta } from '../api/pages';
 import { startWatching, stopWatching } from './sync-watch';
+import { applyOutlineState } from './outline';
+import { applyPropertiesState } from './properties-panel';
 import { apiUpdateDbRow } from '../api/db';
 import { deleteListItem, getListFields, getListItems } from '../api/sp-list';
 
@@ -58,6 +60,8 @@ export async function doSelect(id: string): Promise<void> {
       const fm = await apiLoadFileMeta(id);
       if (fm) startWatching(id, fm.modified, fm.etag);
       else stopWatching();
+      applyOutlineState();
+      applyPropertiesState();
     } catch (e) {
       getEd().innerHTML = '';
       toast('読み込み失敗: ' + (e as Error).message, 'err');
@@ -70,6 +74,8 @@ export async function doSelect(id: string): Promise<void> {
 export async function doSelectDb(id: string, page: Page): Promise<void> {
   S.currentType = 'database';
   stopWatching();
+  applyOutlineState();
+  applyPropertiesState();
   const meta = S.meta.pages.find((p) => p.id === id);
   if (!meta || !meta.list) { toast('DBメタ情報が見つかりません', 'err'); return; }
   showView('db');

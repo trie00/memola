@@ -5,7 +5,7 @@ import { ICONS } from '../icons';
 export function buildHtml(): string {
   return (
     '<aside id="n365-sb">' +
-      '<div id="n365-sb-hd"><span>📋</span>n365<button id="n365-x" title="閉じる(Esc)">' + ICONS.close + '</button></div>' +
+      '<div id="n365-sb-hd"><button id="n365-ws-btn" title="ワークスペース"><span>📋</span><span id="n365-ws-name">n365</span><span style="opacity:.4">▾</span></button><button id="n365-x" title="閉じる(Esc)">' + ICONS.close + '</button></div>' +
       '<div class="n365-snav" id="n365-search-nav">' + ICONS.search + '<span>検索</span><span class="n365-snav-hint">Ctrl K</span></div>' +
       '<div class="n365-sl-label">プライベートページ</div>' +
       '<div id="n365-tree-wrap"><div id="n365-tree"></div></div>' +
@@ -19,6 +19,8 @@ export function buildHtml(): string {
         '<button id="n365-sb-toggle" title="サイドバー">' + ICONS.sidebar + '</button>' +
         '<div id="n365-bc"></div>' +
         '<div id="n365-ss"></div>' +
+        '<button id="n365-outline-btn" title="目次">' + ICONS.sort + '</button>' +
+        '<button id="n365-props-btn" title="プロパティ">' + ICONS.info + '</button>' +
         '<button id="n365-ai-btn" title="AIチャット">' + ICONS.sparkle + '</button>' +
         '<button id="n365-pgm-btn" title="ページメニュー">' + ICONS.more + '</button>' +
       '</div>' +
@@ -139,6 +141,14 @@ export function buildHtml(): string {
       '<div id="n365-qs-res"></div>' +
     '</div></div>' +
     '<div id="n365-emoji"><div id="n365-emoji-grid"></div><button id="n365-emoji-rm">アイコンを削除</button></div>' +
+    '<aside id="n365-outline">' +
+      '<div id="n365-outline-hd">目次</div>' +
+      '<div id="n365-outline-list"></div>' +
+    '</aside>' +
+    '<aside id="n365-props">' +
+      '<div id="n365-props-hd">プロパティ</div>' +
+      '<div id="n365-props-list"></div>' +
+    '</aside>' +
     '<aside id="n365-ai-panel">' +
       '<div id="n365-ai-hd">' +
         '<span class="n365-ai-title">' + ICONS.sparkle + '<span>AI</span></span>' +

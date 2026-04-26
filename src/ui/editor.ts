@@ -19,6 +19,7 @@ const SLASH_ITEMS: SlashItem[] = [
   { cmd: 'quote',   icon: '❝',    name: '引用',            desc: '引用ブロック' },
   { cmd: 'pre',     icon: '</>',  name: 'コードブロック',  desc: 'コードを記述' },
   { cmd: 'hr',      icon: '—',    name: '区切り線',        desc: 'セクション区切り' },
+  { cmd: 'ai',      icon: '✦',    name: 'AI ブロック',     desc: 'AIに要約・改稿を依頼' },
 ];
 
 let _slashActive = false;
@@ -186,6 +187,9 @@ function applySlashCmd(cmd: string): void {
         _ed.focus();
       });
     }
+  } else if (cmd === 'ai') {
+    void import('./ai-block').then((m) => m.insertAiBlock());
+    return;
   } else {
     execCmd(cmd);
   }

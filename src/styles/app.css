@@ -316,6 +316,50 @@
   height: 2px; background: var(--accent); margin: 4px 0; border-radius: 1px;
 }
 
+/* ── Inline AI block (within editor) ───────────────────── */
+#n365-overlay .n365-ai-block {
+  border: 1px solid var(--accent); border-radius: var(--r-3);
+  background: var(--accent-soft); padding: var(--s-4) var(--s-5);
+  margin: var(--s-3) 0;
+  font-family: var(--font-ui); user-select: none;
+}
+#n365-overlay .n365-aib-head {
+  display: flex; align-items: center; gap: var(--s-2);
+  margin-bottom: var(--s-2);
+}
+#n365-overlay .n365-aib-title { font-size: var(--fs-md); font-weight: 600; color: var(--accent); }
+#n365-overlay .n365-aib-hint { font-size: var(--fs-xs); color: var(--ink); opacity: 0.5; margin-left: auto; }
+#n365-overlay .n365-aib-regen {
+  margin-left: auto; background: transparent; border: none; cursor: pointer;
+  color: var(--ink); opacity: 0.4; font-size: 14px;
+}
+#n365-overlay .n365-aib-regen:hover { opacity: 1; }
+#n365-overlay .n365-aib-actions { display: flex; gap: var(--s-2); flex-wrap: wrap; }
+#n365-overlay .n365-aib-action {
+  background: var(--paper); border: 1px solid var(--line);
+  padding: 4px 12px; border-radius: 14px; cursor: pointer;
+  font-size: var(--fs-sm); font-family: inherit; color: var(--ink);
+}
+#n365-overlay .n365-aib-action:hover { background: var(--paper-2); border-color: var(--accent); }
+#n365-overlay .n365-aib-cancel { padding: 4px 8px; opacity: 0.5; }
+#n365-overlay .n365-aib-body {
+  font-size: var(--fs-base); color: var(--ink); line-height: 1.6;
+  background: var(--paper); padding: var(--s-3) var(--s-4); border-radius: var(--r-2);
+  margin: var(--s-2) 0; white-space: pre-wrap; user-select: text;
+}
+#n365-overlay .n365-aib-loading { font-style: italic; opacity: 0.55; }
+#n365-overlay .n365-aib-error { color: var(--danger); }
+#n365-overlay .n365-aib-foot { display: flex; gap: var(--s-2); margin-top: var(--s-2); }
+#n365-overlay .n365-aib-btn {
+  background: transparent; border: 1px solid var(--line);
+  padding: 4px 12px; border-radius: var(--r-2); cursor: pointer;
+  font-size: var(--fs-sm); font-family: inherit; color: var(--ink);
+}
+#n365-overlay .n365-aib-btn:hover { background: var(--paper-2); }
+#n365-overlay .n365-aib-adopt { background: var(--accent); color: var(--paper); border-color: var(--accent); }
+#n365-overlay .n365-aib-adopt:hover { background: var(--accent-strong); }
+#n365-overlay .n365-aib-discard { color: var(--danger); border-color: var(--danger); }
+
 /* ── Sync watch banner (remote update notification) ──── */
 #n365-overlay #n365-sync-banner {
   position: fixed; top: var(--s-5); left: 50%; transform: translateX(-50%);
@@ -339,6 +383,120 @@
 @keyframes n365-banner-in {
   from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── Outline panel (right side, page TOC) ─────────────── */
+#n365-overlay #n365-outline-btn {
+  border: none; background: transparent; cursor: pointer;
+  color: var(--ink); padding: 4px; border-radius: var(--r-2);
+  display: flex; align-items: center; justify-content: center;
+  line-height: 0; flex-shrink: 0; opacity: 0.5; margin-left: var(--s-1);
+  width: 28px; height: 28px;
+}
+#n365-overlay #n365-outline-btn:hover { background: var(--paper-2-strong); opacity: 1; }
+#n365-overlay #n365-outline-btn svg { width: 16px; height: 16px; }
+#n365-overlay #n365-outline {
+  position: fixed; right: 0; top: var(--topbar-h); bottom: var(--s-3); width: 220px;
+  background: var(--paper); border-left: 1px solid var(--paper-3);
+  display: none; flex-direction: column;
+  padding: var(--s-5) var(--s-4) var(--s-5) var(--s-5);
+  font-family: var(--font-ui); z-index: 10;
+}
+#n365-overlay #n365-outline.on { display: flex; }
+#n365-overlay #n365-outline-hd {
+  font-size: var(--fs-xs); font-weight: 600;
+  color: var(--ink); opacity: 0.55;
+  text-transform: uppercase; letter-spacing: .04em;
+  margin-bottom: var(--s-3);
+}
+#n365-overlay #n365-outline-list { overflow-y: auto; flex: 1; }
+#n365-overlay .n365-outline-item {
+  font-size: var(--fs-md); color: var(--ink);
+  padding: var(--s-1) var(--s-2); border-radius: var(--r-2);
+  cursor: pointer; opacity: 0.7;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.5;
+}
+#n365-overlay .n365-outline-item:hover { background: var(--paper-2); opacity: 1; }
+#n365-overlay .n365-outline-h1 { padding-left: var(--s-2); font-weight: 500; }
+#n365-overlay .n365-outline-h2 { padding-left: var(--s-5); }
+#n365-overlay .n365-outline-h3 { padding-left: var(--s-8); font-size: var(--fs-sm); }
+#n365-overlay .n365-outline-empty { color: var(--ink); opacity: 0.4; font-size: var(--fs-md); padding: var(--s-2); }
+
+/* ── Workspace switcher ──────────────────────────────── */
+#n365-overlay #n365-ws-btn {
+  display: flex; align-items: center; gap: var(--s-2);
+  border: none; background: transparent; cursor: pointer;
+  font-family: inherit; font-size: var(--fs-md); font-weight: 600; color: var(--ink);
+  padding: var(--s-1) var(--s-2); border-radius: var(--r-2); flex: 1;
+  text-align: left; min-width: 0;
+}
+#n365-overlay #n365-ws-btn:hover { background: var(--paper-2-strong); }
+#n365-overlay #n365-ws-name {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#n365-overlay .n365-ws-menu {
+  background: var(--paper); border-radius: var(--r-3);
+  width: 280px; padding: var(--s-1) 0;
+  box-shadow: var(--sh-flyout);
+  z-index: 2147483647; overflow: hidden;
+  font-family: var(--font-ui);
+}
+#n365-overlay .n365-ws-item {
+  padding: var(--s-2) var(--s-4); cursor: pointer;
+}
+#n365-overlay .n365-ws-item:hover { background: var(--paper-2); }
+#n365-overlay .n365-ws-item.on { background: var(--accent-soft); }
+#n365-overlay .n365-ws-item-name { font-size: var(--fs-base); color: var(--ink); }
+#n365-overlay .n365-ws-item-url { font-size: var(--fs-xs); color: var(--ink); opacity: 0.5; }
+#n365-overlay .n365-ws-empty { padding: var(--s-4); color: var(--ink); opacity: 0.5; font-size: var(--fs-md); }
+#n365-overlay .n365-ws-sep { height: 1px; background: var(--paper-3); margin: var(--s-1) 0; }
+#n365-overlay .n365-ws-add {
+  padding: var(--s-2) var(--s-4); cursor: pointer;
+  font-size: var(--fs-md); color: var(--accent);
+}
+#n365-overlay .n365-ws-add:hover { background: var(--paper-2); }
+
+/* ── Properties panel (right side, page metadata) ──── */
+#n365-overlay #n365-props-btn {
+  border: none; background: transparent; cursor: pointer;
+  color: var(--ink); padding: 4px; border-radius: var(--r-2);
+  display: flex; align-items: center; justify-content: center;
+  line-height: 0; flex-shrink: 0; opacity: 0.5; margin-left: var(--s-1);
+  width: 28px; height: 28px;
+}
+#n365-overlay #n365-props-btn:hover { background: var(--paper-2-strong); opacity: 1; }
+#n365-overlay #n365-props-btn svg { width: 16px; height: 16px; }
+#n365-overlay #n365-props {
+  position: fixed; right: 0; top: var(--topbar-h); bottom: var(--s-3); width: 260px;
+  background: var(--paper); border-left: 1px solid var(--paper-3);
+  display: none; flex-direction: column;
+  padding: var(--s-5) var(--s-5);
+  font-family: var(--font-ui); z-index: 9;
+}
+#n365-overlay #n365-props.on { display: flex; }
+/* When both outline and props are open, stack outline next to props */
+#n365-overlay #n365-outline.on + #n365-props.on,
+#n365-overlay #n365-props.on ~ #n365-outline.on { right: 260px; }
+#n365-overlay #n365-props-hd {
+  font-size: var(--fs-xs); font-weight: 600;
+  color: var(--ink); opacity: 0.55;
+  text-transform: uppercase; letter-spacing: .04em;
+  margin-bottom: var(--s-3);
+}
+#n365-overlay #n365-props-list { overflow-y: auto; flex: 1; }
+#n365-overlay .n365-prop-row {
+  display: flex; gap: var(--s-3); padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--paper-3); align-items: flex-start;
+}
+#n365-overlay .n365-prop-row:last-child { border-bottom: none; }
+#n365-overlay .n365-prop-label {
+  font-size: var(--fs-sm); color: var(--ink); opacity: 0.55;
+  width: 80px; flex-shrink: 0;
+}
+#n365-overlay .n365-prop-value {
+  font-size: var(--fs-md); color: var(--ink);
+  flex: 1; word-break: break-all;
 }
 
 /* ── AI Chat panel (right slide-out) ──────────────────── */

@@ -18,6 +18,9 @@ import {
   closeAiPanel, toggleAiPanel, sendAiMessage, clearAiHistory,
   configureApiKey, getQuickPrompts,
 } from './ai-chat';
+import { toggleOutline, applyOutlineState, attachOutlineWatcher } from './outline';
+import { togglePropertiesPanel, applyPropertiesState } from './properties-panel';
+import { showWorkspaceMenu, getCurrentWorkspaceName } from './workspaces';
 import { apiGetPages, apiSetIcon } from '../api/pages';
 import { apiCreateDb } from '../api/db';
 import { ensureFolder } from '../api/sp-core';
@@ -271,6 +274,23 @@ export function attachAll(): void {
     }
   });
   attachPageMenuOutsideClick();
+
+  // Workspace switcher
+  const wsName = getCurrentWorkspaceName();
+  if (wsName) g('ws-name').textContent = wsName;
+  g('ws-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    showWorkspaceMenu(g('ws-btn'));
+  });
+
+  // Outline panel
+  g('outline-btn').addEventListener('click', toggleOutline);
+  attachOutlineWatcher();
+  applyOutlineState();
+
+  // Properties panel
+  g('props-btn').addEventListener('click', togglePropertiesPanel);
+  applyPropertiesState();
 
   // AI chat panel
   g('ai-btn').addEventListener('click', toggleAiPanel);
