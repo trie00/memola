@@ -76,6 +76,27 @@
 }
 #n365-overlay #n365-rail-flyout-list .n365-tr:hover { background: var(--paper-2-strong); }
 
+/* ── Pane resize handles (sidebar / outline / props / AI) ── */
+#n365-overlay .n365-pane-resize {
+  position: absolute; top: 0; bottom: 0;
+  width: 6px; z-index: 10;
+  cursor: col-resize;
+  background: transparent;
+  transition: background var(--tr-fast);
+}
+#n365-overlay .n365-pane-resize-right { right: -3px; }
+#n365-overlay .n365-pane-resize-left  { left:  -3px; }
+#n365-overlay .n365-pane-resize:hover,
+#n365-overlay .n365-pane-resize:active {
+  background: var(--accent);
+  opacity: 0.5;
+}
+/* Disable pane width transitions while user is actively dragging */
+#n365-overlay.n365-resizing #n365-sb,
+#n365-overlay.n365-resizing #n365-outline,
+#n365-overlay.n365-resizing #n365-props,
+#n365-overlay.n365-resizing #n365-ai-panel { transition: none !important; }
+
 /* ── Sidebar ──────────────────────────────────────────── */
 #n365-sb {
   width: var(--sidebar-w); background: var(--paper-2);

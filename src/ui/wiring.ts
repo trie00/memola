@@ -558,6 +558,8 @@ export function attachAll(): void {
   });
   renderHistoryDropdown();
   applyAiPanelState();
+  // Pane resize handles (sidebar/outline/props/AI) — restore widths + install drag
+  void import('./pane-resize').then((m) => m.attachPaneResizers());
   g('ai-key').addEventListener('click', configureApiKey);
   g('ai-send').addEventListener('click', () => {
     const ta = g('ai-input') as HTMLTextAreaElement;
