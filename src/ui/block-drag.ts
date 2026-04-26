@@ -81,21 +81,37 @@ function onDragEnd(): void {
 
 function onDragOver(e: DragEvent): void {
   if (!_dragging || !_placeholder) return;
+  e.preventDefault();                                           // drop を常に許可
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
   const ed = getEd();
-  if (!(e.target instanceof Node) || !ed.contains(e.target)) return;
-  e.preventDefault();
-  // Find the top-level block under the cursor
-  let cur: Node | null = e.target;
-  while (cur && cur !== ed && (cur as HTMLElement).parentElement !== ed) {
-    cur = (cur as HTMLElement).parentElement;
+  // Y 座標で top-level block を直接検索 (e.target は drag 中信頼性が低い)
+  const blocks = (Array.from(ed.children) as HTMLElement[])
+    .filter((b) => b !== _dragging && b !== _placeholder && isTopLevelBlock(b));
+  if (blocks.length === 0) { ed.appendChild(_placeholder); return; }
+  // 最初のブロックより上 / 最後のブロックより下
+  const firstRect = blocks[0].getBoundingClientRect();
+  if (e.clientY < firstRect.top) {
+    if (_placeholder !== ed.firstElementChild) ed.insertBefore(_placeholder, blocks[0]);
+    return;
   }
-  if (!cur || cur === ed) return;
-  const block = cur as HTMLElement;
-  if (block === _dragging || block === _placeholder) return;
-  const rect = block.getBoundingClientRect();
-  const before = e.clientY < rect.top + rect.height / 2;
-  if (before) ed.insertBefore(_placeholder, block);
-  else ed.insertBefore(_placeholder, block.nextSibling);
+  const lastBlock = blocks[blocks.length - 1];
+  const lastRect = lastBlock.getBoundingClientRect();
+  if (e.clientY > lastRect.bottom) {
+    if (_placeholder !== ed.lastElementChild) ed.appendChild(_placeholder);
+    return;
+  }
+  // どこかのブロック上 → 中央線で前後判定
+  for (const block of blocks) {
+    const rect = block.getBoundingClientRect();
+    if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+      const before = e.clientY < rect.top + rect.height / 2;
+      const target = before ? block : block.nextSibling;
+      if (_placeholder.nextSibling !== target && _placeholder !== target) {
+        ed.insertBefore(_placeholder, target);
+      }
+      return;
+    }
+  }
 }
 
 function onDrop(e: DragEvent): void {
