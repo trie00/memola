@@ -1,7 +1,57 @@
+/* ── Design tokens (scoped to overlay) ─────────────────── */
 #n365-overlay {
+  /* Color */
+  --ink: rgb(55, 53, 47);
+  --ink-3: #9b9a97;
+  --ink-4: #c4c2bf;
+  --paper: #fff;
+  --paper-2: rgba(55, 53, 47, 0.04);
+  --paper-2-strong: rgba(55, 53, 47, 0.08);
+  --paper-3: rgba(55, 53, 47, 0.09);
+  --line: rgba(55, 53, 47, 0.12);
+  --line-strong: rgba(55, 53, 47, 0.16);
+  --accent: rgb(35, 131, 226);
+  --accent-soft: rgba(35, 131, 226, 0.1);
+  --accent-strong: rgb(25, 118, 210);
+  --danger: #eb5757;
+  --code-fg: #eb5757;
+  --code-bg: rgba(135, 131, 120, 0.2);
+  --hl: rgba(255, 213, 0, 0.4);
+
+  /* Spacing scale (px) */
+  --s-1: 4px;  --s-2: 6px;  --s-3: 8px;  --s-4: 10px;
+  --s-5: 12px; --s-6: 14px; --s-7: 18px; --s-8: 22px;
+  --s-9: 28px; --s-10: 40px;
+
+  /* Border radius */
+  --r-1: 2px; --r-2: 4px; --r-3: 6px; --r-4: 8px;
+
+  /* Shadows */
+  --sh-flyout: 0 12px 30px rgba(0,0,0,0.16);
+  --sh-panel:  0 8px 20px rgba(0,0,0,0.12);
+  --sh-modal:  0 0 0 1px rgba(15,15,15,.05), 0 4px 12px rgba(15,15,15,.1), 0 12px 32px rgba(15,15,15,.15);
+
+  /* Layout */
+  --sidebar-w: 240px;
+  --sidebar-collapsed-w: 44px;
+  --content-max: 720px;
+  --content-max-focus: 900px;
+  --topbar-h: 44px;
+
+  /* Typography */
+  --font-ui: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif;
+  --font-mono: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", Courier, monospace;
+  --fs-xs: 11px;  --fs-sm: 12px;  --fs-md: 13px;
+  --fs-base: 14px; --fs-lg: 16px;  --fs-xl: 18px;
+  --fs-h1: 32px;  --fs-h2: 24px;  --fs-h3: 18px;
+
+  /* Transitions */
+  --tr-fast: 0.1s ease;
+  --tr: 0.2s ease;
+
   position: fixed; inset: 0; z-index: 2147483647; display: flex;
-  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif;
-  font-size: 15px; line-height: 1.6; color: rgb(55, 53, 47); background: #fff;
+  font-family: var(--font-ui);
+  font-size: var(--fs-lg); line-height: 1.6; color: var(--ink); background: var(--paper);
 }
 #n365-overlay *, #n365-overlay *::before, #n365-overlay *::after {
   box-sizing: border-box; margin: 0; padding: 0;
@@ -57,6 +107,8 @@
 .n365-nb svg { width: 16px; height: 16px; flex-shrink: 0; opacity: 0.7; }
 
 /* ── Tree nodes ───────────────────────────────────────── */
+.n365-tr-dragging { opacity: 0.4; }
+.n365-tr-dropover { background: var(--accent-soft) !important; outline: 1px solid var(--accent); outline-offset: -1px; }
 .n365-tr {
   display: flex; align-items: center; padding: 2px 6px 2px 0;
   border-radius: 4px; cursor: pointer; user-select: none;
@@ -246,6 +298,48 @@
 }
 #n365-tk.on { opacity: 1; transform: translateY(0); }
 #n365-tk.er { background: #eb5757; }
+
+/* ── Block drag handle (Notion-style ⋮⋮) ─────────────── */
+#n365-overlay #n365-block-handle {
+  position: absolute; display: none;
+  align-items: center; justify-content: center;
+  width: 18px; cursor: grab;
+  color: var(--ink); opacity: 0.3;
+  border-radius: var(--r-2);
+  z-index: 10; transition: opacity var(--tr-fast), background var(--tr-fast);
+}
+#n365-overlay #n365-block-handle:hover { background: var(--paper-2); opacity: 1; }
+#n365-overlay #n365-block-handle:active { cursor: grabbing; }
+#n365-overlay #n365-block-handle svg { display: block; }
+#n365-overlay .n365-block-dragging { opacity: 0.4; }
+#n365-overlay .n365-block-placeholder {
+  height: 2px; background: var(--accent); margin: 4px 0; border-radius: 1px;
+}
+
+/* ── Sync watch banner (remote update notification) ──── */
+#n365-overlay #n365-sync-banner {
+  position: fixed; top: var(--s-5); left: 50%; transform: translateX(-50%);
+  background: var(--ink); color: var(--paper);
+  padding: var(--s-3) var(--s-6); border-radius: var(--r-3);
+  display: flex; align-items: center; gap: var(--s-5);
+  font-size: var(--fs-md); box-shadow: var(--sh-flyout);
+  z-index: 2147483647; max-width: 90%;
+  animation: n365-banner-in .2s ease-out;
+}
+#n365-overlay #n365-sync-banner button {
+  background: transparent; border: 1px solid rgba(255,255,255,0.3);
+  color: var(--paper); padding: 4px 10px; border-radius: var(--r-2);
+  font-size: var(--fs-sm); cursor: pointer; font-family: inherit;
+}
+#n365-overlay #n365-sync-banner button:hover { background: rgba(255,255,255,0.1); }
+#n365-overlay #n365-sync-banner #n365-sync-reload {
+  background: var(--accent); border-color: var(--accent);
+}
+#n365-overlay #n365-sync-banner #n365-sync-reload:hover { background: var(--accent-strong); }
+@keyframes n365-banner-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
 
 /* ── AI Chat panel (right slide-out) ──────────────────── */
 #n365-overlay #n365-ai-btn {

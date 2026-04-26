@@ -62,7 +62,38 @@ export async function doSave(): Promise<void> {
     const te = g('ttl') as HTMLTextAreaElement;
     const title = te.value.trim() || '無題';
     const html = getEd().innerHTML;
-    await apiSavePage(S.currentId, title, html);
+    const expectedEtag = S.sync.pageId === S.currentId ? S.sync.loadedEtag : null;
+    const result = await apiSavePage(S.currentId, title, html, expectedEtag || undefined);
+    if (!result.ok) {
+      // Conflict: another user beat us to it
+      setSave('競合');
+      const want = confirm(
+        '他のユーザーが先にこのページを更新しました。\n' +
+        'OK: 自分の変更で上書き保存\n' +
+        'キャンセル: 自分の変更を破棄して相手の版にリロード',
+      );
+      if (want) {
+        // Force overwrite (no If-Match)
+        const force = await apiSavePage(S.currentId, title, html);
+        if (force.ok) {
+          if (S.sync.pageId === S.currentId) S.sync.loadedEtag = force.etag;
+          S.dirty = false; setSave('保存済み');
+        }
+      } else {
+        // Reload from server, dropping local edits
+        S.dirty = false; setSave('');
+        const { doSelect } = await import('./views');
+        await doSelect(S.currentId);
+      }
+      return;
+    }
+    if (S.sync.pageId === S.currentId) {
+      S.sync.loadedEtag = result.etag;
+      // Refresh modified timestamp via meta
+      const { apiLoadFileMeta } = await import('../api/pages');
+      const fm = await apiLoadFileMeta(S.currentId);
+      if (fm) S.sync.loadedModified = fm.modified;
+    }
     const p = S.pages.find((x) => x.Id === S.currentId);
     if (p) p.Title = title;
     S.dirty = false;
@@ -150,6 +181,7 @@ export function doNewDbRow(): void {
 export function closeApp(): void {
   clearSaveTimer();
   if (S.dirty && S.currentType !== 'database' && !confirm('保存していない変更があります。閉じますか？')) return;
+  void import('./sync-watch').then((m) => m.stopWatching());
   getOverlay().remove();
   const st = document.getElementById('n365-style');
   if (st) st.remove();

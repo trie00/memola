@@ -51,6 +51,12 @@ export interface AppState {
     messages: { role: 'user' | 'assistant'; content: string }[];
     loading: boolean;
   };
+  sync: {
+    pageId: string | null;
+    loadedModified: string | null;
+    loadedEtag: string | null;
+    pollTimer: ReturnType<typeof setInterval> | null;
+  };
   expanded: Set<string>;
   dirty: boolean;
   saving: boolean;
@@ -69,6 +75,7 @@ export const S: AppState = {
   dbView: 'table',
   dbColumnWidths: {},
   ai: { panelOpen: false, messages: [], loading: false },
+  sync: { pageId: null, loadedModified: null, loadedEtag: null, pollTimer: null },
   expanded: new Set<string>(),
   dirty: false,
   saving: false,

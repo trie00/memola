@@ -4,6 +4,8 @@ import { S, type Page } from '../state';
 import { g } from './dom';
 import { doSelect } from './views';
 import { doNew, doDel } from './actions';
+import { apiMovePage } from '../api/pages';
+import { toast } from './ui-helpers';
 
 export function kidsOf(pid: string): Page[] {
   return S.pages
@@ -60,6 +62,36 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
   acts.appendChild(db);
   row.append(tog, icEl, lbl, acts);
   row.addEventListener('click', () => { doSelect(page.Id); });
+
+  // Drag & drop: move page to another parent
+  row.draggable = true;
+  row.dataset.pageId = page.Id;
+  row.addEventListener('dragstart', (e) => {
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', page.Id);
+    }
+    row.classList.add('n365-tr-dragging');
+  });
+  row.addEventListener('dragend', () => row.classList.remove('n365-tr-dragging'));
+  row.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    row.classList.add('n365-tr-dropover');
+  });
+  row.addEventListener('dragleave', () => row.classList.remove('n365-tr-dropover'));
+  row.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    row.classList.remove('n365-tr-dropover');
+    const dragId = e.dataTransfer?.getData('text/plain');
+    if (!dragId || dragId === page.Id) return;
+    try {
+      await apiMovePage(dragId, page.Id);
+      S.expanded.add(page.Id);
+      renderTree();
+      toast('移動しました');
+    } catch (err) { toast('移動失敗: ' + (err as Error).message, 'err'); }
+  });
+
   item.appendChild(row);
 
   if (hasK && exp) {
@@ -74,6 +106,21 @@ export function renderTree(): void {
   const w = g('tree');
   w.innerHTML = '';
   kidsOf('').forEach((p) => { w.appendChild(mkNode(p, 0)); });
+
+  // Allow dropping onto the root area to make a page top-level
+  w.ondragover = (e) => { e.preventDefault(); };
+  w.ondrop = async (e) => {
+    e.preventDefault();
+    const target = e.target as HTMLElement;
+    if (target.closest('.n365-tr')) return;     // handled per-row
+    const dragId = e.dataTransfer?.getData('text/plain');
+    if (!dragId) return;
+    try {
+      await apiMovePage(dragId, '');
+      renderTree();
+      toast('ルートに移動しました');
+    } catch (err) { toast('移動失敗: ' + (err as Error).message, 'err'); }
+  };
 }
 
 export function ancs(id: string): Page[] {

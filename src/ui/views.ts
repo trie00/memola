@@ -4,7 +4,8 @@ import { S, type ListField, type ListItem, type Page } from '../state';
 import { g, getEd } from './dom';
 import { setLoad, setSave, toast, autoR } from './ui-helpers';
 import { renderTree, ancs, renderBc } from './tree';
-import { apiLoadContent } from '../api/pages';
+import { apiLoadContent, apiLoadFileMeta } from '../api/pages';
+import { startWatching, stopWatching } from './sync-watch';
 import { apiUpdateDbRow } from '../api/db';
 import { deleteListItem, getListFields, getListItems } from '../api/sp-list';
 
@@ -53,9 +54,14 @@ export async function doSelect(id: string): Promise<void> {
     setLoad(true, 'ページを読み込み中...');
     try {
       getEd().innerHTML = await apiLoadContent(id);
+      // Track file meta so we can detect remote updates and conflicts on save
+      const fm = await apiLoadFileMeta(id);
+      if (fm) startWatching(id, fm.modified, fm.etag);
+      else stopWatching();
     } catch (e) {
       getEd().innerHTML = '';
       toast('読み込み失敗: ' + (e as Error).message, 'err');
+      stopWatching();
     } finally { setLoad(false); }
     setSave(''); S.dirty = false;
   }
@@ -63,6 +69,7 @@ export async function doSelect(id: string): Promise<void> {
 
 export async function doSelectDb(id: string, page: Page): Promise<void> {
   S.currentType = 'database';
+  stopWatching();
   const meta = S.meta.pages.find((p) => p.id === id);
   if (!meta || !meta.list) { toast('DBメタ情報が見つかりません', 'err'); return; }
   showView('db');

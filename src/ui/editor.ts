@@ -501,6 +501,9 @@ export function attachEditor(): void {
   // Make Enter create <p> instead of Chrome's default <div>.
   try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch { /* unsupported */ }
 
+  // Block drag handle (lazy import keeps this file's footprint small)
+  void import('./block-drag').then((m) => m.attachBlockDrag());
+
   _ed.addEventListener('input', () => {
     S.dirty = true; setSave('未保存'); schedSave();
 

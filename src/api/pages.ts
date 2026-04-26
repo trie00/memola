@@ -5,6 +5,7 @@ import { createFolder, deleteFolderApi, readFile, writeFile } from './sp-core';
 import { deleteList } from './sp-list';
 import { loadMeta, saveMeta } from './meta';
 import { buildMdFile, getBody, mdToHtml } from '../lib/markdown';
+import { getFileMeta, writeFileIfMatch } from './sync';
 
 export function getPathForId(id: string): string {
   const p = S.meta.pages.find((p) => p.id === id);
@@ -31,6 +32,11 @@ export async function apiLoadContent(id: string): Promise<string> {
   return mdToHtml(getBody(content));
 }
 
+export async function apiLoadFileMeta(id: string): Promise<{ modified: string; etag: string } | null> {
+  const meta = await getFileMeta(getPathForId(id) + '/index.md');
+  return meta ? { modified: meta.modified, etag: meta.etag } : null;
+}
+
 export async function apiCreatePage(title: string, parentId: string): Promise<Page> {
   const id = Date.now().toString();
   const parentPath = parentId ? getPathForId(parentId) : '';
@@ -42,12 +48,26 @@ export async function apiCreatePage(title: string, parentId: string): Promise<Pa
   return { Id: id, Title: title, ParentId: parentId || '' };
 }
 
-export async function apiSavePage(id: string, title: string, html: string): Promise<void> {
+export async function apiSavePage(
+  id: string,
+  title: string,
+  html: string,
+  expectedEtag?: string,
+): Promise<{ ok: true; etag: string } | { ok: false; reason: 'conflict' }> {
   const path = getPathForId(id);
-  await writeFile(path + '/index.md', buildMdFile(title, getPageParent(id), html));
+  const body = buildMdFile(title, getPageParent(id), html);
+  if (expectedEtag) {
+    const result = await writeFileIfMatch(path + '/index.md', body, expectedEtag);
+    if (result === 'conflict') return { ok: false, reason: 'conflict' };
+  } else {
+    await writeFile(path + '/index.md', body);
+  }
   const p = S.meta.pages.find((p) => p.id === id);
   if (p) p.title = title;
   await saveMeta();
+  // Re-fetch file meta to learn the new etag
+  const fm = await getFileMeta(path + '/index.md');
+  return { ok: true, etag: fm?.etag || '' };
 }
 
 // Local helper — collect a page id and all its descendants from S.pages.
@@ -70,6 +90,27 @@ export async function apiDeletePage(id: string): Promise<string[]> {
   S.meta.pages = S.meta.pages.filter((p) => ids.indexOf(p.id) < 0);
   await saveMeta();
   return ids;
+}
+
+// Move a page to a new parent. Updates only metadata (path stays the same on
+// disk; we just rewire the parent pointer). Folder relocation is intentionally
+// avoided because SP REST has no atomic move and copy+delete is risky.
+export async function apiMovePage(id: string, newParentId: string): Promise<void> {
+  if (id === newParentId) return;
+  // Prevent cycles
+  let p = newParentId;
+  while (p) {
+    if (p === id) throw new Error('循環参照になります');
+    const m = S.meta.pages.find((x) => x.id === p);
+    p = m?.parent || '';
+  }
+  const m = S.meta.pages.find((p) => p.id === id);
+  if (!m) return;
+  m.parent = newParentId || '';
+  await saveMeta();
+  // Reflect in S.pages cache
+  const pg = S.pages.find((x) => x.Id === id);
+  if (pg) pg.ParentId = newParentId || '';
 }
 
 export async function apiSetIcon(id: string, emoji: string): Promise<void> {
