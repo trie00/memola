@@ -100,9 +100,13 @@ function systemPrompt(): string {
   return ctx ? `${base}\n\n${ctx}` : base;
 }
 
+const AI_PANEL_KEY = 'n365.page.aiPane';
+
 export function openAiPanel(): void {
   S.ai.panelOpen = true;
   g('ai-panel').classList.add('on');
+  document.getElementById('n365-ai-btn')?.classList.add('on');
+  try { localStorage.setItem(AI_PANEL_KEY, '1'); } catch { /* ignore */ }
   ensureApiKey();
   renderAiMessages();
   setTimeout(() => (g('ai-input') as HTMLTextAreaElement).focus(), 50);
@@ -111,6 +115,14 @@ export function openAiPanel(): void {
 export function closeAiPanel(): void {
   S.ai.panelOpen = false;
   g('ai-panel').classList.remove('on');
+  document.getElementById('n365-ai-btn')?.classList.remove('on');
+  try { localStorage.setItem(AI_PANEL_KEY, '0'); } catch { /* ignore */ }
+}
+
+export function applyAiPanelState(): void {
+  try {
+    if (localStorage.getItem(AI_PANEL_KEY) === '1') openAiPanel();
+  } catch { /* ignore */ }
 }
 
 export function toggleAiPanel(): void {
@@ -159,16 +171,28 @@ export function renderAiMessages(): void {
     list.appendChild(empty);
   }
   for (const m of S.ai.messages) {
-    const row = document.createElement('div');
-    row.className = 'n365-ai-msg n365-ai-' + m.role;
-    row.innerHTML = renderMessageBody(m.content);
-    list.appendChild(row);
+    const wrap = document.createElement('div');
+    wrap.className = 'n365-ai-row';
+    const label = document.createElement('div');
+    label.className = 'n365-ai-label';
+    label.textContent = m.role === 'user' ? 'あなた' : 'AI';
+    const card = document.createElement('div');
+    card.className = 'n365-ai-msg n365-ai-' + m.role;
+    card.innerHTML = renderMessageBody(m.content);
+    wrap.append(label, card);
+    list.appendChild(wrap);
   }
   if (S.ai.loading) {
-    const loader = document.createElement('div');
-    loader.className = 'n365-ai-msg n365-ai-assistant n365-ai-loading';
-    loader.textContent = '考え中…';
-    list.appendChild(loader);
+    const wrap = document.createElement('div');
+    wrap.className = 'n365-ai-row';
+    const label = document.createElement('div');
+    label.className = 'n365-ai-label';
+    label.textContent = 'AI';
+    const card = document.createElement('div');
+    card.className = 'n365-ai-msg n365-ai-assistant n365-ai-loading';
+    card.textContent = '考え中…';
+    wrap.append(label, card);
+    list.appendChild(wrap);
   }
   list.scrollTop = list.scrollHeight;
 }

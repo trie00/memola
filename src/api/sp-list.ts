@@ -64,7 +64,7 @@ export async function getListFields(listTitle: string): Promise<ListField[]> {
   if (!r.ok) throw new Error('スキーマ取得失敗: ' + r.status);
   const j = (await r.json()) as { d: { results: SPField[] } };
   return j.d.results
-    .filter((f) => [2, 4, 6, 8, 9].indexOf(f.FieldTypeKind) >= 0)
+    .filter((f) => [2, 3, 4, 6, 8, 9].indexOf(f.FieldTypeKind) >= 0)
     .map((f) => {
       const field: ListField = {
         Title: f.Title,
@@ -140,7 +140,7 @@ export async function addListField(
   choices?: string[],
 ): Promise<unknown> {
   const typeMap: Record<number, string> = {
-    2: 'SP.FieldText', 4: 'SP.FieldDateTime', 8: 'SP.FieldBoolean', 9: 'SP.FieldNumber', 6: 'SP.FieldChoice',
+    2: 'SP.FieldText', 3: 'SP.FieldMultiLineText', 4: 'SP.FieldDateTime', 8: 'SP.FieldBoolean', 9: 'SP.FieldNumber', 6: 'SP.FieldChoice',
   };
   const d = await getDigest();
   const kindNum = typeof typeKind === 'string' ? parseInt(typeKind, 10) : typeKind;
@@ -151,6 +151,16 @@ export async function addListField(
       FieldTypeKind: 6,
       Title: name,
       Choices: { __metadata: { type: 'Collection(Edm.String)' }, results: choices || [] },
+    };
+  } else if (kindNum === 3) {
+    // Multiple lines of text (Note) — prefer plain text + multi-line input
+    body = {
+      __metadata: { type: 'SP.FieldMultiLineText' },
+      FieldTypeKind: 3,
+      Title: name,
+      NumberOfLines: 6,
+      RichText: false,
+      AppendOnly: false,
     };
   } else {
     body = {

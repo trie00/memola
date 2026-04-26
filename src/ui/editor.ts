@@ -5,21 +5,31 @@ import { g, getEd, getOverlay } from './dom';
 import { setSave } from './ui-helpers';
 import { schedSave } from './actions';
 
-interface SlashItem { cmd: string; icon: string; name: string; desc: string }
+interface SlashItem { cmd: string; icon: string; name: string; desc: string; cat: string }
 
 const SLASH_ITEMS: SlashItem[] = [
-  { cmd: 'p',       icon: 'T',    name: 'テキスト',        desc: 'プレーンテキスト' },
-  { cmd: 'h1',      icon: 'H1',   name: '見出し1',         desc: '大きな見出し' },
-  { cmd: 'h2',      icon: 'H2',   name: '見出し2',         desc: '中見出し' },
-  { cmd: 'h3',      icon: 'H3',   name: '見出し3',         desc: '小見出し' },
-  { cmd: 'ul',      icon: '•',    name: '箇条書き',        desc: 'シンプルな箇条書き' },
-  { cmd: 'ol',      icon: '1.',   name: '番号付きリスト',  desc: '番号付き箇条書き' },
-  { cmd: 'todo',    icon: '☐',    name: 'ToDoリスト',      desc: 'チェックボックス付きリスト' },
-  { cmd: 'callout', icon: '💡',   name: 'コールアウト',    desc: 'ハイライトボックス' },
-  { cmd: 'quote',   icon: '❝',    name: '引用',            desc: '引用ブロック' },
-  { cmd: 'pre',     icon: '</>',  name: 'コードブロック',  desc: 'コードを記述' },
-  { cmd: 'hr',      icon: '—',    name: '区切り線',        desc: 'セクション区切り' },
-  { cmd: 'ai',      icon: '✦',    name: 'AI ブロック',     desc: 'AIに要約・改稿を依頼' },
+  // 基本
+  { cat: '基本', cmd: 'p',       icon: 'T',    name: 'テキスト',        desc: 'プレーンテキスト' },
+  { cat: '基本', cmd: 'h1',      icon: 'H1',   name: '見出し1',         desc: '大きな見出し' },
+  { cat: '基本', cmd: 'h2',      icon: 'H2',   name: '見出し2',         desc: '中見出し' },
+  { cat: '基本', cmd: 'h3',      icon: 'H3',   name: '見出し3',         desc: '小見出し' },
+  { cat: '基本', cmd: 'callout', icon: '💡',   name: 'コールアウト',    desc: 'ハイライトボックス' },
+  { cat: '基本', cmd: 'quote',   icon: '❝',    name: '引用',            desc: '引用ブロック' },
+  // リスト
+  { cat: 'リスト', cmd: 'ul',    icon: '•',    name: '箇条書き',        desc: 'シンプルな箇条書き' },
+  { cat: 'リスト', cmd: 'ol',    icon: '1.',   name: '番号付き',        desc: '番号付き箇条書き' },
+  { cat: 'リスト', cmd: 'todo',  icon: '☐',    name: 'ToDoリスト',      desc: 'チェックボックス付き' },
+  // メディア
+  { cat: 'メディア', cmd: 'hr',  icon: '—',    name: '区切り線',        desc: 'セクション区切り' },
+  // コード
+  { cat: 'コード', cmd: 'pre',   icon: '</>',  name: 'コードブロック',  desc: 'シンタックスハイライト' },
+  // データ
+  { cat: 'データ', cmd: 'inlinedb', icon: '▤', name: 'インラインDB',    desc: 'ページにDBを埋め込む' },
+  // AI
+  { cat: 'AI',  cmd: 'ai',       icon: '✦',    name: 'AI 要約',         desc: 'このページを要約' },
+  { cat: 'AI',  cmd: 'ai-rewrite', icon: '✦',  name: 'AI 改稿',         desc: 'トーン調整・敬体/常体' },
+  { cat: 'AI',  cmd: 'ai-translate', icon: '✦', name: 'AI 翻訳',        desc: '日↔英 翻訳' },
+  { cat: 'AI',  cmd: 'ai-actions', icon: '✦',  name: 'AI アクション抽出', desc: '議事録からTODO抽出' },
 ];
 
 let _slashActive = false;
@@ -49,7 +59,15 @@ function showSlashMenu(rect: { bottom: number; left: number }): void {
   if (_slashSel >= _slashFiltered.length) _slashSel = 0;
 
   el.innerHTML = '';
+  let prevCat = '';
   _slashFiltered.forEach((item, idx) => {
+    if (item.cat !== prevCat) {
+      const sec = document.createElement('div');
+      sec.className = 'n365-slash-section';
+      sec.textContent = item.cat;
+      el.appendChild(sec);
+      prevCat = item.cat;
+    }
     const div = document.createElement('div');
     div.className = 'n365-slash-item' + (idx === _slashSel ? ' sel' : '');
     div.innerHTML =

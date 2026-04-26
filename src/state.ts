@@ -46,6 +46,8 @@ export interface AppState {
   dbList: string;
   dbSort: { field: string | null; asc: boolean };
   dbFilter: string;
+  /** Notion-style multi-field AND filters */
+  dbFilters: { field: string; op: 'contains' | 'equals' | 'not_empty' | 'empty'; value: string }[];
   dbView: 'table' | 'board';
   dbColumnWidths: Record<string, number>;
   ai: {
@@ -74,6 +76,7 @@ export const S: AppState = {
   dbList: '',
   dbSort: { field: null, asc: true },
   dbFilter: '',
+  dbFilters: [],
   dbView: 'table',
   dbColumnWidths: {},
   ai: { panelOpen: false, messages: [], loading: false },

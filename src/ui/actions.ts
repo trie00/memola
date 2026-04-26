@@ -201,9 +201,30 @@ export function closeApp(): void {
 }
 
 export function onKey(e: KeyboardEvent): void {
-  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); clearSaveTimer(); doSave(); }
-  if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); openSearchProxy(); }
-  if ((e.ctrlKey || e.metaKey) && e.key === 'j') { e.preventDefault(); toggleAiProxy(); }
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key === 's') { e.preventDefault(); clearSaveTimer(); doSave(); return; }
+  if (mod && e.key === 'k') { e.preventDefault(); openSearchProxy(); return; }
+  if (mod && e.key === 'j') { e.preventDefault(); toggleAiProxy(); return; }
+  // ⌘+\ サイドバー切替
+  if (mod && (e.key === '\\' || e.code === 'Backslash')) {
+    e.preventDefault();
+    document.getElementById('n365-sb-toggle')?.click();
+    return;
+  }
+  // ⌘+Shift+L 目次 / R プロパティ / F 集中 / A AI / N 新規ページ / N+Shift 新規DB
+  if (mod && e.shiftKey) {
+    const k = e.key.toLowerCase();
+    if (k === 'l') { e.preventDefault(); void import('./outline').then((m) => m.toggleOutline()); return; }
+    if (k === 'r') { e.preventDefault(); void import('./properties-panel').then((m) => m.togglePropertiesPanel()); return; }
+    if (k === 'f') { e.preventDefault(); document.getElementById('n365-overlay')?.classList.toggle('focus-mode'); return; }
+    if (k === 'a') { e.preventDefault(); toggleAiProxy(); return; }
+    if (k === 'n') { e.preventDefault(); /* new DB - left to wiring */ return; }
+  }
+  if (mod && e.key.toLowerCase() === 'n' && !e.shiftKey) {
+    e.preventDefault();
+    void doNew('');
+    return;
+  }
   if (e.key === 'Escape') {
     if (g('qs').classList.contains('on')) { closeSearch(); return; }
     if (g('emoji').classList.contains('on')) { g('emoji').classList.remove('on'); return; }

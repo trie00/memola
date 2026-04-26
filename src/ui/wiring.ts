@@ -13,10 +13,11 @@ import {
   exportMd, exportHtml, duplicateCurrent, copyPageLink, printCurrent, showPageInfo,
   togglePageMenu, hidePageMenu, attachPageMenuOutsideClick,
 } from './actions';
-import { openSearch, closeSearch, renderQs, qsMove, qsConfirm, resetQsSel } from './search-ui';
+import { openSearch, closeSearch, renderQs, qsMove, qsConfirm, resetQsSel, setCommandActions } from './search-ui';
 import {
   closeAiPanel, toggleAiPanel, sendAiMessage, clearAiHistory,
   configureApiKey, getQuickPrompts, loadAiSession, newAiSession, renderHistoryDropdown,
+  applyAiPanelState,
 } from './ai-chat';
 import { toggleOutline, applyOutlineState, attachOutlineWatcher } from './outline';
 import { togglePropertiesPanel, applyPropertiesState } from './properties-panel';
@@ -28,14 +29,44 @@ const FOCUS_KEY = 'n365.focus';
 function applyFocusMode(): void {
   const ov = document.getElementById('n365-overlay');
   if (!ov) return;
-  if (localStorage.getItem(FOCUS_KEY) === '1') ov.classList.add('focus-mode');
-  else ov.classList.remove('focus-mode');
+  const isFocus = localStorage.getItem(FOCUS_KEY) === '1';
+  if (isFocus) {
+    ov.classList.add('focus-mode');
+    // 集中モード時はサイドバーを自動 rail 化（明示的な状態は保存しない）
+    document.getElementById('n365-sb')?.classList.add('rail');
+  } else {
+    ov.classList.remove('focus-mode');
+    // 復帰時は永続化された状態を復元
+    const saved = (() => { try { return localStorage.getItem('n365.sidebar'); } catch { return null; } })();
+    const sb = document.getElementById('n365-sb');
+    if (sb) {
+      sb.classList.remove('rail');
+      sb.classList.remove('collapsed');
+      if (saved === 'rail') sb.classList.add('rail');
+      else if (saved === 'collapsed') sb.classList.add('collapsed');
+    }
+  }
 }
 function toggleFocusMode(): void {
   const cur = localStorage.getItem(FOCUS_KEY) === '1';
   if (cur) localStorage.removeItem(FOCUS_KEY);
   else localStorage.setItem(FOCUS_KEY, '1');
   applyFocusMode();
+}
+
+// ビューポート < 900px 自動折畳（明示状態は上書きしない）
+function applyViewportAutoCollapse(): void {
+  const sb = document.getElementById('n365-sb');
+  if (!sb) return;
+  if (window.innerWidth < 900) {
+    if (!sb.classList.contains('rail') && !sb.classList.contains('collapsed')) {
+      sb.dataset.autoCollapsed = '1';
+      sb.classList.add('rail');
+    }
+  } else if (sb.dataset.autoCollapsed === '1') {
+    delete sb.dataset.autoCollapsed;
+    sb.classList.remove('rail');
+  }
 }
 import { apiGetPages, apiSetIcon } from '../api/pages';
 import { apiCreateDb } from '../api/db';
@@ -58,23 +89,148 @@ export function attachAll(): void {
   // Close button
   g('x').addEventListener('click', closeApp);
 
-  // Sidebar toggle
+  // Sidebar toggle (topbar button = 3-state cycle)
   g('sb-toggle').addEventListener('click', () => {
-    // 3-state cycle: full → rail (44px) → collapsed (hidden) → full
     const sb = g('sb');
     if (sb.classList.contains('collapsed')) { sb.classList.remove('collapsed'); sb.classList.remove('rail'); }
     else if (sb.classList.contains('rail')) { sb.classList.remove('rail'); sb.classList.add('collapsed'); }
     else sb.classList.add('rail');
-    return;
+    persistSidebarState();
   });
 
-  // New page buttons
-  g('nr').addEventListener('click', () => { doNew(''); });
+  // Sidebar header collapse button (« → rail)
+  const sbCollapseBtn = document.getElementById('n365-sb-collapse');
+  if (sbCollapseBtn) {
+    sbCollapseBtn.addEventListener('click', () => {
+      const sb = g('sb');
+      if (sb.classList.contains('rail')) {
+        sb.classList.remove('rail');
+        sbCollapseBtn.textContent = '«';
+      } else {
+        sb.classList.add('rail');
+        sbCollapseBtn.textContent = '»';
+      }
+      persistSidebarState();
+    });
+  }
+  function persistSidebarState(): void {
+    const sb = g('sb');
+    const state = sb.classList.contains('collapsed')
+      ? 'collapsed'
+      : sb.classList.contains('rail') ? 'rail' : 'expanded';
+    try { localStorage.setItem('n365.sidebar', state); } catch { /* ignore */ }
+  }
+  try {
+    const saved = localStorage.getItem('n365.sidebar');
+    if (saved === 'rail') { g('sb').classList.add('rail'); if (sbCollapseBtn) sbCollapseBtn.textContent = '»'; }
+    else if (saved === 'collapsed') g('sb').classList.add('collapsed');
+  } catch { /* ignore */ }
+
+  // Rail flyout: hover on tree row in rail-mode → show 220px flyout listing children
+  const flyout = document.getElementById('n365-rail-flyout');
+  const flyoutList = document.getElementById('n365-rail-flyout-list');
+  let flyoutShowTimer: number | null = null;
+  let flyoutHideTimer: number | null = null;
+  function clearFlyoutTimers(): void {
+    if (flyoutShowTimer !== null) { window.clearTimeout(flyoutShowTimer); flyoutShowTimer = null; }
+    if (flyoutHideTimer !== null) { window.clearTimeout(flyoutHideTimer); flyoutHideTimer = null; }
+  }
+  function showFlyout(rowEl: HTMLElement): void {
+    if (!flyout || !flyoutList) return;
+    if (!g('sb').classList.contains('rail')) return;
+    const pageId = rowEl.dataset.pageId;
+    if (!pageId) return;
+    const rect = rowEl.getBoundingClientRect();
+    flyout.style.top = rect.top + 'px';
+    flyoutList.innerHTML = '';
+    // Show this row + its children
+    const page = S.pages.find((p) => p.Id === pageId);
+    if (page) {
+      const head = document.createElement('div');
+      head.className = 'n365-tr';
+      head.style.fontWeight = '500';
+      head.textContent = page.Title || '無題';
+      head.addEventListener('click', () => { void doSelect(pageId); flyout.classList.remove('on'); });
+      flyoutList.appendChild(head);
+      S.pages.filter((p) => p.ParentId === pageId).forEach((c) => {
+        const r = document.createElement('div');
+        r.className = 'n365-tr';
+        r.textContent = '  ' + (c.Title || '無題');
+        r.addEventListener('click', () => { void doSelect(c.Id); flyout.classList.remove('on'); });
+        flyoutList.appendChild(r);
+      });
+    }
+    flyout.classList.add('on');
+  }
+  document.addEventListener('mouseover', (e) => {
+    const target = e.target as HTMLElement;
+    const row = target.closest<HTMLElement>('#n365-tree .n365-tr');
+    if (row && g('sb').classList.contains('rail')) {
+      clearFlyoutTimers();
+      flyoutShowTimer = window.setTimeout(() => showFlyout(row), 100);
+    }
+  });
+  document.addEventListener('mouseout', (e) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('#n365-tree') || target.closest('#n365-rail-flyout')) {
+      clearFlyoutTimers();
+      flyoutHideTimer = window.setTimeout(() => { flyout?.classList.remove('on'); }, 200);
+    }
+  });
+  flyout?.addEventListener('mouseenter', clearFlyoutTimers);
+  flyout?.addEventListener('mouseleave', () => { flyout.classList.remove('on'); });
+
+  // New page buttons (empty-state CTA)
   g('ne').addEventListener('click', () => { doNew(''); });
 
-  // DB create
-  g('ndb').addEventListener('click', () => { doNewDb(''); });
+  // DB create (empty-state CTA)
   g('ne-db').addEventListener('click', () => { doNewDb(''); });
+
+  // Empty-state template chips & "テンプレ" button
+  document.getElementById('n365-ne-tpl')?.addEventListener('click', () => {
+    document.getElementById('n365-quick-add')?.click();
+  });
+  document.querySelectorAll<HTMLElement>('.n365-em-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const tpl = chip.dataset.tpl;
+      if (tpl === 'tasks') void doNewDb('');
+      else void doNew('');
+    });
+  });
+
+  // Quick-add (＋ 新規) primary button → CreateMenu popup
+  const quickAddBtn = document.getElementById('n365-quick-add');
+  const createMenu = document.getElementById('n365-create-menu');
+  if (quickAddBtn && createMenu) {
+    quickAddBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const rect = quickAddBtn.getBoundingClientRect();
+      createMenu.style.left = rect.left + 'px';
+      createMenu.style.top = (rect.bottom + 4) + 'px';
+      createMenu.classList.toggle('on');
+    });
+    createMenu.addEventListener('click', (e) => {
+      const item = (e.target as HTMLElement).closest<HTMLElement>('.n365-cm-item');
+      if (!item) return;
+      createMenu.classList.remove('on');
+      switch (item.dataset.cm) {
+        case 'new-page':
+        case 'tpl-weekly':
+        case 'tpl-minutes':
+          void doNew('');
+          break;
+        case 'new-db':
+        case 'tpl-tasks':
+          void doNewDb('');
+          break;
+      }
+    });
+    document.addEventListener('click', (e) => {
+      if (!createMenu.classList.contains('on')) return;
+      if (createMenu.contains(e.target as Node) || quickAddBtn.contains(e.target as Node)) return;
+      createMenu.classList.remove('on');
+    });
+  }
 
   // Add DB row
   g('dadd').addEventListener('click', doNewDbRow);
@@ -108,18 +264,29 @@ export function attachAll(): void {
     finally { setLoad(false); }
   });
 
-  // Column modal
-  g('col-type').addEventListener('change', () => {
-    const isChoice = (g('col-type') as HTMLSelectElement).value === '6';
-    g('col-choices-row').classList.toggle('on', isChoice);
-  });
+  // Column modal — grid type picker
+  let _colTypeKind = 2;
+  const colGrid = document.getElementById('n365-col-type-grid');
+  if (colGrid) {
+    const tiles = Array.from(colGrid.querySelectorAll<HTMLDivElement>('.n365-col-type'));
+    // Default selection
+    tiles[0]?.classList.add('on');
+    tiles.forEach((tile) => {
+      tile.addEventListener('click', () => {
+        tiles.forEach((t) => t.classList.remove('on'));
+        tile.classList.add('on');
+        _colTypeKind = parseInt(tile.dataset.tk || '2');
+        g('col-choices-row').classList.toggle('on', _colTypeKind === 6 || _colTypeKind === 15);
+      });
+    });
+  }
   g('col-cancel').addEventListener('click', () => { g('col-md').classList.remove('on'); });
   g('col-ok').addEventListener('click', async () => {
     const name = (g('col-name') as HTMLInputElement).value.trim();
     if (!name) { g('col-name').focus(); return; }
-    const typeKind = parseInt((g('col-type') as HTMLSelectElement).value);
+    const typeKind = _colTypeKind;
     let choices: string[] = [];
-    if (typeKind === 6) {
+    if (typeKind === 6 || typeKind === 15) {
       const raw = (g('col-choices') as HTMLTextAreaElement).value.trim();
       choices = raw ? raw.split('\n').map((s) => s.trim()).filter(Boolean) : [];
     }
@@ -185,6 +352,10 @@ export function attachAll(): void {
   }
   g('db-csv-export').addEventListener('click', exportCsv);
   g('db-csv-import').addEventListener('click', importCsv);
+  document.getElementById('n365-db-new-row')?.addEventListener('click', doNewDbRow);
+  document.getElementById('n365-db-group-btn')?.addEventListener('click', () => {
+    toast('グループ機能は今後実装予定');
+  });
   g('dbv-table').addEventListener('click', () => setDbView('table'));
   g('dbv-board').addEventListener('click', () => setDbView('board'));
   g('dbv-list').addEventListener('click', () => setDbView('list'));
@@ -192,21 +363,12 @@ export function attachAll(): void {
   g('dbv-calendar').addEventListener('click', () => setDbView('calendar'));
   g('dbv-gantt').addEventListener('click', () => setDbView('gantt'));
 
-  // DB filter
-  g('db-filter-btn').addEventListener('click', () => {
-    g('filter-bar').classList.toggle('on');
-    if (g('filter-bar').classList.contains('on')) g('filter-inp').focus();
+  // DB filter — Notion風のフィールド選択 popover を開く
+  g('db-filter-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    void import('./filter-ui').then((m) => m.showFilterPopover());
   });
-  g('filter-inp').addEventListener('input', () => {
-    S.dbFilter = (g('filter-inp') as HTMLInputElement).value;
-    renderDbTable();
-  });
-  g('filter-close').addEventListener('click', () => {
-    g('filter-bar').classList.remove('on');
-    (g('filter-inp') as HTMLInputElement).value = '';
-    S.dbFilter = '';
-    renderDbTable();
-  });
+  void import('./filter-ui').then((m) => m.attachFilterPopoverOutsideClick());
 
   // Page icon buttons
   g('add-icon').addEventListener('click', () => {
@@ -257,6 +419,18 @@ export function attachAll(): void {
     }).catch((e: Error) => { toast('アイコン削除失敗: ' + e.message, 'err'); });
   });
 
+  // Command palette actions
+  setCommandActions([
+    { id: 'new-page', label: '新しいページ',     icon: '＋', key: '⌘N',  run: () => { void doNew(''); } },
+    { id: 'new-db',   label: '新しいDB',         icon: '🗂', key: '⌘⇧N', run: () => { void doNewDb(''); } },
+    { id: 'ai-ask',   label: 'AIに質問',          icon: '✦', key: '⌘⇧A', run: () => { toggleAiPanel(); } },
+    { id: 'toc',      label: '目次パネルを切替',   icon: '☰', key: '⌘⇧L', run: () => { toggleOutline(); } },
+    { id: 'props',    label: 'プロパティパネルを切替', icon: '▤', key: '⌘⇧R', run: () => { togglePropertiesPanel(); } },
+    { id: 'focus',    label: '集中モード切替',    icon: '⛶',  key: '⌘⇧F', run: () => { toggleFocusMode(); } },
+    { id: 'trash',    label: 'ゴミ箱を開く',       icon: '🗑', key: '',    run: () => { openTrash(); } },
+    { id: 'settings', label: '設定',              icon: '⚙', key: '',    run: () => { document.getElementById('n365-settings-md')?.classList.add('on'); } },
+  ]);
+
   // Quick search
   g('search-nav').addEventListener('click', openSearch);
   g('qs').addEventListener('click', (e) => {
@@ -304,13 +478,57 @@ export function attachAll(): void {
   });
   attachPageMenuOutsideClick();
 
-  // Apply persisted focus mode
+  // Apply persisted focus mode + viewport-based auto collapse
   applyFocusMode();
+  applyViewportAutoCollapse();
+  window.addEventListener('resize', applyViewportAutoCollapse);
 
   // Trash
   g('trash-btn').addEventListener('click', openTrash);
   g('trash-close').addEventListener('click', closeTrash);
   g('trash-md').addEventListener('click', (e) => { if (e.target === g('trash-md')) closeTrash(); });
+
+  // Settings modal
+  const setBtn = document.getElementById('n365-settings-btn');
+  const setMd = document.getElementById('n365-settings-md');
+  const setKey = document.getElementById('n365-set-aikey') as HTMLInputElement | null;
+  const setDensity = document.getElementById('n365-set-density') as HTMLSelectElement | null;
+  const setTheme = document.getElementById('n365-set-theme') as HTMLSelectElement | null;
+  if (setBtn && setMd && setKey && setDensity && setTheme) {
+    setBtn.addEventListener('click', () => {
+      try {
+        setKey.value = localStorage.getItem('n365.aiKey') || '';
+        setDensity.value = localStorage.getItem('n365.density') || 'regular';
+        setTheme.value = localStorage.getItem('n365.theme') || 'light';
+      } catch { /* ignore */ }
+      setMd.classList.add('on');
+    });
+    setMd.addEventListener('click', (e) => { if (e.target === setMd) setMd.classList.remove('on'); });
+    document.getElementById('n365-set-cancel')?.addEventListener('click', () => setMd.classList.remove('on'));
+    document.getElementById('n365-set-save')?.addEventListener('click', () => {
+      try {
+        if (setKey.value) localStorage.setItem('n365.aiKey', setKey.value);
+        else localStorage.removeItem('n365.aiKey');
+        localStorage.setItem('n365.density', setDensity.value);
+        localStorage.setItem('n365.theme', setTheme.value);
+      } catch { /* ignore */ }
+      const ov = document.getElementById('n365-overlay');
+      if (ov) {
+        ov.dataset.density = setDensity.value;
+        ov.dataset.theme = setTheme.value;
+      }
+      setMd.classList.remove('on');
+      toast('設定を保存しました');
+    });
+    // Apply on init
+    try {
+      const ov = document.getElementById('n365-overlay');
+      if (ov) {
+        ov.dataset.density = localStorage.getItem('n365.density') || 'regular';
+        ov.dataset.theme = localStorage.getItem('n365.theme') || 'light';
+      }
+    } catch { /* ignore */ }
+  }
 
   // Workspace switcher
   const wsName = getCurrentWorkspaceName();
@@ -339,6 +557,7 @@ export function attachAll(): void {
     else loadAiSession(v);
   });
   renderHistoryDropdown();
+  applyAiPanelState();
   g('ai-key').addEventListener('click', configureApiKey);
   g('ai-send').addEventListener('click', () => {
     const ta = g('ai-input') as HTMLTextAreaElement;

@@ -7,12 +7,20 @@ import { doSelect } from './views';
 import { spSearch } from '../api/search';
 import { escHtml, renderSnippet, pageFromSPPath as pageFromSPPathPure } from '../lib/search-utils';
 
+interface CmdAction { id: string; label: string; icon: string; key: string; run: () => void; }
+
 let _qsSel = 0;
-let _qsItems: Array<{ page: Page; summary: string }> = [];
+let _qsItems: Array<{ kind: 'page' | 'action'; page?: Page; summary?: string; action?: CmdAction }> = [];
 let _qsTitleItems: Page[] = [];
+let _qsDbItems: Page[] = [];
 let _qsBodyItems: Array<{ page: Page; summary: string }> = [];
 let _qsBodyLoading = false;
 let _qsToken = 0;
+let _qsActions: CmdAction[] = [];
+
+export function setCommandActions(actions: CmdAction[]): void {
+  _qsActions = actions;
+}
 
 export function openSearch(): void {
   g('qs').classList.add('on');
@@ -37,11 +45,13 @@ export function pageFromSPPath(spPath: string): Page | null {
 }
 
 export function renderQs(q: string): void {
-  // Title search (instant, local)
-  _qsTitleItems = S.pages.filter((p) => {
+  // Title search (instant, local) — separate pages and DBs
+  const matchedPages = S.pages.filter((p) => {
     if (!q) return true;
     return (p.Title || '').toLowerCase().includes(q.toLowerCase());
-  }).slice(0, 20);
+  });
+  _qsTitleItems = matchedPages.filter((p) => p.Type !== 'database').slice(0, 15);
+  _qsDbItems = matchedPages.filter((p) => p.Type === 'database').slice(0, 8);
 
   _qsBodyItems = [];
   _qsBodyLoading = false;
@@ -80,32 +90,78 @@ export function rebuildQsDom(): void {
   res.innerHTML = '';
   _qsItems = [];
   const q = (g('qs-inp') as HTMLInputElement).value || '';
+  const ql = q.trim().toLowerCase();
+  const isActionMode = q.startsWith('>');
 
-  if (_qsTitleItems.length > 0) {
-    const hd1 = document.createElement('div');
-    hd1.className = 'n365-qs-section';
-    hd1.textContent = q.trim() ? 'タイトル' : '最近のページ';
-    res.appendChild(hd1);
+  // ── ページセクション ──
+  if (!isActionMode && _qsTitleItems.length > 0) {
+    const hd = document.createElement('div');
+    hd.className = 'n365-qs-section';
+    hd.textContent = ql ? 'ページ' : '最近のページ';
+    res.appendChild(hd);
     _qsTitleItems.forEach((p) => {
-      _qsItems.push({ page: p, summary: '' });
-      res.appendChild(buildQsItem(p, '', _qsItems.length - 1));
+      _qsItems.push({ kind: 'page', page: p, summary: '' });
+      res.appendChild(buildQsPageItem(p, '', _qsItems.length - 1));
     });
   }
 
-  if (_qsBodyItems.length > 0) {
-    const hd2 = document.createElement('div');
-    hd2.className = 'n365-qs-section';
-    hd2.textContent = '本文';
-    res.appendChild(hd2);
-    _qsBodyItems.forEach((item) => {
-      _qsItems.push({ page: item.page, summary: item.summary });
-      res.appendChild(buildQsItem(item.page, item.summary, _qsItems.length - 1));
+  // ── DBセクション ──
+  if (!isActionMode && _qsDbItems.length > 0) {
+    const hd = document.createElement('div');
+    hd.className = 'n365-qs-section';
+    hd.textContent = 'DB';
+    res.appendChild(hd);
+    _qsDbItems.forEach((p) => {
+      _qsItems.push({ kind: 'page', page: p, summary: '' });
+      res.appendChild(buildQsPageItem(p, '', _qsItems.length - 1));
     });
-  } else if (_qsBodyLoading) {
+  }
+
+  // ── 本文ヒット ──
+  if (!isActionMode && _qsBodyItems.length > 0) {
+    const hd = document.createElement('div');
+    hd.className = 'n365-qs-section';
+    hd.textContent = '本文';
+    res.appendChild(hd);
+    _qsBodyItems.forEach((item) => {
+      _qsItems.push({ kind: 'page', page: item.page, summary: item.summary });
+      res.appendChild(buildQsPageItem(item.page, item.summary, _qsItems.length - 1));
+    });
+  } else if (!isActionMode && _qsBodyLoading) {
     const ld = document.createElement('div');
     ld.className = 'n365-qs-loading';
     ld.textContent = '🔍 本文を検索中...';
     res.appendChild(ld);
+  }
+
+  // ── アクション ──
+  const actionQuery = isActionMode ? ql.slice(1).trim() : ql;
+  const matchingActions = _qsActions.filter((a) =>
+    !actionQuery || a.label.toLowerCase().includes(actionQuery),
+  );
+  if (matchingActions.length > 0) {
+    const hd = document.createElement('div');
+    hd.className = 'n365-qs-section';
+    hd.textContent = 'アクション';
+    res.appendChild(hd);
+    matchingActions.forEach((a) => {
+      _qsItems.push({ kind: 'action', action: a });
+      res.appendChild(buildQsActionItem(a, _qsItems.length - 1));
+    });
+  }
+
+  // ── ヘルプ ──
+  if (!isActionMode && !ql) {
+    const hd = document.createElement('div');
+    hd.className = 'n365-qs-section';
+    hd.textContent = 'ヘルプ';
+    res.appendChild(hd);
+    const helpAction: CmdAction = {
+      id: 'help-shortcuts', label: 'キーボードショートカット', icon: '?', key: '',
+      run: () => { /* TODO open shortcuts modal */ },
+    };
+    _qsItems.push({ kind: 'action', action: helpAction });
+    res.appendChild(buildQsActionItem(helpAction, _qsItems.length - 1));
   }
 
   if (_qsItems.length === 0 && !_qsBodyLoading) {
@@ -115,7 +171,7 @@ export function rebuildQsDom(): void {
   if (_qsSel >= _qsItems.length) _qsSel = 0;
 }
 
-export function buildQsItem(p: Page, summary: string, idx: number): HTMLDivElement {
+export function buildQsPageItem(p: Page, summary: string, idx: number): HTMLDivElement {
   const div = document.createElement('div');
   div.className = 'n365-qs-item' + (idx === _qsSel ? ' sel' : '');
   const isDb = p.Type === 'database';
@@ -134,6 +190,22 @@ export function buildQsItem(p: Page, summary: string, idx: number): HTMLDivEleme
   return div;
 }
 
+export function buildQsActionItem(a: CmdAction, idx: number): HTMLDivElement {
+  const div = document.createElement('div');
+  div.className = 'n365-qs-item' + (idx === _qsSel ? ' sel' : '');
+  div.innerHTML =
+    '<span class="n365-qs-ic">' + escHtml(a.icon) + '</span>' +
+    '<div style="flex:1;min-width:0">' +
+      '<div class="n365-qs-title">' + escHtml(a.label) + '</div>' +
+    '</div>' +
+    (a.key ? '<span class="n365-qs-kbd">' + escHtml(a.key) + '</span>' : '');
+  div.addEventListener('click', () => {
+    closeSearch();
+    a.run();
+  });
+  return div;
+}
+
 export function qsMove(dir: number): void {
   if (_qsItems.length === 0) return;
   _qsSel = (_qsSel + dir + _qsItems.length) % _qsItems.length;
@@ -143,9 +215,14 @@ export function qsMove(dir: number): void {
 }
 
 export function qsConfirm(): void {
-  if (_qsItems[_qsSel]) {
+  const item = _qsItems[_qsSel];
+  if (!item) return;
+  if (item.kind === 'page' && item.page) {
     closeSearch();
-    doSelect(_qsItems[_qsSel].page.Id);
+    doSelect(item.page.Id);
+  } else if (item.kind === 'action' && item.action) {
+    closeSearch();
+    item.action.run();
   }
 }
 

@@ -24,11 +24,14 @@ export function togglePropertiesPanel(): void { setPropertiesOpen(!isPropertiesO
 
 export function applyPropertiesState(): void {
   const panel = g('props');
+  const btn = document.getElementById('n365-props-btn');
   if (isPropertiesOpen() && S.currentId) {
     panel.classList.add('on');
+    btn?.classList.add('on');
     void renderProperties();
   } else {
     panel.classList.remove('on');
+    btn?.classList.remove('on');
   }
 }
 
@@ -81,5 +84,30 @@ export async function renderProperties(): Promise<void> {
     if (loading) loading.remove();
     list.insertAdjacentHTML('beforeend', row('行数', String(S.dbItems.length)));
     list.insertAdjacentHTML('beforeend', row('列数', String(S.dbFields.length)));
+    // ＋ プロパティ追加 (DB 限定)
+    list.insertAdjacentHTML('beforeend',
+      '<div class="n365-prop-add" id="n365-prop-add">＋ プロパティ追加</div>',
+    );
+    list.querySelector('#n365-prop-add')?.addEventListener('click', () => {
+      document.getElementById('n365-col-md')?.classList.add('on');
+    });
+  }
+
+  // バックリンクセクション (このページを参照しているページの簡易検出)
+  list.insertAdjacentHTML('beforeend', '<div class="n365-prop-sep"></div>');
+  list.insertAdjacentHTML('beforeend', '<div class="n365-prop-section">バックリンク</div>');
+  const titleStr = (page.Title || '').toLowerCase();
+  const backlinks = titleStr ? S.pages.filter((p) => {
+    if (p.Id === id) return false;
+    return false; // TODO: indexer がない為プレースホルダ
+  }) : [];
+  if (backlinks.length === 0) {
+    list.insertAdjacentHTML('beforeend', '<div class="n365-prop-empty">参照しているページはありません</div>');
+  } else {
+    backlinks.forEach((bp) => {
+      list.insertAdjacentHTML('beforeend',
+        '<div class="n365-prop-backlink">→ ' + escapeHtml(bp.Title || '無題') + '</div>',
+      );
+    });
   }
 }
