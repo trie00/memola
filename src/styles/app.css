@@ -529,6 +529,80 @@
   cursor: pointer;
 }
 
+/* ── Inline table block (Notion-like) ─────────────────── */
+#n365-overlay .n365-itbl-wrap {
+  position: relative; margin: 10px 0;
+  /* hover領域を + ボタンの位置まで広げる */
+  padding: 0 28px 28px 0;
+  display: inline-block; max-width: 100%;
+}
+#n365-overlay .n365-itbl {
+  border-collapse: collapse;
+  font-size: var(--fs-md); color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--paper-3); border-radius: var(--r-2);
+  overflow: hidden;
+}
+#n365-overlay .n365-itbl th,
+#n365-overlay .n365-itbl td {
+  border: 1px solid var(--paper-3);
+  padding: 6px 10px;
+  vertical-align: top; min-width: 80px; max-width: 320px;
+  outline: none; line-height: 1.5;
+}
+#n365-overlay .n365-itbl th {
+  background: var(--paper-2);
+  font-weight: 500; color: var(--ink);
+  text-align: left;
+}
+#n365-overlay .n365-itbl td:focus,
+#n365-overlay .n365-itbl th:focus {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* + 行 / + 列 ボタン (常時 faint 表示、ホバーで強調) */
+#n365-overlay .n365-itbl-addrow,
+#n365-overlay .n365-itbl-addcol {
+  position: absolute; border: 1px dashed var(--paper-3);
+  background: transparent; color: var(--ink-4);
+  cursor: pointer; font-family: inherit;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; line-height: 1; font-size: 14px;
+  border-radius: var(--r-1);
+  opacity: 0; transition: opacity var(--tr-fast), color var(--tr-fast), border-color var(--tr-fast);
+}
+#n365-overlay .n365-itbl-wrap:hover .n365-itbl-addrow,
+#n365-overlay .n365-itbl-wrap:hover .n365-itbl-addcol { opacity: 1; }
+#n365-overlay .n365-itbl-addrow:hover,
+#n365-overlay .n365-itbl-addcol:hover {
+  color: var(--accent-strong); border-color: var(--accent); border-style: solid;
+}
+#n365-overlay .n365-itbl-addrow {
+  /* 表の右側に縦長の +。表本体高さに追従 */
+  top: 0; right: 0; width: 22px;
+  bottom: 28px; /* leave space for addcol */
+}
+#n365-overlay .n365-itbl-addcol {
+  /* 表の下に横長の +。表本体幅に追従 */
+  left: 0; right: 28px;
+  bottom: 0; height: 22px;
+}
+/* セル右クリックメニュー */
+#n365-overlay .n365-itbl-menu {
+  position: fixed; z-index: 2147483647;
+  background: var(--paper); border: 1px solid var(--paper-3);
+  border-radius: var(--r-3); box-shadow: var(--sh-flyout);
+  min-width: 180px; padding: 4px;
+  font-family: var(--font-ui); font-size: var(--fs-sm);
+}
+#n365-overlay .n365-itbl-menu-item {
+  padding: 6px 12px; border-radius: var(--r-2);
+  cursor: pointer; color: var(--ink); white-space: nowrap;
+}
+#n365-overlay .n365-itbl-menu-item:hover { background: var(--paper-2-strong); }
+#n365-overlay .n365-itbl-menu-item.danger { color: var(--danger); }
+#n365-overlay .n365-itbl-menu-item.danger:hover { background: rgba(184,83,74,0.1); }
+
 /* ── Inline images ────────────────────────────────────── */
 #n365-overlay #n365-ed .n365-img {
   max-width: 100%; height: auto; border-radius: var(--r-2);

@@ -12,6 +12,28 @@ export function domWalk(node: Node): string {
   const el = node as Element;
   const tag = el.tagName.toLowerCase();
 
+  // Inline table block → GFM pipe table
+  if (tag === 'div' && el.classList.contains('n365-itbl-wrap')) {
+    const tbl = el.querySelector('table');
+    if (!tbl) return '';
+    const rows = Array.from(tbl.querySelectorAll('tr'));
+    if (rows.length === 0) return '';
+    const cellsOf = (tr: Element): string[] =>
+      Array.from(tr.children).map((c) => ((c as HTMLElement).textContent || '').replace(/\|/g, '\\|').replace(/\n/g, ' ').trim());
+    const head = cellsOf(rows[0]);
+    const body = rows.slice(1).map(cellsOf);
+    const cols = head.length;
+    let out = '\n';
+    out += '| ' + head.join(' | ') + ' |\n';
+    out += '| ' + Array(cols).fill('---').join(' | ') + ' |\n';
+    for (const r of body) {
+      // pad short rows to cols width
+      const padded = r.concat(Array(Math.max(0, cols - r.length)).fill(''));
+      out += '| ' + padded.slice(0, cols).join(' | ') + ' |\n';
+    }
+    return out;
+  }
+
   // Skip todo checkbox inputs
   if (tag === 'input' && el.classList.contains('n365-todo-cb')) return '';
 
@@ -153,6 +175,41 @@ export function mdToHtml(md: string): string {
       i++; continue;
     }
 
+    // GFM pipe table — header line + separator line + body rows
+    if (ln.trimStart().startsWith('|') && i + 1 < lines.length &&
+        /^\s*\|?\s*:?-+:?(\s*\|\s*:?-+:?)*\s*\|?\s*$/.test(lines[i + 1])) {
+      const splitRow = (s: string): string[] => {
+        let t = s.trim();
+        if (t.startsWith('|')) t = t.slice(1);
+        if (t.endsWith('|')) t = t.slice(0, -1);
+        // Split on unescaped pipes; restore escaped \| → |
+        return t.split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, '|'));
+      };
+      const head = splitRow(ln);
+      const cols = head.length;
+      i += 2;
+      const body: string[][] = [];
+      while (i < lines.length && lines[i].trimStart().startsWith('|')) {
+        const cells = splitRow(lines[i]);
+        const padded = cells.concat(Array(Math.max(0, cols - cells.length)).fill(''));
+        body.push(padded.slice(0, cols));
+        i++;
+      }
+      let tbl = '<div class="n365-itbl-wrap" contenteditable="false"><table class="n365-itbl"><colgroup>';
+      for (let c = 0; c < cols; c++) tbl += '<col>';
+      tbl += '</colgroup><thead><tr>';
+      for (const h of head) tbl += '<th contenteditable="true">' + inline(h) + '</th>';
+      tbl += '</tr></thead><tbody>';
+      for (const row of body) {
+        tbl += '<tr>';
+        for (const cell of row) tbl += '<td contenteditable="true">' + (cell ? inline(cell) : '<br>') + '</td>';
+        tbl += '</tr>';
+      }
+      tbl += '</tbody></table></div>';
+      html += tbl;
+      continue;
+    }
+
     // Blockquote / callout
     if (ln.startsWith('> ')) {
       const firstLine = ln.slice(2);
@@ -207,7 +264,8 @@ export function mdToHtml(md: string): string {
       && !lines[i].match(/^[-*]\s/)
       && !lines[i].match(/^- \[[ x]\] /)
       && !lines[i].match(/^\d+\.\s/)
-      && !lines[i].trimStart().startsWith('```')) {
+      && !lines[i].trimStart().startsWith('```')
+      && !lines[i].trimStart().startsWith('|')) {
       const cur = lines[i];
       // Two-space-trailing = markdown hard break (use unprintable sentinel that survives esc)
       if (cur.endsWith('  ')) para += cur.replace(/  +$/, '') + '';

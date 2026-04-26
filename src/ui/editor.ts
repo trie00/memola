@@ -24,6 +24,7 @@ const SLASH_ITEMS: SlashItem[] = [
   // コード
   { cat: 'コード', cmd: 'pre',   icon: '</>',  name: 'コードブロック',  desc: 'シンタックスハイライト' },
   // データ
+  { cat: 'データ', cmd: 'table',    icon: '⊞', name: '表',             desc: '簡易表 (3×2)・セル編集可' },
   { cat: 'データ', cmd: 'inlinedb', icon: '▤', name: 'インラインDB',    desc: 'ページにDBを埋め込む' },
   // AI
   { cat: 'AI',  cmd: 'ai',       icon: '✦',    name: 'AI 要約',         desc: 'このページを要約' },
@@ -207,6 +208,9 @@ function applySlashCmd(cmd: string): void {
     }
   } else if (cmd === 'ai') {
     void import('./ai-block').then((m) => m.insertAiBlock());
+    return;
+  } else if (cmd === 'table') {
+    void import('./inline-table').then((m) => m.insertInlineTable(3, 1));
     return;
   } else {
     execCmd(cmd);
@@ -526,6 +530,7 @@ export function attachEditor(): void {
   // Block drag handle (lazy import keeps this file's footprint small)
   void import('./block-drag').then((m) => m.attachBlockDrag());
   void import('./image-paste').then((m) => m.attachImagePaste());
+  void import('./inline-table').then((m) => m.attachTablePaste());
 
   _ed.addEventListener('input', () => {
     S.dirty = true; setSave('未保存'); schedSave();

@@ -56,6 +56,8 @@ export async function doSelect(id: string): Promise<void> {
     setLoad(true, 'ページを読み込み中...');
     try {
       getEd().innerHTML = await apiLoadContent(id);
+      // Re-bind inline-table cell handlers (Tab nav, hover buttons) after load
+      void import('./inline-table').then((m) => m.reattachInlineTables(getEd()));
       // Track file meta so we can detect remote updates and conflicts on save
       const fm = await apiLoadFileMeta(id);
       if (fm) startWatching(id, fm.modified, fm.etag);
