@@ -107,29 +107,50 @@ function onDrop(e: DragEvent): void {
   onDragEnd();
 }
 
-export function attachBlockDrag(): void {
+// Hit-detection extends 42px to the LEFT of each block so the gap between
+// block and handle (24px) plus the handle width (18px) all count as "still
+// hovering". Without this, the editor's mouseleave would hide the handle
+// the moment the cursor crosses the editor's left edge to reach it.
+const HIT_LEFT_EXTEND = 44;
+const HIT_VERT_PAD = 2;
+
+function blockUnderCursor(clientX: number, clientY: number): HTMLElement | null {
   const ed = getEd();
+  const blocks = Array.from(ed.children) as HTMLElement[];
+  for (const block of blocks) {
+    if (!isTopLevelBlock(block)) continue;
+    const rect = block.getBoundingClientRect();
+    if (clientY >= rect.top - HIT_VERT_PAD && clientY <= rect.bottom + HIT_VERT_PAD &&
+        clientX >= rect.left - HIT_LEFT_EXTEND && clientX <= rect.right) {
+      return block;
+    }
+  }
+  return null;
+}
 
-  ed.addEventListener('mousemove', (e) => {
+export function attachBlockDrag(): void {
+  // Global mousemove — works regardless of which element receives the event,
+  // so the handle stays visible while the cursor is in the gap between block
+  // and handle, or directly over the handle, or just to the left.
+  document.addEventListener('mousemove', (e) => {
     if (_dragging) return;
-    const target = e.target as HTMLElement;
-    let cur: Node | null = target;
-    while (cur && cur !== ed && (cur as HTMLElement).parentElement !== ed) {
-      cur = (cur as HTMLElement).parentElement;
+    const ed = getEd();
+    if (!ed) return;
+    // If the cursor is over the handle itself, just keep current state
+    const handle = _handle;
+    if (handle && handle.style.display !== 'none') {
+      const hr = handle.getBoundingClientRect();
+      if (e.clientX >= hr.left - 2 && e.clientX <= hr.right + 2 &&
+          e.clientY >= hr.top - 2 && e.clientY <= hr.bottom + 2) return;
     }
-    if (!cur || cur === ed) { hideHandle(); return; }
-    const block = cur as HTMLElement;
-    if (!isTopLevelBlock(block)) { hideHandle(); return; }
-    if (block !== _hoveredBlock) {
-      _hoveredBlock = block;
-      positionHandle(block);
+    const block = blockUnderCursor(e.clientX, e.clientY);
+    if (block) {
+      if (block !== _hoveredBlock) {
+        _hoveredBlock = block;
+        positionHandle(block);
+      }
+    } else {
+      hideHandle();
     }
-  });
-
-  ed.addEventListener('mouseleave', (e) => {
-    // Don't hide if cursor moved to the handle itself or any of its descendants
-    const rt = e.relatedTarget as HTMLElement | null;
-    if (rt && rt.closest && rt.closest('#n365-block-handle')) return;
-    hideHandle();
   });
 }
