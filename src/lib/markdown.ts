@@ -86,6 +86,11 @@ export function domWalk(node: Node): string {
   if (tag === 'li')  return ch;
   if (tag === 'hr')  return '\n---\n';
   if (tag === 'br')  return '  \n';
+  if (tag === 'img') {
+    const src = (el as HTMLImageElement).getAttribute('src') || '';
+    const alt = (el as HTMLImageElement).getAttribute('alt') || '';
+    return '![' + alt + '](' + src + ')';
+  }
   if (tag === 'a')   return '[' + ch + '](' + (el.getAttribute('href') || '') + ')';
   // Plain <div> (no recognized class) = treat as paragraph block.
   // Chrome's contenteditable creates these on Enter when defaultParagraphSeparator
@@ -111,6 +116,7 @@ export function mdToHtml(md: string): string {
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       .replace(/~~(.+?)~~/g, '<s>$1</s>')
       .replace(/`(.+?)`/g, '<code>$1</code>')
+      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="n365-img">')
       .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
   }
 

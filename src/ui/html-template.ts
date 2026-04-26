@@ -12,6 +12,7 @@ export function buildHtml(): string {
       '<div id="n365-sb-ft">' +
         '<button class="n365-nb" id="n365-nr">' + ICONS.plus + '<span>ページを追加</span></button>' +
         '<button class="n365-nb" id="n365-ndb">' + ICONS.database + '<span>DBを追加</span></button>' +
+        '<button class="n365-nb" id="n365-trash-btn">' + ICONS.trash + '<span>ゴミ箱</span></button>' +
       '</div>' +
     '</aside>' +
     '<main id="n365-main">' +
@@ -74,10 +75,16 @@ export function buildHtml(): string {
           '<div id="n365-db-views">' +
             '<button class="n365-db-vbtn on" id="n365-dbv-table">' + ICONS.table + '<span>テーブル</span></button>' +
             '<button class="n365-db-vbtn" id="n365-dbv-board">' + ICONS.board + '<span>ボード</span></button>' +
+            '<button class="n365-db-vbtn" id="n365-dbv-list">' + ICONS.ul + '<span>リスト</span></button>' +
+            '<button class="n365-db-vbtn" id="n365-dbv-gallery">' + ICONS.codeBlock + '<span>ギャラリー</span></button>' +
+            '<button class="n365-db-vbtn" id="n365-dbv-calendar">' + ICONS.info + '<span>カレンダー</span></button>' +
+            '<button class="n365-db-vbtn" id="n365-dbv-gantt">' + ICONS.sort + '<span>ガント</span></button>' +
           '</div>' +
           '<div id="n365-db-tb">' +
             '<button class="n365-db-tb-btn" id="n365-db-filter-btn">' + ICONS.filter + '<span>フィルター</span></button>' +
             '<button class="n365-db-tb-btn" id="n365-db-sort-btn">' + ICONS.sort + '<span>ソート</span></button>' +
+            '<button class="n365-db-tb-btn" id="n365-db-csv-export">' + ICONS.download + '<span>CSV出力</span></button>' +
+            '<button class="n365-db-tb-btn" id="n365-db-csv-import">' + ICONS.copy + '<span>CSV取込</span></button>' +
           '</div>' +
           '<div id="n365-filter-bar">' +
             '<input id="n365-filter-inp" type="text" placeholder="フィルター...">' +
@@ -91,6 +98,10 @@ export function buildHtml(): string {
             '<button id="n365-dadd">＋ 新しい行</button>' +
           '</div>' +
           '<div id="n365-kb"></div>' +
+          '<div id="n365-list-view" class="n365-altview"></div>' +
+          '<div id="n365-gallery-view" class="n365-altview"></div>' +
+          '<div id="n365-calendar-view" class="n365-altview"></div>' +
+          '<div id="n365-gantt-view" class="n365-altview"></div>' +
         '</div>' +
       '</div>' +
       '<div id="n365-ld"><span>⏳</span><span id="n365-lm"> 読み込み中...</span></div>' +
@@ -141,6 +152,11 @@ export function buildHtml(): string {
       '<div id="n365-qs-res"></div>' +
     '</div></div>' +
     '<div id="n365-emoji"><div id="n365-emoji-grid"></div><button id="n365-emoji-rm">アイコンを削除</button></div>' +
+    '<div id="n365-trash-md"><div class="n365-mb" style="max-width:540px">' +
+      '<h2>ゴミ箱</h2>' +
+      '<div id="n365-trash-list"></div>' +
+      '<div class="n365-ma"><button class="n365-btn s" id="n365-trash-close">閉じる</button></div>' +
+    '</div></div>' +
     '<aside id="n365-outline">' +
       '<div id="n365-outline-hd">目次</div>' +
       '<div id="n365-outline-list"></div>' +
@@ -152,7 +168,8 @@ export function buildHtml(): string {
     '<aside id="n365-ai-panel">' +
       '<div id="n365-ai-hd">' +
         '<span class="n365-ai-title">' + ICONS.sparkle + '<span>AI</span></span>' +
-        '<button id="n365-ai-clear" title="履歴クリア">' + ICONS.trash + '</button>' +
+        '<select id="n365-ai-hist" title="会話履歴"></select>' +
+        '<button id="n365-ai-clear" title="現在の会話を削除">' + ICONS.trash + '</button>' +
         '<button id="n365-ai-key" title="APIキー設定">⚙</button>' +
         '<button id="n365-ai-close" title="閉じる">' + ICONS.close + '</button>' +
       '</div>' +
@@ -172,6 +189,7 @@ export function buildHtml(): string {
       '<div class="n365-pgm-sep"></div>' +
       '<div class="n365-pgm-item" data-action="print">' + ICONS.print + '<span>印刷</span></div>' +
       '<div class="n365-pgm-item" data-action="info">' + ICONS.info + '<span>ページ情報</span></div>' +
+      '<div class="n365-pgm-item" data-action="focus">' + ICONS.sidebar + '<span>集中モード切替</span></div>' +
       '<div class="n365-pgm-sep"></div>' +
       '<div class="n365-pgm-item danger" data-action="delete">' + ICONS.trash + '<span>削除</span></div>' +
     '</div>' +

@@ -16,11 +16,27 @@ import {
 import { openSearch, closeSearch, renderQs, qsMove, qsConfirm, resetQsSel } from './search-ui';
 import {
   closeAiPanel, toggleAiPanel, sendAiMessage, clearAiHistory,
-  configureApiKey, getQuickPrompts,
+  configureApiKey, getQuickPrompts, loadAiSession, newAiSession, renderHistoryDropdown,
 } from './ai-chat';
 import { toggleOutline, applyOutlineState, attachOutlineWatcher } from './outline';
 import { togglePropertiesPanel, applyPropertiesState } from './properties-panel';
 import { showWorkspaceMenu, getCurrentWorkspaceName } from './workspaces';
+import { openTrash, closeTrash } from './trash';
+import { exportCsv, importCsv } from './csv-io';
+
+const FOCUS_KEY = 'n365.focus';
+function applyFocusMode(): void {
+  const ov = document.getElementById('n365-overlay');
+  if (!ov) return;
+  if (localStorage.getItem(FOCUS_KEY) === '1') ov.classList.add('focus-mode');
+  else ov.classList.remove('focus-mode');
+}
+function toggleFocusMode(): void {
+  const cur = localStorage.getItem(FOCUS_KEY) === '1';
+  if (cur) localStorage.removeItem(FOCUS_KEY);
+  else localStorage.setItem(FOCUS_KEY, '1');
+  applyFocusMode();
+}
 import { apiGetPages, apiSetIcon } from '../api/pages';
 import { apiCreateDb } from '../api/db';
 import { ensureFolder } from '../api/sp-core';
@@ -44,7 +60,12 @@ export function attachAll(): void {
 
   // Sidebar toggle
   g('sb-toggle').addEventListener('click', () => {
-    g('sb').classList.toggle('collapsed');
+    // 3-state cycle: full → rail (44px) → collapsed (hidden) → full
+    const sb = g('sb');
+    if (sb.classList.contains('collapsed')) { sb.classList.remove('collapsed'); sb.classList.remove('rail'); }
+    else if (sb.classList.contains('rail')) { sb.classList.remove('rail'); sb.classList.add('collapsed'); }
+    else sb.classList.add('rail');
+    return;
   });
 
   // New page buttons
@@ -147,22 +168,29 @@ export function attachAll(): void {
     }
   });
 
-  // DB views (table / board)
-  g('dbv-table').addEventListener('click', () => {
-    g('dbv-table').classList.add('on');
-    g('dbv-board').classList.remove('on');
-    g('dt-wrap').style.display = '';
-    g('dadd').style.display = '';
-    g('kb').classList.remove('on');
-  });
-  g('dbv-board').addEventListener('click', () => {
-    g('dbv-board').classList.add('on');
-    g('dbv-table').classList.remove('on');
-    g('dt-wrap').style.display = 'none';
-    g('dadd').style.display = 'none';
-    g('kb').classList.add('on');
-    renderKanban();
-  });
+  // DB view switching (table / board / list / gallery / calendar / gantt)
+  function setDbView(name: string): void {
+    const buttons = ['dbv-table', 'dbv-board', 'dbv-list', 'dbv-gallery', 'dbv-calendar', 'dbv-gantt'];
+    buttons.forEach((id) => g(id).classList.toggle('on', id === 'dbv-' + name));
+    g('dt-wrap').style.display = name === 'table' ? '' : 'none';
+    g('dadd').style.display = name === 'table' ? '' : 'none';
+    g('kb').classList.toggle('on', name === 'board');
+    ['list', 'gallery', 'calendar', 'gantt'].forEach((v) => {
+      g(v + '-view').classList.toggle('on', name === v);
+    });
+    if (name === 'board') renderKanban();
+    else if (['list', 'gallery', 'calendar', 'gantt'].includes(name)) {
+      void import('./db-views-extra').then((m) => m.renderActiveView(name));
+    }
+  }
+  g('db-csv-export').addEventListener('click', exportCsv);
+  g('db-csv-import').addEventListener('click', importCsv);
+  g('dbv-table').addEventListener('click', () => setDbView('table'));
+  g('dbv-board').addEventListener('click', () => setDbView('board'));
+  g('dbv-list').addEventListener('click', () => setDbView('list'));
+  g('dbv-gallery').addEventListener('click', () => setDbView('gallery'));
+  g('dbv-calendar').addEventListener('click', () => setDbView('calendar'));
+  g('dbv-gantt').addEventListener('click', () => setDbView('gantt'));
 
   // DB filter
   g('db-filter-btn').addEventListener('click', () => {
@@ -270,10 +298,19 @@ export function attachAll(): void {
       case 'copy-link':   await copyPageLink(); break;
       case 'print':       printCurrent(); break;
       case 'info':        showPageInfo(); break;
+      case 'focus':       toggleFocusMode(); break;
       case 'delete':      if (S.currentId) await doDel(S.currentId); break;
     }
   });
   attachPageMenuOutsideClick();
+
+  // Apply persisted focus mode
+  applyFocusMode();
+
+  // Trash
+  g('trash-btn').addEventListener('click', openTrash);
+  g('trash-close').addEventListener('click', closeTrash);
+  g('trash-md').addEventListener('click', (e) => { if (e.target === g('trash-md')) closeTrash(); });
 
   // Workspace switcher
   const wsName = getCurrentWorkspaceName();
@@ -296,6 +333,12 @@ export function attachAll(): void {
   g('ai-btn').addEventListener('click', toggleAiPanel);
   g('ai-close').addEventListener('click', closeAiPanel);
   g('ai-clear').addEventListener('click', clearAiHistory);
+  g('ai-hist').addEventListener('change', () => {
+    const v = (g('ai-hist') as HTMLSelectElement).value;
+    if (v === '__new__') newAiSession();
+    else loadAiSession(v);
+  });
+  renderHistoryDropdown();
   g('ai-key').addEventListener('click', configureApiKey);
   g('ai-send').addEventListener('click', () => {
     const ta = g('ai-input') as HTMLTextAreaElement;

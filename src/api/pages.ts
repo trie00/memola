@@ -19,12 +19,21 @@ export function getPageParent(id: string): string {
 
 export async function apiGetPages(): Promise<Page[]> {
   S.meta = await loadMeta();
-  return S.meta.pages.map((p) => ({
-    Id: p.id,
-    Title: p.title,
-    ParentId: p.parent || '',
-    Type: (p.type || 'page') as 'page' | 'database',
-  }));
+  return S.meta.pages
+    .filter((p) => !p.trashed)
+    .map((p) => ({
+      Id: p.id,
+      Title: p.title,
+      ParentId: p.parent || '',
+      Type: (p.type || 'page') as 'page' | 'database',
+    }));
+}
+
+export function getTrashedPages(): Array<{ id: string; title: string; trashed: number; type?: string }> {
+  return S.meta.pages
+    .filter((p) => p.trashed)
+    .map((p) => ({ id: p.id, title: p.title, trashed: p.trashed!, type: p.type }))
+    .sort((a, b) => b.trashed - a.trashed);
 }
 
 export async function apiLoadContent(id: string): Promise<string> {
@@ -111,6 +120,33 @@ export async function apiMovePage(id: string, newParentId: string): Promise<void
   // Reflect in S.pages cache
   const pg = S.pages.find((x) => x.Id === id);
   if (pg) pg.ParentId = newParentId || '';
+}
+
+// Soft delete: move to trash (kept on disk; tree omits it).
+export async function apiTrashPage(id: string): Promise<void> {
+  const ids = collectIds(id);
+  const ts = Date.now();
+  S.meta.pages.forEach((p) => { if (ids.includes(p.id)) p.trashed = ts; });
+  await saveMeta();
+}
+
+export async function apiRestorePage(id: string): Promise<void> {
+  const ids = collectIds(id);
+  S.meta.pages.forEach((p) => { if (ids.includes(p.id)) delete p.trashed; });
+  await saveMeta();
+}
+
+// Hard delete from trash: actually deletes folder/list.
+export async function apiPurgePage(id: string): Promise<string[]> {
+  return apiDeletePage(id);
+}
+
+export async function apiSetPin(id: string, pinned: boolean): Promise<void> {
+  const p = S.meta.pages.find((p) => p.id === id);
+  if (!p) return;
+  if (pinned) p.pinned = true;
+  else delete p.pinned;
+  await saveMeta();
 }
 
 export async function apiSetIcon(id: string, emoji: string): Promise<void> {

@@ -65,6 +65,13 @@
   overflow: hidden; transition: width 0.2s ease;
 }
 #n365-sb.collapsed { width: 0; }
+#n365-sb.rail { width: var(--sidebar-collapsed-w); }
+#n365-sb.rail #n365-sb-hd > #n365-ws-btn span:not(:first-child) { display: none; }
+#n365-sb.rail #n365-search-nav span:not(:first-child) { display: none; }
+#n365-sb.rail .n365-sl-label { display: none; }
+#n365-sb.rail .n365-tl, #n365-sb.rail .n365-ta { display: none; }
+#n365-sb.rail .n365-tr { padding-left: 6px !important; }
+#n365-sb.rail .n365-nb span:not(:first-child) { display: none; }
 #n365-sb-hd {
   padding: 10px 14px; display: flex; align-items: center; gap: 8px;
   font-size: 13px; font-weight: 600; color: #9b9a97;
@@ -184,7 +191,11 @@
   align-items: flex-start;        /* keep #n365-ei at its natural height so padding-bottom works */
   padding: 48px 20px 0;
 }
-#n365-ei { width: 100%; max-width: 720px; }
+#n365-ei { width: 100%; max-width: var(--content-max); }
+#n365-overlay.focus-mode #n365-ei { max-width: var(--content-max-focus); }
+#n365-overlay.focus-mode #n365-sb { display: none; }
+#n365-overlay.focus-mode #n365-outline.on,
+#n365-overlay.focus-mode #n365-props.on { display: none !important; }
 
 /* Page header / icon */
 #n365-pg-hd { margin-bottom: 8px; }
@@ -315,6 +326,143 @@
 #n365-overlay .n365-block-placeholder {
   height: 2px; background: var(--accent); margin: 4px 0; border-radius: 1px;
 }
+
+/* ── Alternative DB views (list/gallery/calendar/gantt) ─ */
+#n365-overlay .n365-altview { display: none; padding: var(--s-5) 0; overflow: auto; }
+#n365-overlay .n365-altview.on { display: block; }
+#n365-overlay .n365-altview-empty { padding: var(--s-9); text-align: center; color: var(--ink); opacity: 0.4; }
+
+/* List view */
+#n365-overlay .n365-lv-row {
+  padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--paper-3);
+  cursor: pointer; transition: background var(--tr-fast);
+}
+#n365-overlay .n365-lv-row:hover { background: var(--paper-2); }
+#n365-overlay .n365-lv-title { font-size: var(--fs-base); color: var(--ink); margin-bottom: var(--s-1); }
+#n365-overlay .n365-lv-sub { display: flex; gap: var(--s-5); flex-wrap: wrap; font-size: var(--fs-sm); color: var(--ink); opacity: 0.55; }
+
+/* Gallery view */
+#n365-overlay #n365-gallery-view.on {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--s-5);
+}
+#n365-overlay .n365-gv-card {
+  background: var(--paper); border: 1px solid var(--paper-3); border-radius: var(--r-3);
+  overflow: hidden; cursor: pointer; transition: box-shadow var(--tr-fast);
+}
+#n365-overlay .n365-gv-card:hover { box-shadow: var(--sh-panel); }
+#n365-overlay .n365-gv-cover {
+  height: 100px; background: var(--accent-soft); color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 36px; font-weight: 700;
+}
+#n365-overlay .n365-gv-title { padding: var(--s-3) var(--s-4) var(--s-1); font-size: var(--fs-base); font-weight: 500; }
+#n365-overlay .n365-gv-meta { padding: 0 var(--s-4) var(--s-4); }
+#n365-overlay .n365-gv-prop { font-size: var(--fs-sm); color: var(--ink); opacity: 0.55; }
+
+/* Calendar view */
+#n365-overlay .n365-cal { width: 100%; max-width: 100%; }
+#n365-overlay .n365-cal-head {
+  font-size: var(--fs-lg); font-weight: 600; padding: var(--s-3) var(--s-4);
+  text-align: center;
+}
+#n365-overlay .n365-cal-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  border-top: 1px solid var(--paper-3); border-left: 1px solid var(--paper-3);
+}
+#n365-overlay .n365-cal-cell {
+  border-right: 1px solid var(--paper-3); border-bottom: 1px solid var(--paper-3);
+  padding: var(--s-2); min-height: 80px; font-size: var(--fs-sm);
+}
+#n365-overlay .n365-cal-dayhead .n365-cal-cell {
+  text-align: center; font-weight: 600; color: var(--ink); opacity: 0.6;
+  min-height: auto; padding: var(--s-2);
+}
+#n365-overlay .n365-cal-day.today .n365-cal-num {
+  background: var(--accent); color: var(--paper); border-radius: 50%;
+  width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+}
+#n365-overlay .n365-cal-event {
+  background: var(--accent-soft); color: var(--accent);
+  font-size: var(--fs-xs); padding: 2px 6px; border-radius: var(--r-1);
+  margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Gantt view */
+#n365-overlay .n365-gantt { font-size: var(--fs-sm); }
+#n365-overlay .n365-gantt-header { display: flex; padding-left: 200px; border-bottom: 1px solid var(--paper-3); }
+#n365-overlay .n365-gantt-day {
+  width: 28px; flex-shrink: 0; padding: var(--s-2) 0;
+  text-align: center; font-size: var(--fs-xs); color: var(--ink); opacity: 0.6;
+  border-right: 1px solid var(--paper-3);
+}
+#n365-overlay .n365-gantt-day.weekend { background: var(--paper-2); }
+#n365-overlay .n365-gantt-row {
+  display: flex; align-items: center; height: 36px;
+  border-bottom: 1px solid var(--paper-3);
+}
+#n365-overlay .n365-gantt-label {
+  width: 200px; padding: 0 var(--s-3); flex-shrink: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#n365-overlay .n365-gantt-track { position: relative; height: 100%; }
+#n365-overlay .n365-gantt-bar {
+  position: absolute; top: 8px; height: 20px;
+  background: var(--accent); border-radius: var(--r-2);
+  cursor: pointer;
+}
+
+/* ── Inline images ────────────────────────────────────── */
+#n365-overlay #n365-ed .n365-img {
+  max-width: 100%; height: auto; border-radius: var(--r-2);
+  margin: var(--s-3) 0; display: block;
+}
+
+/* ── Mobile / narrow viewport ────────────────────────── */
+@media (max-width: 768px) {
+  #n365-overlay #n365-sb { width: 200px; position: absolute; height: 100%; z-index: 100; box-shadow: var(--sh-flyout); }
+  #n365-overlay #n365-sb.collapsed { display: none; }
+  #n365-overlay #n365-main { width: 100%; }
+  #n365-overlay #n365-ai-panel { width: 100%; max-width: 100%; }
+  #n365-overlay #n365-outline, #n365-overlay #n365-props { width: 100%; max-width: 100%; right: 0; }
+  #n365-overlay #n365-dv-inner { padding: 24px 16px 0; }
+  #n365-overlay #n365-ei { padding: 24px 16px 50vh; max-width: 100%; }
+}
+@media (max-width: 480px) {
+  #n365-overlay #n365-tb { overflow-x: auto; flex-wrap: nowrap; }
+  #n365-overlay .n365-pgm-item, #n365-overlay .n365-mb { font-size: var(--fs-base); }
+  #n365-overlay .n365-mb { padding: 18px 18px 14px; }
+  #n365-overlay #n365-ttl { font-size: 28px; }
+}
+
+/* ── Trash modal ──────────────────────────────────────── */
+#n365-overlay #n365-trash-md {
+  position: fixed; inset: 0; background: rgba(15, 15, 15, .35);
+  display: none; align-items: center; justify-content: center;
+  z-index: 2147483647; padding: var(--s-9);
+  backdrop-filter: blur(2px);
+}
+#n365-overlay #n365-trash-md.on { display: flex; }
+#n365-overlay #n365-trash-list {
+  max-height: 50vh; overflow-y: auto; margin: var(--s-3) 0;
+  border: 1px solid var(--paper-3); border-radius: var(--r-2);
+}
+#n365-overlay .n365-trash-empty { padding: var(--s-7); text-align: center; color: var(--ink); opacity: 0.4; font-size: var(--fs-md); }
+#n365-overlay .n365-trash-row {
+  display: flex; align-items: center; gap: var(--s-2);
+  padding: var(--s-2) var(--s-4); border-bottom: 1px solid var(--paper-3);
+}
+#n365-overlay .n365-trash-row:last-child { border-bottom: none; }
+#n365-overlay .n365-trash-info { flex: 1; min-width: 0; }
+#n365-overlay .n365-trash-title { font-size: var(--fs-base); color: var(--ink); }
+#n365-overlay .n365-trash-meta { font-size: var(--fs-xs); color: var(--ink); opacity: 0.5; }
+#n365-overlay .n365-trash-btn {
+  background: transparent; border: none; cursor: pointer;
+  width: 28px; height: 28px; border-radius: var(--r-2);
+  font-size: 16px; opacity: 0.6;
+}
+#n365-overlay .n365-trash-btn:hover { background: var(--paper-2-strong); opacity: 1; }
+#n365-overlay .n365-trash-purge:hover { background: rgba(235,87,87,.1); }
 
 /* ── Inline AI block (within editor) ───────────────────── */
 #n365-overlay .n365-ai-block {
@@ -522,6 +670,12 @@
   display: flex; align-items: center; gap: 6px;
   padding: 10px 14px; border-bottom: 1px solid rgba(55, 53, 47, 0.09);
   flex-shrink: 0;
+}
+#n365-overlay #n365-ai-hist {
+  flex: 1; min-width: 0; max-width: 140px;
+  border: 1px solid var(--paper-3); border-radius: var(--r-2);
+  background: var(--paper); padding: 2px 6px; font-size: var(--fs-sm);
+  font-family: inherit; color: var(--ink); cursor: pointer;
 }
 #n365-overlay #n365-ai-hd .n365-ai-title {
   display: flex; align-items: center; gap: 6px; font-size: 13px;

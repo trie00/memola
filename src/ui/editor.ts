@@ -507,6 +507,7 @@ export function attachEditor(): void {
 
   // Block drag handle (lazy import keeps this file's footprint small)
   void import('./block-drag').then((m) => m.attachBlockDrag());
+  void import('./image-paste').then((m) => m.attachImagePaste());
 
   _ed.addEventListener('input', () => {
     S.dirty = true; setSave('未保存'); schedSave();

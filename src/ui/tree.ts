@@ -4,7 +4,7 @@ import { S, type Page } from '../state';
 import { g } from './dom';
 import { doSelect } from './views';
 import { doNew, doDel } from './actions';
-import { apiMovePage } from '../api/pages';
+import { apiMovePage, apiSetPin } from '../api/pages';
 import { toast } from './ui-helpers';
 
 export function kidsOf(pid: string): Page[] {
@@ -54,6 +54,16 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
     ab.addEventListener('click', (e) => { e.stopPropagation(); doNew(page.Id); });
     acts.appendChild(ab);
   }
+  const pinBtn = document.createElement('button');
+  pinBtn.className = 'n365-tac';
+  pinBtn.title = metaPage?.pinned ? 'ピン留め解除' : 'ピン留め';
+  pinBtn.innerHTML = metaPage?.pinned ? '📌' : '📍';
+  pinBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await apiSetPin(page.Id, !metaPage?.pinned);
+    renderTree();
+  });
+  acts.appendChild(pinBtn);
   const db = document.createElement('button');
   db.className = 'n365-tac';
   db.title = '削除';
@@ -105,6 +115,27 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
 export function renderTree(): void {
   const w = g('tree');
   w.innerHTML = '';
+
+  // Pinned section at the top
+  const pinned = S.pages.filter((p) => {
+    const m = S.meta.pages.find((mp) => mp.id === p.Id);
+    return m?.pinned;
+  });
+  if (pinned.length > 0) {
+    const lbl = document.createElement('div');
+    lbl.className = 'n365-sl-label';
+    lbl.textContent = 'ピン留め';
+    w.appendChild(lbl);
+    pinned.forEach((p) => { w.appendChild(mkNode(p, 0)); });
+    const sep = document.createElement('div');
+    sep.style.height = '8px';
+    w.appendChild(sep);
+    const lbl2 = document.createElement('div');
+    lbl2.className = 'n365-sl-label';
+    lbl2.textContent = 'ページ';
+    w.appendChild(lbl2);
+  }
+
   kidsOf('').forEach((p) => { w.appendChild(mkNode(p, 0)); });
 
   // Allow dropping onto the root area to make a page top-level

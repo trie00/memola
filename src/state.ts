@@ -8,6 +8,8 @@ export interface PageMeta {
   type?: 'page' | 'database';
   list?: string;
   icon?: string;
+  trashed?: number;          // unix ms when moved to trash; absent = active
+  pinned?: boolean;
 }
 
 export interface Meta {

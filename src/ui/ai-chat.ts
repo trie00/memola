@@ -6,6 +6,77 @@ import { toast } from './ui-helpers';
 import { callClaude, getApiKey, setApiKey, type ChatMessage } from '../api/anthropic';
 import { htmlToMd } from '../lib/markdown';
 
+const HISTORY_KEY = 'n365.ai.history';
+const MAX_HISTORY = 20;
+
+interface AiSession {
+  id: string;
+  title: string;
+  created: number;
+  messages: { role: 'user' | 'assistant'; content: string }[];
+}
+
+function loadHistory(): AiSession[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as AiSession[];
+  } catch { return []; }
+}
+
+function saveHistory(sessions: AiSession[]): void {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(sessions.slice(0, MAX_HISTORY)));
+}
+
+let _currentSessionId: string | null = null;
+
+function persistCurrentSession(): void {
+  if (S.ai.messages.length === 0) return;
+  const sessions = loadHistory();
+  const title = S.ai.messages[0]?.content.slice(0, 40) || '会話';
+  if (!_currentSessionId) {
+    _currentSessionId = 'sess-' + Date.now();
+    sessions.unshift({ id: _currentSessionId, title, created: Date.now(), messages: [...S.ai.messages] });
+  } else {
+    const existing = sessions.find((s) => s.id === _currentSessionId);
+    if (existing) { existing.messages = [...S.ai.messages]; existing.title = title; }
+    else sessions.unshift({ id: _currentSessionId, title, created: Date.now(), messages: [...S.ai.messages] });
+  }
+  saveHistory(sessions);
+}
+
+export function loadAiSession(id: string): void {
+  const sess = loadHistory().find((s) => s.id === id);
+  if (!sess) return;
+  _currentSessionId = id;
+  S.ai.messages = [...sess.messages];
+  renderAiMessages();
+  renderHistoryDropdown();
+}
+
+export function newAiSession(): void {
+  _currentSessionId = null;
+  S.ai.messages = [];
+  renderAiMessages();
+  renderHistoryDropdown();
+}
+
+export function renderHistoryDropdown(): void {
+  const dd = document.getElementById('n365-ai-hist');
+  if (!dd) return;
+  const sessions = loadHistory();
+  dd.innerHTML = '<option value="__new__">+ 新しい会話</option>' +
+    sessions.map((s) =>
+      '<option value="' + s.id + '"' + (s.id === _currentSessionId ? ' selected' : '') + '>' +
+        escapeAttr(s.title || '会話') +
+      '</option>',
+    ).join('');
+}
+
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 const QUICK_PROMPTS: Array<{ label: string; prompt: string }> = [
   { label: '要約', prompt: 'このページの内容を3行で要約してください。' },
   { label: '改稿', prompt: 'このページの本文をより読みやすく、自然な日本語に書き直してください。' },
@@ -124,14 +195,22 @@ export async function sendAiMessage(text: string): Promise<void> {
   } finally {
     S.ai.loading = false;
     renderAiMessages();
+    persistCurrentSession();
+    renderHistoryDropdown();
   }
 }
 
 export function clearAiHistory(): void {
   if (S.ai.messages.length === 0) return;
-  if (!confirm('会話履歴をクリアしますか？')) return;
+  if (!confirm('現在の会話をクリアしますか？(履歴からも削除されます)')) return;
+  if (_currentSessionId) {
+    const sessions = loadHistory().filter((s) => s.id !== _currentSessionId);
+    saveHistory(sessions);
+  }
+  _currentSessionId = null;
   S.ai.messages = [];
   renderAiMessages();
+  renderHistoryDropdown();
 }
 
 export function configureApiKey(): void {

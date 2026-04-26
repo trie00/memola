@@ -6,7 +6,7 @@ import { g, getEd, getOverlay } from './dom';
 import { setLoad, setSave, toast } from './ui-helpers';
 import { renderTree } from './tree';
 import { showView, doSelect } from './views';
-import { apiCreatePage, apiDeletePage, apiSavePage, getPathForId } from '../api/pages';
+import { apiCreatePage, apiDeletePage, apiSavePage, getPathForId, apiTrashPage } from '../api/pages';
 import { apiAddDbRow } from '../api/db';
 import { readFile, writeFile } from '../api/sp-core';
 import { getBody, mdToHtml } from '../lib/markdown';
@@ -40,18 +40,30 @@ export async function doDel(id: string): Promise<void> {
   const page = S.pages.find((p) => p.Id === id);
   const name = page ? (page.Title || '無題') : '無題';
   const hasK = S.pages.some((p) => p.ParentId === id);
-  if (!confirm(hasK ? '「' + name + '」と子ページをすべて削除しますか？' : '「' + name + '」を削除しますか？')) return;
+  if (!confirm(hasK ? '「' + name + '」と子ページをゴミ箱へ移動しますか？' : '「' + name + '」をゴミ箱へ移動しますか？')) return;
   try {
-    setLoad(true, '削除中...');
-    const ids = await apiDeletePage(id);
-    S.pages = S.pages.filter((p) => ids.indexOf(p.Id) < 0);
-    if (S.currentId !== null && ids.indexOf(S.currentId) >= 0) {
+    setLoad(true, '移動中...');
+    await apiTrashPage(id);
+    const trashedIds = collectIds(id);
+    S.pages = S.pages.filter((p) => !trashedIds.includes(p.Id));
+    if (S.currentId !== null && trashedIds.includes(S.currentId)) {
       S.currentId = null;
       showView('empty');
     }
     renderTree();
-    toast('削除しました');
+    toast('ゴミ箱に移動しました');
   } catch (e) { toast('削除に失敗: ' + (e as Error).message, 'err'); }
+  finally { setLoad(false); }
+}
+
+// Permanently remove from trash (called by trash UI)
+export async function doPurge(id: string): Promise<void> {
+  if (!confirm('完全に削除します。元に戻せませんがよろしいですか？')) return;
+  try {
+    setLoad(true, '完全削除中...');
+    await apiDeletePage(id);
+    toast('完全に削除しました');
+  } catch (e) { toast('削除失敗: ' + (e as Error).message, 'err'); }
   finally { setLoad(false); }
 }
 
