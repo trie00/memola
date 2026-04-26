@@ -13,31 +13,18 @@ import { setSave } from './ui-helpers';
 import { schedSave } from './actions';
 import { getEd } from './dom';
 
-const ROW_HEADER_DEFAULTS = ['列1', '列2', '列3'];
-
-/** Build a fresh table DOM (3×2 default). */
-export function buildTable(cols = 3, rows = 1): HTMLDivElement {
+/** Build a fresh table DOM (no header by default; 3 cols × 2 body rows). */
+export function buildTable(cols = 3, rows = 2): HTMLDivElement {
   const wrap = document.createElement('div');
   wrap.className = 'n365-itbl-wrap';
   wrap.contentEditable = 'false';
   const tbl = document.createElement('table');
   tbl.className = 'n365-itbl';
-  // colgroup for resizable widths (future)
+  // colgroup for column widths
   const cg = document.createElement('colgroup');
   for (let i = 0; i < cols; i++) cg.appendChild(document.createElement('col'));
   tbl.appendChild(cg);
-  // header row
-  const thead = document.createElement('thead');
-  const trh = document.createElement('tr');
-  for (let i = 0; i < cols; i++) {
-    const th = document.createElement('th');
-    th.contentEditable = 'true';
-    th.textContent = ROW_HEADER_DEFAULTS[i] || '列' + (i + 1);
-    trh.appendChild(th);
-  }
-  thead.appendChild(trh);
-  tbl.appendChild(thead);
-  // body rows
+  // body rows only — no thead by default
   const tbody = document.createElement('tbody');
   for (let r = 0; r < rows; r++) {
     const tr = document.createElement('tr');
@@ -94,6 +81,140 @@ export function attachTableHandlers(wrap: HTMLElement): void {
 
   // Hover row/col buttons (lightweight: rebuild on each enter)
   installHoverButtons(wrap);
+  // Notion-style: column resize via drag on cell right edge
+  installColumnResize(tbl);
+  // Notion-style: cell range selection via drag
+  installRangeSelection(tbl);
+}
+
+// ── Column resize ──────────────────────────────────────
+function installColumnResize(tbl: HTMLTableElement): void {
+  if (tbl.dataset.itblResize === '1') return;
+  tbl.dataset.itblResize = '1';
+  // pointermove for cursor hint + mousedown on right edge → drag
+  tbl.addEventListener('mousedown', (e) => {
+    const cell = (e.target as HTMLElement).closest('th,td') as HTMLTableCellElement | null;
+    if (!cell) return;
+    const rect = cell.getBoundingClientRect();
+    const fromRight = rect.right - e.clientX;
+    if (fromRight > 6 || fromRight < -2) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const colIdx = Array.from(cell.parentElement!.children).indexOf(cell);
+    const cg = tbl.querySelector('colgroup');
+    if (!cg) return;
+    const maybeColEl = cg.children[colIdx];
+    if (!maybeColEl) return;
+    const colEl: HTMLTableColElement = maybeColEl as HTMLTableColElement;
+    const startW = cell.offsetWidth;
+    const startX = e.clientX;
+    document.body.style.cursor = 'col-resize';
+    function onMove(ev: MouseEvent): void {
+      const dx = ev.clientX - startX;
+      const w = Math.max(60, startW + dx);
+      colEl.style.width = w + 'px';
+    }
+    function onUp(): void {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+      S.dirty = true; setSave('未保存'); schedSave();
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+  tbl.addEventListener('mousemove', (e) => {
+    const cell = (e.target as HTMLElement).closest('th,td') as HTMLTableCellElement | null;
+    if (!cell) return;
+    const rect = cell.getBoundingClientRect();
+    const fromRight = rect.right - e.clientX;
+    cell.style.cursor = (fromRight > 6 || fromRight < -2) ? '' : 'col-resize';
+  });
+}
+
+// ── Cell range selection ───────────────────────────────
+function installRangeSelection(tbl: HTMLTableElement): void {
+  if (tbl.dataset.itblRangeSel === '1') return;
+  tbl.dataset.itblRangeSel = '1';
+  let anchor: HTMLTableCellElement | null = null;
+  let dragging = false;
+  function clearSel(): void {
+    tbl.querySelectorAll('.n365-itbl-selected').forEach((c) => c.classList.remove('n365-itbl-selected'));
+  }
+  function applyRange(a: HTMLTableCellElement, b: HTMLTableCellElement): void {
+    const aRow = (a.parentElement as HTMLTableRowElement).rowIndex;
+    const bRow = (b.parentElement as HTMLTableRowElement).rowIndex;
+    const aCol = a.cellIndex;
+    const bCol = b.cellIndex;
+    const r0 = Math.min(aRow, bRow), r1 = Math.max(aRow, bRow);
+    const c0 = Math.min(aCol, bCol), c1 = Math.max(aCol, bCol);
+    clearSel();
+    for (let r = r0; r <= r1; r++) {
+      const row = tbl.rows[r];
+      if (!row) continue;
+      for (let c = c0; c <= c1; c++) {
+        const cell = row.children[c];
+        if (cell) cell.classList.add('n365-itbl-selected');
+      }
+    }
+  }
+  tbl.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    // Skip if it's a resize-edge mousedown
+    const cell = (e.target as HTMLElement).closest('th,td') as HTMLTableCellElement | null;
+    if (!cell) return;
+    const rect = cell.getBoundingClientRect();
+    const fromRight = rect.right - e.clientX;
+    if (fromRight <= 6 && fromRight >= -2) return;        // resize takes precedence
+    anchor = cell;
+    dragging = false;
+    clearSel();
+  });
+  tbl.addEventListener('mousemove', (e) => {
+    if (!anchor) return;
+    if ((e.buttons & 1) === 0) { anchor = null; return; }
+    const cell = (e.target as HTMLElement).closest('th,td') as HTMLTableCellElement | null;
+    if (!cell || cell === anchor && !dragging) return;
+    if (cell !== anchor) {
+      dragging = true;
+      // Once we start range-selecting, prevent the contenteditable text-selection
+      const sel = window.getSelection();
+      if (sel) sel.removeAllRanges();
+      e.preventDefault();
+      applyRange(anchor, cell);
+    }
+  });
+  document.addEventListener('mouseup', () => {
+    anchor = null;
+    // dragging stays: kept until next mousedown so user can copy
+  });
+  // Click outside the table clears the selection
+  document.addEventListener('mousedown', (e) => {
+    if (!tbl.contains(e.target as Node)) clearSel();
+  });
+  // Copy selected range as TSV
+  tbl.addEventListener('copy', (e) => {
+    const cells = Array.from(tbl.querySelectorAll<HTMLTableCellElement>('.n365-itbl-selected'));
+    if (cells.length === 0) return;
+    const rows = new Map<number, HTMLTableCellElement[]>();
+    cells.forEach((c) => {
+      const ri = (c.parentElement as HTMLTableRowElement).rowIndex;
+      if (!rows.has(ri)) rows.set(ri, []);
+      rows.get(ri)!.push(c);
+    });
+    const sorted = Array.from(rows.entries()).sort((a, b) => a[0] - b[0]);
+    const tsv = sorted.map(([, rcells]) =>
+      rcells.sort((a, b) => a.cellIndex - b.cellIndex)
+        .map((c) => (c.textContent || '').replace(/\t/g, ' ').replace(/\n/g, ' ')).join('\t'),
+    ).join('\n');
+    e.preventDefault();
+    e.clipboardData?.setData('text/plain', tsv);
+    e.clipboardData?.setData('text/html',
+      '<table>' + sorted.map(([, rcells]) =>
+        '<tr>' + rcells.map((c) => '<td>' + (c.textContent || '') + '</td>').join('') + '</tr>',
+      ).join('') + '</table>',
+    );
+  });
 }
 
 function moveCell(cell: HTMLTableCellElement, dir: 1 | -1): void {
@@ -161,25 +282,28 @@ function addColAfter(tbl: HTMLTableElement, colIdx: number): void {
   }
   Array.from(tbl.rows).forEach((row) => {
     const ref = row.children[colIdx + 1] || null;
-    const cell = document.createElement(row.parentElement?.tagName === 'THEAD' ? 'th' : 'td');
+    const isHeaderRow = row.parentElement?.tagName === 'THEAD';
+    const cell = document.createElement(isHeaderRow ? 'th' : 'td');
     cell.contentEditable = 'true';
-    if (cell.tagName === 'TH') cell.textContent = '列' + (row.children.length + 1);
-    else cell.appendChild(document.createElement('br'));
+    cell.appendChild(document.createElement('br'));
     row.insertBefore(cell, ref);
   });
   S.dirty = true; setSave('未保存'); schedSave();
 }
 
 function deleteRow(tr: HTMLTableRowElement): void {
-  const tbody = tr.parentElement;
-  if (!tbody || tbody.tagName !== 'TBODY') return;        // header row 不可
-  if (tbody.children.length <= 1) return;                 // 最低 1 行残す
+  const parent = tr.parentElement;
+  if (!parent) return;
+  // 最低 1 行残す
+  const tbl = tr.closest('table');
+  const totalRows = tbl ? tbl.rows.length : 1;
+  if (totalRows <= 1) return;
   tr.remove();
   S.dirty = true; setSave('未保存'); schedSave();
 }
 
 function deleteCol(tbl: HTMLTableElement, colIdx: number): void {
-  const cols = (tbl.tHead?.rows[0]?.children.length) || 0;
+  const cols = (tbl.rows[0]?.children.length) || 0;
   if (cols <= 1) return;                                   // 最低 1 列残す
   const cg = tbl.querySelector('colgroup');
   if (cg && cg.children[colIdx]) cg.children[colIdx].remove();
@@ -233,7 +357,6 @@ function showCellMenu(cell: HTMLTableCellElement, x: number, y: number): void {
   const tbl = cell.closest('table.n365-itbl') as HTMLTableElement;
   const tr = cell.parentElement as HTMLTableRowElement;
   const colIdx = Array.from(tr.children).indexOf(cell);
-  const isHeader = tr.parentElement?.tagName === 'THEAD';
 
   const menu = document.createElement('div');
   menu.className = 'n365-itbl-menu';
@@ -247,22 +370,20 @@ function showCellMenu(cell: HTMLTableCellElement, x: number, y: number): void {
     it.addEventListener('click', () => { fn(); menu.remove(); });
     return it;
   }
-  if (!isHeader) {
-    menu.appendChild(makeItem('↑ 上に行を追加', () => {
-      const newTr = document.createElement('tr');
-      const cols = tr.children.length;
-      for (let i = 0; i < cols; i++) {
-        const td = document.createElement('td');
-        td.contentEditable = 'true';
-        td.appendChild(document.createElement('br'));
-        newTr.appendChild(td);
-      }
-      tr.parentElement!.insertBefore(newTr, tr);
-      S.dirty = true; setSave('未保存'); schedSave();
-    }));
-    menu.appendChild(makeItem('↓ 下に行を追加', () => addRowAfter(tr)));
-    menu.appendChild(makeItem('行を削除', () => deleteRow(tr), true));
-  }
+  menu.appendChild(makeItem('↑ 上に行を追加', () => {
+    const newTr = document.createElement('tr');
+    const cols = tr.children.length;
+    for (let i = 0; i < cols; i++) {
+      const td = document.createElement('td');
+      td.contentEditable = 'true';
+      td.appendChild(document.createElement('br'));
+      newTr.appendChild(td);
+    }
+    tr.parentElement!.insertBefore(newTr, tr);
+    S.dirty = true; setSave('未保存'); schedSave();
+  }));
+  menu.appendChild(makeItem('↓ 下に行を追加', () => addRowAfter(tr)));
+  menu.appendChild(makeItem('行を削除', () => deleteRow(tr), true));
   menu.appendChild(makeItem('← 左に列を追加', () => addColAfter(tbl, colIdx - 1)));
   menu.appendChild(makeItem('→ 右に列を追加', () => addColAfter(tbl, colIdx)));
   menu.appendChild(makeItem('列を削除', () => deleteCol(tbl, colIdx), true));
