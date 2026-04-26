@@ -61,6 +61,7 @@ function showSlashMenu(rect: { bottom: number; left: number }): void {
 
   el.innerHTML = '';
   let prevCat = '';
+  let selEl: HTMLElement | null = null;
   _slashFiltered.forEach((item, idx) => {
     if (item.cat !== prevCat) {
       const sec = document.createElement('div');
@@ -76,6 +77,7 @@ function showSlashMenu(rect: { bottom: number; left: number }): void {
       '<div><div class="n365-slash-name">' + item.name + '</div><div class="n365-slash-desc">' + item.desc + '</div></div>';
     div.addEventListener('mousedown', (e) => { e.preventDefault(); applySlashCmd(item.cmd); });
     el.appendChild(div);
+    if (idx === _slashSel) selEl = div;
   });
 
   const top = rect.bottom + window.scrollY + 4;
@@ -84,6 +86,13 @@ function showSlashMenu(rect: { bottom: number; left: number }): void {
   if (left + 260 > vpW) left = vpW - 264;
   el.style.top = top + 'px';
   el.style.left = left + 'px';
+
+  // Scroll the selected item into view (within the slash-menu's own scroll container)
+  if (selEl) {
+    requestAnimationFrame(() => {
+      try { (selEl as HTMLElement).scrollIntoView({ block: 'nearest' }); } catch { /* ignore */ }
+    });
+  }
   el.classList.add('on');
 }
 
@@ -531,6 +540,56 @@ export function attachEditor(): void {
   void import('./block-drag').then((m) => m.attachBlockDrag());
   void import('./image-paste').then((m) => m.attachImagePaste());
   void import('./inline-table').then((m) => m.attachTablePaste());
+
+  // Strip inline format wrappers (code/b/i/s/u/em/strong) duplicated to the new
+  // paragraph by the browser when Enter is pressed inside them — Notion-style:
+  // pressing Enter exits the inline format.
+  const INLINE_FMT = /^(CODE|B|STRONG|I|EM|S|DEL|U)$/;
+  function unwrapLeadingInlineFormats(block: HTMLElement): { node: Node; offset: number } | null {
+    while (block.firstChild) {
+      const first = block.firstChild;
+      if (first.nodeType !== 1) return { node: first, offset: 0 };
+      const el = first as Element;
+      if (!INLINE_FMT.test(el.tagName)) return null;
+      const parent = first.parentNode!;
+      while (first.firstChild) parent.insertBefore(first.firstChild, first);
+      first.remove();
+    }
+    if (!block.firstChild) {
+      block.appendChild(document.createElement('br'));
+      return { node: block, offset: 0 };
+    }
+    return null;
+  }
+  // Also clean the OLD block (the one before split) — if user pressed Enter at
+  // start of an inline format, the old block may be left with an empty wrapper.
+  function pruneEmptyInlineFormats(block: HTMLElement): void {
+    block.querySelectorAll('code,b,strong,i,em,s,del,u').forEach((el) => {
+      if (!el.textContent) el.remove();
+    });
+  }
+  _ed.addEventListener('input', (e: Event) => {
+    const ie = e as InputEvent;
+    if (ie.inputType === 'insertParagraph') {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount) {
+        const newBlock = curBlock();
+        if (newBlock && newBlock !== _ed) {
+          const target = unwrapLeadingInlineFormats(newBlock);
+          // also clean previous block (split residue)
+          const prev = newBlock.previousElementSibling as HTMLElement | null;
+          if (prev) pruneEmptyInlineFormats(prev);
+          if (target) {
+            const r = document.createRange();
+            r.setStart(target.node, target.offset);
+            r.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(r);
+          }
+        }
+      }
+    }
+  });
 
   _ed.addEventListener('input', () => {
     S.dirty = true; setSave('未保存'); schedSave();
