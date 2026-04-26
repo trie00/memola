@@ -565,6 +565,17 @@
 #n365-overlay .n365-itbl th.n365-itbl-selected {
   background: var(--accent-soft);
 }
+
+/* ── 行見出し / 列見出し (色違いセル) ── */
+#n365-overlay .n365-itbl[data-hrow="1"] tr:first-child > td,
+#n365-overlay .n365-itbl[data-hrow="1"] tr:first-child > th,
+#n365-overlay .n365-itbl[data-hcol="1"] tr > td:first-child,
+#n365-overlay .n365-itbl[data-hcol="1"] tr > th:first-child,
+#n365-overlay .n365-itbl thead th {
+  background: var(--paper-2-strong);
+  font-weight: 500;
+  color: var(--ink);
+}
 /* + 行 (下) / + 列 (右) ボタン — Notion 配置 */
 #n365-overlay .n365-itbl-addrow,
 #n365-overlay .n365-itbl-addcol {
@@ -608,6 +619,10 @@
 #n365-overlay .n365-itbl-menu-item:hover { background: var(--paper-2-strong); }
 #n365-overlay .n365-itbl-menu-item.danger { color: var(--danger); }
 #n365-overlay .n365-itbl-menu-item.danger:hover { background: rgba(184,83,74,0.1); }
+#n365-overlay .n365-itbl-menu-sep {
+  height: 1px; background: var(--paper-3);
+  margin: 4px 6px;
+}
 
 /* ── Inline images ────────────────────────────────────── */
 #n365-overlay #n365-ed .n365-img {

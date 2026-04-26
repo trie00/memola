@@ -20,6 +20,8 @@ export function buildTable(cols = 3, rows = 2): HTMLDivElement {
   wrap.contentEditable = 'false';
   const tbl = document.createElement('table');
   tbl.className = 'n365-itbl';
+  tbl.dataset.hrow = '0';
+  tbl.dataset.hcol = '0';
   // colgroup for column widths
   const cg = document.createElement('colgroup');
   for (let i = 0; i < cols; i++) cg.appendChild(document.createElement('col'));
@@ -416,10 +418,26 @@ function installHoverButtons(wrap: HTMLElement): void {
   });
 }
 
+/** Inspect current selected cells; returns whether they form exactly the top row / left col. */
+function selectionInfo(tbl: HTMLTableElement): { isTopRow: boolean; isLeftCol: boolean } {
+  const sel = Array.from(tbl.querySelectorAll<HTMLTableCellElement>('.n365-itbl-selected'));
+  if (sel.length === 0) return { isTopRow: false, isLeftCol: false };
+  const cols = tbl.rows[0]?.children.length || 0;
+  const rows = tbl.rows.length;
+  // Top row covered? all cells in row 0 selected and all selections are in row 0
+  const isTopRow = cols > 0 && sel.length === cols
+    && sel.every((c) => (c.parentElement as HTMLTableRowElement).rowIndex === 0);
+  // Left column covered?
+  const isLeftCol = rows > 0 && sel.length === rows
+    && sel.every((c) => c.cellIndex === 0);
+  return { isTopRow, isLeftCol };
+}
+
 function showCellMenu(cell: HTMLTableCellElement, x: number, y: number): void {
   const tbl = cell.closest('table.n365-itbl') as HTMLTableElement;
   const tr = cell.parentElement as HTMLTableRowElement;
   const colIdx = Array.from(tr.children).indexOf(cell);
+  const sel = selectionInfo(tbl);
 
   const menu = document.createElement('div');
   menu.className = 'n365-itbl-menu';
@@ -433,6 +451,29 @@ function showCellMenu(cell: HTMLTableCellElement, x: number, y: number): void {
     it.addEventListener('click', () => { fn(); menu.remove(); });
     return it;
   }
+  function makeSep(): HTMLDivElement {
+    const s = document.createElement('div');
+    s.className = 'n365-itbl-menu-sep';
+    return s;
+  }
+
+  // 行見出し / 列見出しトグル (選択範囲条件を満たすときのみ表示)
+  if (sel.isTopRow) {
+    const on = tbl.dataset.hrow === '1';
+    menu.appendChild(makeItem(on ? '✓ 行見出しを解除' : '行見出しに設定', () => {
+      tbl.dataset.hrow = on ? '0' : '1';
+      S.dirty = true; setSave('未保存'); schedSave();
+    }));
+  }
+  if (sel.isLeftCol) {
+    const on = tbl.dataset.hcol === '1';
+    menu.appendChild(makeItem(on ? '✓ 列見出しを解除' : '列見出しに設定', () => {
+      tbl.dataset.hcol = on ? '0' : '1';
+      S.dirty = true; setSave('未保存'); schedSave();
+    }));
+  }
+  if (sel.isTopRow || sel.isLeftCol) menu.appendChild(makeSep());
+
   menu.appendChild(makeItem('↑ 上に行を追加', () => {
     const newTr = document.createElement('tr');
     const cols = tr.children.length;
@@ -502,7 +543,7 @@ function curBlockSelf(): HTMLElement | null {
   return null;
 }
 
-/** Build a table DOM from a 2D string array (rows × cols). First row = header. */
+/** Build a table DOM from a 2D string array (rows × cols). First row = header (visual via data-hrow). */
 export function buildTableFromGrid(grid: string[][]): HTMLDivElement {
   const cols = Math.max(...grid.map((r) => r.length), 1);
   const wrap = document.createElement('div');
@@ -510,25 +551,15 @@ export function buildTableFromGrid(grid: string[][]): HTMLDivElement {
   wrap.contentEditable = 'false';
   const tbl = document.createElement('table');
   tbl.className = 'n365-itbl';
+  // Excel/HTML paste: 先頭行を見出しとみなす慣例
+  tbl.dataset.hrow = '1';
+  tbl.dataset.hcol = '0';
   const cg = document.createElement('colgroup');
   for (let i = 0; i < cols; i++) cg.appendChild(document.createElement('col'));
   tbl.appendChild(cg);
-  // header
-  const thead = document.createElement('thead');
-  const trh = document.createElement('tr');
-  const headRow = grid[0] || [];
-  for (let i = 0; i < cols; i++) {
-    const th = document.createElement('th');
-    th.contentEditable = 'true';
-    th.textContent = headRow[i] || '';
-    if (!th.textContent) th.appendChild(document.createElement('br'));
-    trh.appendChild(th);
-  }
-  thead.appendChild(trh);
-  tbl.appendChild(thead);
-  // body
   const tbody = document.createElement('tbody');
-  for (let r = 1; r < Math.max(grid.length, 2); r++) {
+  const totalRows = Math.max(grid.length, 1);
+  for (let r = 0; r < totalRows; r++) {
     const row = grid[r] || [];
     const tr = document.createElement('tr');
     for (let c = 0; c < cols; c++) {

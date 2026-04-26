@@ -12,9 +12,9 @@ export function domWalk(node: Node): string {
   const el = node as Element;
   const tag = el.tagName.toLowerCase();
 
-  // Inline table block → GFM pipe table
+  // Inline table block → GFM pipe table (with optional header-row/col attrs preserved as HTML comment)
   if (tag === 'div' && el.classList.contains('n365-itbl-wrap')) {
-    const tbl = el.querySelector('table');
+    const tbl = el.querySelector('table') as HTMLTableElement | null;
     if (!tbl) return '';
     const rows = Array.from(tbl.querySelectorAll('tr'));
     if (rows.length === 0) return '';
@@ -23,7 +23,10 @@ export function domWalk(node: Node): string {
     const head = cellsOf(rows[0]);
     const body = rows.slice(1).map(cellsOf);
     const cols = head.length;
+    const hrow = tbl.dataset.hrow === '1' ? 1 : 0;
+    const hcol = tbl.dataset.hcol === '1' ? 1 : 0;
     let out = '\n';
+    if (hrow || hcol) out += '<!-- n365-table hrow=' + hrow + ' hcol=' + hcol + ' -->\n';
     out += '| ' + head.join(' | ') + ' |\n';
     out += '| ' + Array(cols).fill('---').join(' | ') + ' |\n';
     for (const r of body) {
@@ -175,8 +178,19 @@ export function mdToHtml(md: string): string {
       i++; continue;
     }
 
+    // n365-table 属性コメント (テーブル直前)
+    let pendingHrow = -1, pendingHcol = -1;
+    const cm = ln.match(/^<!--\s*n365-table\s+hrow=([01])\s+hcol=([01])\s*-->\s*$/);
+    if (cm) {
+      pendingHrow = parseInt(cm[1]);
+      pendingHcol = parseInt(cm[2]);
+      i++;
+      // 次の行が table でなければ属性コメントは捨てる (再度ループで table 判定へ)
+      if (i >= lines.length || !lines[i].trimStart().startsWith('|')) continue;
+    }
+
     // GFM pipe table — header line + separator line + body rows
-    if (ln.trimStart().startsWith('|') && i + 1 < lines.length &&
+    if (i < lines.length && lines[i].trimStart().startsWith('|') && i + 1 < lines.length &&
         /^\s*\|?\s*:?-+:?(\s*\|\s*:?-+:?)*\s*\|?\s*$/.test(lines[i + 1])) {
       const splitRow = (s: string): string[] => {
         let t = s.trim();
@@ -185,7 +199,7 @@ export function mdToHtml(md: string): string {
         // Split on unescaped pipes; restore escaped \| → |
         return t.split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, '|'));
       };
-      const head = splitRow(ln);
+      const head = splitRow(lines[i]);
       const cols = head.length;
       i += 2;
       const body: string[][] = [];
@@ -195,12 +209,16 @@ export function mdToHtml(md: string): string {
         body.push(padded.slice(0, cols));
         i++;
       }
-      let tbl = '<div class="n365-itbl-wrap" contenteditable="false"><table class="n365-itbl"><colgroup>';
+      // hrow/hcol: コメントが無い場合のデフォルト = hrow=1 (GFM convention), hcol=0
+      const hrow = pendingHrow >= 0 ? pendingHrow : 1;
+      const hcol = pendingHcol >= 0 ? pendingHcol : 0;
+      let tbl = '<div class="n365-itbl-wrap" contenteditable="false">' +
+        '<table class="n365-itbl" data-hrow="' + hrow + '" data-hcol="' + hcol + '"><colgroup>';
       for (let c = 0; c < cols; c++) tbl += '<col>';
-      tbl += '</colgroup><thead><tr>';
-      for (const h of head) tbl += '<th contenteditable="true">' + inline(h) + '</th>';
-      tbl += '</tr></thead><tbody>';
-      for (const row of body) {
+      tbl += '</colgroup><tbody>';
+      // 1行目もそのまま <tr><td> に。見出し可視化は CSS の data-hrow で行う。
+      const allRows: string[][] = [head, ...body];
+      for (const row of allRows) {
         tbl += '<tr>';
         for (const cell of row) tbl += '<td contenteditable="true">' + (cell ? inline(cell) : '<br>') + '</td>';
         tbl += '</tr>';
