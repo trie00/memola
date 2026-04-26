@@ -158,7 +158,10 @@ function installRangeSelection(tbl: HTMLTableElement): void {
   let anchor: HTMLTableCellElement | null = null;
   let dragging = false;
   function clearSel(): void {
-    tbl.querySelectorAll('.n365-itbl-selected').forEach((c) => c.classList.remove('n365-itbl-selected'));
+    tbl.querySelectorAll<HTMLElement>('.n365-itbl-selected').forEach((c) => {
+      c.classList.remove('n365-itbl-selected');
+      c.style.boxShadow = '';
+    });
   }
   function applyRange(a: HTMLTableCellElement, b: HTMLTableCellElement): void {
     const aRow = (a.parentElement as HTMLTableRowElement).rowIndex;
@@ -172,8 +175,16 @@ function installRangeSelection(tbl: HTMLTableElement): void {
       const row = tbl.rows[r];
       if (!row) continue;
       for (let c = c0; c <= c1; c++) {
-        const cell = row.children[c];
-        if (cell) cell.classList.add('n365-itbl-selected');
+        const cell = row.children[c] as HTMLElement | undefined;
+        if (!cell) continue;
+        cell.classList.add('n365-itbl-selected');
+        // 範囲の外周辺だけ accent border を inset box-shadow で描く
+        const sh: string[] = [];
+        if (r === r0) sh.push('inset 0 1.5px 0 0 var(--accent)');
+        if (r === r1) sh.push('inset 0 -1.5px 0 0 var(--accent)');
+        if (c === c0) sh.push('inset 1.5px 0 0 0 var(--accent)');
+        if (c === c1) sh.push('inset -1.5px 0 0 0 var(--accent)');
+        cell.style.boxShadow = sh.join(', ');
       }
     }
   }

@@ -560,11 +560,13 @@
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 1.5px var(--accent);
 }
-/* セル範囲選択ハイライト */
+/* セル範囲選択ハイライト (外周 accent border は JS が inline box-shadow で付与) */
 #n365-overlay .n365-itbl td.n365-itbl-selected,
 #n365-overlay .n365-itbl th.n365-itbl-selected {
   background: var(--accent-soft);
 }
+/* 単一 focus 時のフルセル accent inset と、複数選択時の外周 inline box-shadow が
+   両立できるように、selected には CSS 側で box-shadow を強制しない */
 
 /* ── 行見出し / 列見出し (色違いセル) ── */
 #n365-overlay .n365-itbl[data-hrow="1"] tr:first-child > td,
