@@ -50,7 +50,7 @@ export function attachTableHandlers(wrap: HTMLElement): void {
   const tbl = wrap.querySelector('table.n365-itbl') as HTMLTableElement | null;
   if (!tbl) return;
 
-  // Tab navigation across cells
+  // Tab / Enter / Arrow navigation across cells
   tbl.addEventListener('keydown', (e) => {
     const ke = e as KeyboardEvent;
     if (ke.isComposing || ke.keyCode === 229) return;
@@ -71,6 +71,23 @@ export function attachTableHandlers(wrap: HTMLElement): void {
       } else {
         moveDown(cell);
       }
+      return;
+    }
+    // Arrow keys — move between cells (Notion-style)
+    if (ke.key === 'ArrowUp' || ke.key === 'ArrowDown') {
+      // Always move to the cell directly above/below
+      e.preventDefault();
+      if (ke.key === 'ArrowUp') moveUp(cell);
+      else moveDown(cell);
+      return;
+    }
+    if (ke.key === 'ArrowLeft') {
+      if (caretAtStart(cell)) { e.preventDefault(); moveCell(cell, -1); }
+      return;
+    }
+    if (ke.key === 'ArrowRight') {
+      if (caretAtEnd(cell)) { e.preventDefault(); moveCell(cell, 1); }
+      return;
     }
   });
 
@@ -244,10 +261,56 @@ function moveDown(cell: HTMLTableCellElement): void {
   const tr = cell.parentElement as HTMLTableRowElement;
   const cells = Array.from(tr.children) as HTMLTableCellElement[];
   const idx = cells.indexOf(cell);
-  const nextRow = tr.nextElementSibling as HTMLTableRowElement | null;
+  // Walk to the next row (handles thead → tbody boundary)
+  let nextRow = tr.nextElementSibling as HTMLTableRowElement | null;
+  if (!nextRow) {
+    // tr is last child of thead/tbody — try parent's nextSibling section
+    const sectionNext = tr.parentElement?.nextElementSibling;
+    if (sectionNext && sectionNext.tagName === 'TBODY') {
+      nextRow = sectionNext.firstElementChild as HTMLTableRowElement | null;
+    }
+  }
   if (!nextRow) return;
   const target = nextRow.children[idx] as HTMLTableCellElement | undefined;
   if (target) focusCell(target);
+}
+
+function moveUp(cell: HTMLTableCellElement): void {
+  const tr = cell.parentElement as HTMLTableRowElement;
+  const cells = Array.from(tr.children) as HTMLTableCellElement[];
+  const idx = cells.indexOf(cell);
+  let prevRow = tr.previousElementSibling as HTMLTableRowElement | null;
+  if (!prevRow) {
+    const sectionPrev = tr.parentElement?.previousElementSibling;
+    if (sectionPrev && (sectionPrev.tagName === 'TBODY' || sectionPrev.tagName === 'THEAD')) {
+      prevRow = sectionPrev.lastElementChild as HTMLTableRowElement | null;
+    }
+  }
+  if (!prevRow) return;
+  const target = prevRow.children[idx] as HTMLTableCellElement | undefined;
+  if (target) focusCell(target);
+}
+
+function caretAtStart(cell: HTMLTableCellElement): boolean {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return true;
+  const r = sel.getRangeAt(0);
+  if (!r.collapsed) return false;
+  const probe = document.createRange();
+  probe.selectNodeContents(cell);
+  probe.setEnd(r.startContainer, r.startOffset);
+  return probe.toString().length === 0;
+}
+
+function caretAtEnd(cell: HTMLTableCellElement): boolean {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return true;
+  const r = sel.getRangeAt(0);
+  if (!r.collapsed) return false;
+  const probe = document.createRange();
+  probe.selectNodeContents(cell);
+  probe.setStart(r.endContainer, r.endOffset);
+  return probe.toString().length === 0;
 }
 
 function focusCell(cell: HTMLTableCellElement): void {
