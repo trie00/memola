@@ -25,9 +25,16 @@ function ensureHandle(): HTMLElement {
   h.id = 'n365-block-handle';
   h.draggable = true;
   h.title = 'ドラッグして並べ替え / クリックでメニュー';
-  h.innerHTML = '<svg viewBox="0 0 10 16" width="10" height="16" fill="currentColor"><circle cx="2" cy="3" r="1.3"/><circle cx="2" cy="8" r="1.3"/><circle cx="2" cy="13" r="1.3"/><circle cx="8" cy="3" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="13" r="1.3"/></svg>';
+  h.innerHTML = '<svg viewBox="0 0 10 16" width="10" height="16" fill="currentColor" style="pointer-events:none"><circle cx="2" cy="3" r="1.3"/><circle cx="2" cy="8" r="1.3"/><circle cx="2" cy="13" r="1.3"/><circle cx="8" cy="3" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="13" r="1.3"/></svg>';
   h.addEventListener('dragstart', onDragStart);
   h.addEventListener('dragend', onDragEnd);
+  // ハンドル自身から完全に外れた時のみ hide (block 側へ戻るときは維持)
+  h.addEventListener('mouseleave', (e) => {
+    const rt = (e as MouseEvent).relatedTarget as HTMLElement | null;
+    const ed = getEd();
+    if (rt && ed.contains(rt)) return;       // editor へ戻る → 維持
+    hideHandle();
+  });
   document.getElementById('n365-overlay')?.appendChild(h);
   _handle = h;
   return h;
@@ -120,8 +127,9 @@ export function attachBlockDrag(): void {
   });
 
   ed.addEventListener('mouseleave', (e) => {
-    // Don't hide if cursor moved to the handle itself
-    if ((e.relatedTarget as HTMLElement)?.id === 'n365-block-handle') return;
+    // Don't hide if cursor moved to the handle itself or any of its descendants
+    const rt = e.relatedTarget as HTMLElement | null;
+    if (rt && rt.closest && rt.closest('#n365-block-handle')) return;
     hideHandle();
   });
 }
