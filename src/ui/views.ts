@@ -69,11 +69,14 @@ export async function doSelectDb(id: string, page: Page): Promise<void> {
   g('dv-ttl').textContent = page.Title || '無題';
 
   const dvIcon = g('dv-pg-icon');
+  const dvAddIcon = g('dv-add-icon');
   if (meta.icon) {
     dvIcon.textContent = meta.icon;
     dvIcon.style.display = 'inline-block';
+    dvAddIcon.style.display = 'none';
   } else {
     dvIcon.style.display = 'none';
+    dvAddIcon.style.display = 'inline-flex';
   }
 
   setLoad(true, 'データを読み込み中...');
@@ -126,9 +129,14 @@ export function renderDbTable(): void {
   fields.forEach((f) => {
     const th = document.createElement('th');
     const isSorted = S.dbSort.field === f.InternalName;
-    th.innerHTML = f.Title + (isSorted ? '<span class="sort-arrow">' + (S.dbSort.asc ? '▲' : '▼') + '</span>' : '');
+    const headerSpan = document.createElement('span');
+    headerSpan.className = 'n365-th-label';
+    headerSpan.innerHTML = f.Title + (isSorted ? '<span class="sort-arrow">' + (S.dbSort.asc ? '▲' : '▼') + '</span>' : '');
+    th.appendChild(headerSpan);
     th.dataset.field = f.InternalName;
-    th.addEventListener('click', () => {
+    const savedW = S.dbColumnWidths[f.InternalName];
+    if (savedW) th.style.width = savedW + 'px';
+    headerSpan.addEventListener('click', () => {
       if (S.dbSort.field === f.InternalName) {
         S.dbSort.asc = !S.dbSort.asc;
       } else {
@@ -137,10 +145,37 @@ export function renderDbTable(): void {
       }
       renderDbTable();
     });
+    // Resize handle
+    const handle = document.createElement('div');
+    handle.className = 'n365-col-resize';
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const startW = th.offsetWidth;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      function onMove(ev: MouseEvent): void {
+        const newW = Math.max(60, startW + ev.clientX - startX);
+        th.style.width = newW + 'px';
+        S.dbColumnWidths[f.InternalName] = newW;
+      }
+      function onUp(): void {
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+    th.appendChild(handle);
     thead.appendChild(th);
   });
 
+  // Delete column header (icon column)
   const thDel = document.createElement('th'); thDel.className = 'n365-th-del'; thead.appendChild(thDel);
+  // "+" column right after the data columns
   const thAdd = document.createElement('th'); thAdd.className = 'n365-th-add';
   thAdd.textContent = '+'; thAdd.title = '列を追加';
   thAdd.addEventListener('click', () => {
@@ -151,6 +186,10 @@ export function renderDbTable(): void {
     (g('col-name') as HTMLInputElement).focus();
   });
   thead.appendChild(thAdd);
+  // Spacer column to absorb remaining horizontal space (so + stays adjacent to last data column)
+  const thSpacer = document.createElement('th');
+  thSpacer.className = 'n365-th-spacer';
+  thead.appendChild(thSpacer);
 
   getSortedFilteredItems().forEach((item) => { tbody.appendChild(mkDbRow(item, fields)); });
 }
@@ -259,6 +298,11 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
   });
   delTd.appendChild(delBtn);
   tr.appendChild(delTd);
+  // Add empty cells for "+" column and spacer column to keep alignment
+  tr.appendChild(document.createElement('td'));
+  const spacerTd = document.createElement('td');
+  spacerTd.className = 'n365-td-spacer';
+  tr.appendChild(spacerTd);
   return tr;
 }
 

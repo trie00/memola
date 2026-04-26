@@ -85,7 +85,20 @@ export async function getListItems(listTitle: string): Promise<ListItem[]> {
   );
   if (!r.ok) throw new Error('データ取得失敗: ' + r.status);
   const j = (await r.json()) as { d: { results: ListItem[] } };
-  return j.d.results;
+  // SharePoint REST prefixes internal names that start with `_` (including
+  // encoded non-ASCII like `_x3042_…`) with `OData_` in the response. Mirror
+  // each such property under its non-prefixed name so callers can look up
+  // values by the field's actual InternalName.
+  return j.d.results.map((item) => {
+    const fixed: ListItem = item;
+    for (const k of Object.keys(item)) {
+      if (k.startsWith('OData_')) {
+        const bare = k.substring(6);
+        if (!(bare in fixed)) fixed[bare] = item[k];
+      }
+    }
+    return fixed;
+  });
 }
 
 export async function createListItem(
@@ -146,6 +159,8 @@ export async function addListField(
       Title: name,
     };
   }
+  // Invalidate any cached entity-type/field schema so the next update picks up the new field.
+  delete _etCache[listTitle];
   const r = await fetch(SITE + "/_api/web/lists/getbytitle('" + listTitle + "')/fields", {
     method: 'POST',
     headers: {
@@ -166,20 +181,40 @@ export async function updateListItem(
   itemId: number,
   data: Record<string, unknown>,
 ): Promise<void> {
-  const et = await getListEntityType(listTitle);
+  // Use validateUpdateListItem instead of MERGE — it uses display names / internal
+  // names dynamically and bypasses the entity-type schema cache, which otherwise
+  // rejects non-ASCII field names added in the same session.
   const d = await getDigest();
-  data.__metadata = { type: et };
-  const r = await fetch(SITE + "/_api/web/lists/getbytitle('" + listTitle + "')/items(" + itemId + ")", {
-    method: 'POST',
-    headers: {
-      Accept: 'application/json;odata=verbose',
-      'Content-Type': 'application/json;odata=verbose',
-      'X-RequestDigest': d,
-      'X-HTTP-Method': 'MERGE',
-      'If-Match': '*',
+  const formValues = Object.entries(data)
+    .filter(([k]) => k !== '__metadata')
+    .map(([k, v]) => ({ FieldName: k, FieldValue: v == null ? '' : String(v) }));
+  const r = await fetch(
+    SITE + "/_api/web/lists/getbytitle('" + listTitle + "')/items(" + itemId + ")/validateUpdateListItem",
+    {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json;odata=verbose',
+        'Content-Type': 'application/json;odata=verbose',
+        'X-RequestDigest': d,
+      },
+      credentials: 'include',
+      body: JSON.stringify({ formValues, bNewDocumentUpdate: false }),
     },
-    credentials: 'include',
-    body: JSON.stringify(data),
-  });
-  if (!r.ok) throw new Error('更新失敗: ' + r.status);
+  );
+  if (!r.ok) {
+    let detail = '';
+    try {
+      const txt = await r.text();
+      const m = txt.match(/"value"\s*:\s*"([^"]+)"/);
+      if (m) detail = ' — ' + m[1];
+    } catch { /* ignore */ }
+    throw new Error('更新失敗: ' + r.status + detail);
+  }
+  const json = (await r.json()) as {
+    d: { ValidateUpdateListItem: { results: Array<{ ErrorMessage: string | null; FieldName: string }> } };
+  };
+  const errs = json.d.ValidateUpdateListItem.results.filter((x) => x.ErrorMessage);
+  if (errs.length > 0) {
+    throw new Error('更新失敗: ' + errs.map((e) => e.FieldName + ': ' + e.ErrorMessage).join(', '));
+  }
 }

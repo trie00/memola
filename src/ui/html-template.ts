@@ -60,32 +60,35 @@ export function buildHtml(): string {
         '</div>' +
       '</div></div>' +
       '<div id="n365-dv">' +
-        '<div id="n365-dv-hd">' +
-          '<div id="n365-dv-icon-wrap">' +
-            '<span id="n365-dv-pg-icon"></span>' +
+        '<div id="n365-dv-inner">' +
+          '<div id="n365-dv-hd">' +
+            '<div id="n365-dv-icon-wrap">' +
+              '<span id="n365-dv-pg-icon"></span>' +
+              '<button class="n365-pg-icon-empty" id="n365-dv-add-icon">😊 アイコンを追加</button>' +
+            '</div>' +
+            '<div id="n365-dv-ttl" contenteditable="true" spellcheck="false"></div>' +
           '</div>' +
-          '<div id="n365-dv-ttl" contenteditable="true" spellcheck="false"></div>' +
+          '<div id="n365-db-views">' +
+            '<button class="n365-db-vbtn on" id="n365-dbv-table">' + ICONS.table + '<span>テーブル</span></button>' +
+            '<button class="n365-db-vbtn" id="n365-dbv-board">' + ICONS.board + '<span>ボード</span></button>' +
+          '</div>' +
+          '<div id="n365-db-tb">' +
+            '<button class="n365-db-tb-btn" id="n365-db-filter-btn">' + ICONS.filter + '<span>フィルター</span></button>' +
+            '<button class="n365-db-tb-btn" id="n365-db-sort-btn">' + ICONS.sort + '<span>ソート</span></button>' +
+          '</div>' +
+          '<div id="n365-filter-bar">' +
+            '<input id="n365-filter-inp" type="text" placeholder="フィルター...">' +
+            '<button id="n365-filter-close">' + ICONS.close + '</button>' +
+          '</div>' +
+          '<div id="n365-dt-wrap">' +
+            '<table id="n365-dt">' +
+              '<thead><tr id="n365-dth-row"></tr></thead>' +
+              '<tbody id="n365-dtb"></tbody>' +
+            '</table>' +
+            '<button id="n365-dadd">＋ 新しい行</button>' +
+          '</div>' +
+          '<div id="n365-kb"></div>' +
         '</div>' +
-        '<div id="n365-db-views">' +
-          '<button class="n365-db-vbtn on" id="n365-dbv-table">' + ICONS.table + '<span>テーブル</span></button>' +
-          '<button class="n365-db-vbtn" id="n365-dbv-board">' + ICONS.board + '<span>ボード</span></button>' +
-        '</div>' +
-        '<div id="n365-db-tb">' +
-          '<button class="n365-db-tb-btn" id="n365-db-filter-btn">' + ICONS.filter + '<span>フィルター</span></button>' +
-          '<button class="n365-db-tb-btn" id="n365-db-sort-btn">' + ICONS.sort + '<span>ソート</span></button>' +
-        '</div>' +
-        '<div id="n365-filter-bar">' +
-          '<input id="n365-filter-inp" type="text" placeholder="フィルター...">' +
-          '<button id="n365-filter-close">' + ICONS.close + '</button>' +
-        '</div>' +
-        '<div id="n365-dt-wrap">' +
-          '<table id="n365-dt">' +
-            '<thead><tr id="n365-dth-row"></tr></thead>' +
-            '<tbody id="n365-dtb"></tbody>' +
-          '</table>' +
-        '</div>' +
-        '<button id="n365-dadd">＋ 新しい行</button>' +
-        '<div id="n365-kb"></div>' +
       '</div>' +
       '<div id="n365-ld"><span>⏳</span><span id="n365-lm"> 読み込み中...</span></div>' +
     '</main>' +

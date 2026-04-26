@@ -45,6 +45,7 @@ export interface AppState {
   dbSort: { field: string | null; asc: boolean };
   dbFilter: string;
   dbView: 'table' | 'board';
+  dbColumnWidths: Record<string, number>;
   expanded: Set<string>;
   dirty: boolean;
   saving: boolean;
@@ -61,6 +62,7 @@ export const S: AppState = {
   dbSort: { field: null, asc: true },
   dbFilter: '',
   dbView: 'table',
+  dbColumnWidths: {},
   expanded: new Set<string>(),
   dirty: false,
   saving: false,

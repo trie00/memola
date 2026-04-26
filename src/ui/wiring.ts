@@ -194,6 +194,24 @@ export function attachAll(): void {
       }).catch((e: Error) => { toast('アイコン保存失敗: ' + e.message, 'err'); });
     });
   });
+  // DB icon buttons
+  function setDbIcon(emoji: string): void {
+    if (!S.currentId) return;
+    const id = S.currentId;
+    apiSetIcon(id, emoji).then(() => {
+      const dvIcon = g('dv-pg-icon');
+      const dvAdd = g('dv-add-icon');
+      if (emoji) { dvIcon.textContent = emoji; dvIcon.style.display = 'inline-block'; dvAdd.style.display = 'none'; }
+      else { dvIcon.style.display = 'none'; dvAdd.style.display = 'inline-flex'; }
+      renderTree();
+    }).catch((e: Error) => { toast('アイコン保存失敗: ' + e.message, 'err'); });
+  }
+  g('dv-add-icon').addEventListener('click', () => {
+    showEmojiPicker(g('dv-add-icon'), setDbIcon);
+  });
+  g('dv-pg-icon').addEventListener('click', () => {
+    showEmojiPicker(g('dv-pg-icon'), setDbIcon);
+  });
   g('emoji-rm').addEventListener('click', () => {
     g('emoji').classList.remove('on');
     if (!S.currentId) return;
