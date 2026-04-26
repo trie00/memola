@@ -98,20 +98,30 @@ function applySlashCmd(cmd: string): void {
     cb.type = 'checkbox'; cb.className = 'n365-todo-cb';
     const sp = document.createElement('span');
     sp.className = 'n365-todo-txt';
-    sp.appendChild(document.createElement('br'));
     div.appendChild(cb); div.appendChild(sp);
     if (sel && sel.rangeCount) {
       const r = sel.getRangeAt(0);
       const block = curBlock();
-      if (block && block !== _ed) {
-        block.parentNode!.insertBefore(div, block.nextSibling);
-        if (!(block.textContent || '').trim()) block.remove();
+      const hasContent = !!block && block !== _ed && (block.textContent || '').trim() !== '';
+      let caretEl: Node = sp;
+      let caretOff = 0;
+      if (hasContent && block) {
+        // Move block's children into the span, then replace block with todo
+        while (block.firstChild) sp.appendChild(block.firstChild);
+        // Place caret at end of moved content
+        caretEl = sp;
+        caretOff = sp.childNodes.length;
+        block.parentNode!.replaceChild(div, block);
+      } else if (block && block !== _ed) {
+        sp.appendChild(document.createElement('br'));
+        block.parentNode!.replaceChild(div, block);
       } else {
+        sp.appendChild(document.createElement('br'));
         r.insertNode(div);
       }
       requestAnimationFrame(() => {
         const rng = document.createRange();
-        rng.setStart(sp, 0); rng.collapse(true);
+        rng.setStart(caretEl, caretOff); rng.collapse(true);
         const s = window.getSelection();
         if (s) { s.removeAllRanges(); s.addRange(rng); }
         _ed.focus();
@@ -124,24 +134,55 @@ function applySlashCmd(cmd: string): void {
     ic.className = 'n365-callout-ic'; ic.textContent = '💡';
     const body = document.createElement('div');
     body.className = 'n365-callout-body';
-    const p = document.createElement('p');
-    p.appendChild(document.createElement('br'));
-    body.appendChild(p); calloutDiv.appendChild(ic); calloutDiv.appendChild(body);
+    calloutDiv.appendChild(ic); calloutDiv.appendChild(body);
     const selC = window.getSelection();
     if (selC && selC.rangeCount) {
       const rc = selC.getRangeAt(0);
-      const blockC = curBlock();
-      if (blockC && blockC !== _ed) {
-        blockC.parentNode!.insertBefore(calloutDiv, blockC.nextSibling);
-        if (!(blockC.textContent || '').trim()) blockC.remove();
+      const blocks = getSelectedTopBlocks();
+      let caretEl: Node | null = null;
+      let caretOff = 0;
+
+      if (blocks.length >= 2) {
+        // Multi-block: move all selected blocks into the callout body
+        const firstBlock = blocks[0];
+        firstBlock.parentNode!.insertBefore(calloutDiv, firstBlock);
+        for (const blk of blocks) body.appendChild(blk);
+        const last = body.lastElementChild as HTMLElement | null;
+        if (last) { caretEl = last; caretOff = last.childNodes.length; }
       } else {
-        rc.insertNode(calloutDiv);
+        const p = document.createElement('p');
+        body.appendChild(p);
+        const blockC = curBlock();
+        const hasContent = !!blockC && blockC !== _ed && (blockC.textContent || '').trim() !== '';
+        if (hasContent && blockC) {
+          while (blockC.firstChild) p.appendChild(blockC.firstChild);
+          caretEl = p; caretOff = p.childNodes.length;
+          blockC.parentNode!.replaceChild(calloutDiv, blockC);
+        } else if (blockC && blockC !== _ed) {
+          p.appendChild(document.createElement('br'));
+          caretEl = p; caretOff = 0;
+          blockC.parentNode!.replaceChild(calloutDiv, blockC);
+        } else {
+          p.appendChild(document.createElement('br'));
+          caretEl = p; caretOff = 0;
+          rc.insertNode(calloutDiv);
+        }
       }
+
+      if (!body.firstChild) {
+        const ep = document.createElement('p');
+        ep.appendChild(document.createElement('br'));
+        body.appendChild(ep);
+        caretEl = ep; caretOff = 0;
+      }
+
       requestAnimationFrame(() => {
-        const rngC = document.createRange();
-        rngC.setStart(p, 0); rngC.collapse(true);
-        const s = window.getSelection();
-        if (s) { s.removeAllRanges(); s.addRange(rngC); }
+        if (caretEl) {
+          const rngC = document.createRange();
+          rngC.setStart(caretEl, caretOff); rngC.collapse(true);
+          const s = window.getSelection();
+          if (s) { s.removeAllRanges(); s.addRange(rngC); }
+        }
         _ed.focus();
       });
     }
@@ -222,6 +263,34 @@ function unwrapToP(block: HTMLElement, useTextOnly: boolean): HTMLElement {
   return p;
 }
 
+function unwrapPre(pre: HTMLElement): void {
+  // Convert each line of the pre into its own <p>. Empty lines become <p><br></p>.
+  flattenBrToNewline(pre);
+  const text = pre.textContent || '';
+  const lines = text.split('\n');
+  while (lines.length > 1 && lines[lines.length - 1] === '') lines.pop();
+  const parent = pre.parentNode!;
+  const ref = pre.nextSibling;
+  let firstP: HTMLParagraphElement | null = null;
+  for (const line of lines) {
+    const p = document.createElement('p');
+    if (line) {
+      p.textContent = line;
+    } else {
+      p.appendChild(document.createElement('br'));
+    }
+    parent.insertBefore(p, ref);
+    if (!firstP) firstP = p;
+  }
+  if (!firstP) {
+    firstP = document.createElement('p');
+    firstP.appendChild(document.createElement('br'));
+    parent.insertBefore(firstP, ref);
+  }
+  pre.remove();
+  placeCaretAtStart(firstP);
+}
+
 function unwrapTodo(todo: HTMLElement): void {
   const p = document.createElement('p');
   const txt = todo.querySelector('.n365-todo-txt');
@@ -264,6 +333,54 @@ function isAtCalloutStart(range: Range, callout: HTMLElement): boolean {
   return r.toString() === '';
 }
 
+function insertTextAtCursor(text: string): void {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  const r = sel.getRangeAt(0);
+  r.deleteContents();
+  const tn = document.createTextNode(text);
+  r.insertNode(tn);
+  const newR = document.createRange();
+  newR.setStartAfter(tn);
+  newR.collapse(true);
+  sel.removeAllRanges(); sel.addRange(newR);
+}
+
+function getSelectedTopBlocks(): HTMLElement[] {
+  const _ed = getEd();
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return [];
+  const range = sel.getRangeAt(0);
+
+  function topBlock(node: Node | null): HTMLElement | null {
+    let n: Node | null = node;
+    while (n && n.parentNode !== _ed) n = n.parentNode;
+    return n as HTMLElement | null;
+  }
+
+  const startBlock = topBlock(range.startContainer);
+  const endBlock = topBlock(range.endContainer);
+  if (!startBlock || !endBlock) return [];
+
+  const result: HTMLElement[] = [];
+  let cur: Element | null = startBlock;
+  while (cur) {
+    result.push(cur as HTMLElement);
+    if (cur === endBlock) break;
+    cur = cur.nextElementSibling;
+  }
+  return result;
+}
+
+function flattenBrToNewline(el: HTMLElement): void {
+  const brs = el.querySelectorAll('br');
+  brs.forEach((br) => {
+    const tn = document.createTextNode('\n');
+    br.parentNode!.replaceChild(tn, br);
+  });
+  el.normalize();
+}
+
 export function execCmd(cmd: string): void {
   const _ed = getEd();
   _ed.focus();
@@ -304,7 +421,7 @@ export function execCmd(cmd: string): void {
       if (selP && selP.rangeCount) {
         const preEl = findAncestor(selP.getRangeAt(0).startContainer, 'pre');
         if (preEl) {
-          unwrapToP(preEl, true);
+          unwrapPre(preEl);
           S.dirty = true; setSave('未保存'); schedSave();
           refTb();
           return;
@@ -380,6 +497,9 @@ export function refTb(): void {
 // Editor event hooks (called once from wiring.attachAll).
 export function attachEditor(): void {
   const _ed = getEd();
+
+  // Make Enter create <p> instead of Chrome's default <div>.
+  try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch { /* unsupported */ }
 
   _ed.addEventListener('input', () => {
     S.dirty = true; setSave('未保存'); schedSave();
@@ -470,7 +590,7 @@ export function attachEditor(): void {
         const bsPre = findAncestor(startNode, 'pre');
         if (bsPre && isAtBlockStart(bsRange, bsPre)) {
           e.preventDefault();
-          unwrapToP(bsPre, true);
+          unwrapPre(bsPre);
           S.dirty = true; setSave('未保存'); schedSave();
           refTb();
           return;
@@ -499,19 +619,150 @@ export function attachEditor(): void {
       }
     }
 
+    // Todo: Enter creates a new todo below (or exits to plain <p> if current is empty)
+    if (ke.key === 'Enter' && !ke.shiftKey) {
+      const tdSel = window.getSelection();
+      if (tdSel && tdSel.rangeCount) {
+        const tdRange = tdSel.getRangeAt(0);
+        const tdEl = findAncestor(tdRange.startContainer, '.n365-todo');
+        if (tdEl) {
+          e.preventDefault();
+          const txt = tdEl.querySelector('.n365-todo-txt');
+          const isEmpty = !txt || !(txt.textContent || '').trim();
+          if (isEmpty) {
+            // Empty todo → exit to a plain <p>
+            const np = document.createElement('p');
+            np.appendChild(document.createElement('br'));
+            tdEl.parentNode!.insertBefore(np, tdEl.nextSibling);
+            tdEl.remove();
+            const r = document.createRange();
+            r.setStart(np, 0); r.collapse(true);
+            tdSel.removeAllRanges(); tdSel.addRange(r);
+          } else {
+            const newTodo = document.createElement('div');
+            newTodo.className = 'n365-todo';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'n365-todo-cb';
+            const sp = document.createElement('span');
+            sp.className = 'n365-todo-txt';
+            sp.appendChild(document.createElement('br'));
+            newTodo.appendChild(cb);
+            newTodo.appendChild(sp);
+            tdEl.parentNode!.insertBefore(newTodo, tdEl.nextSibling);
+            const r = document.createRange();
+            r.setStart(sp, 0); r.collapse(true);
+            tdSel.removeAllRanges(); tdSel.addRange(r);
+          }
+          S.dirty = true; setSave('未保存'); schedSave();
+          refTb();
+          return;
+        }
+      }
+    }
+
+    // Blockquote: any Enter (without Shift) exits to a plain <p> below.
+    // Shift+Enter inside a quote still inserts a soft <br> via the browser default.
+    if (ke.key === 'Enter' && !ke.shiftKey) {
+      const bqSel = window.getSelection();
+      if (bqSel && bqSel.rangeCount) {
+        const bqRange = bqSel.getRangeAt(0);
+        const bqEl = findAncestor(bqRange.startContainer, 'blockquote');
+        if (bqEl) {
+          e.preventDefault();
+          const np = document.createElement('p');
+          np.appendChild(document.createElement('br'));
+          bqEl.parentNode!.insertBefore(np, bqEl.nextSibling);
+          const r = document.createRange();
+          r.setStart(np, 0); r.collapse(true);
+          bqSel.removeAllRanges(); bqSel.addRange(r);
+          S.dirty = true; setSave('未保存'); schedSave();
+          refTb();
+          return;
+        }
+      }
+    }
+
+    // Callout: empty trailing <p> + Enter exits the callout
+    if (ke.key === 'Enter' && !ke.shiftKey) {
+      const enSel = window.getSelection();
+      if (enSel && enSel.rangeCount) {
+        const enRng = enSel.getRangeAt(0);
+        const callout = findCallout(enRng.startContainer);
+        if (callout) {
+          const body = callout.querySelector('.n365-callout-body');
+          const lastChild = body && (body.lastElementChild as HTMLElement | null);
+          if (body && lastChild) {
+            const inLast = lastChild === enRng.startContainer || lastChild.contains(enRng.startContainer);
+            const lastEmpty = !lastChild.textContent || lastChild.textContent.trim() === '';
+            if (inLast && lastEmpty) {
+              e.preventDefault();
+              lastChild.remove();
+              if (!body.firstChild) {
+                const refill = document.createElement('p');
+                refill.appendChild(document.createElement('br'));
+                body.appendChild(refill);
+              }
+              const np = document.createElement('p');
+              np.appendChild(document.createElement('br'));
+              callout.parentNode!.insertBefore(np, callout.nextSibling);
+              const r = document.createRange();
+              r.setStart(np, 0); r.collapse(true);
+              enSel.removeAllRanges(); enSel.addRange(r);
+              S.dirty = true; setSave('未保存'); schedSave();
+              return;
+            }
+          }
+        }
+      }
+    }
+
     const b = curBlock();
     if (ke.key === 'Enter' && b && b.tagName === 'PRE') {
       e.preventDefault();
       const preSel = window.getSelection();
       if (preSel && preSel.rangeCount) {
         const preRng = preSel.getRangeAt(0);
+
+        // Normalize: collapse any <br> into actual \n in the pre's text
+        // (some browsers insert <br> on Enter even in <pre>)
+        flattenBrToNewline(b);
+
+        const fullText = b.textContent || '';
+        // Cmd/Ctrl + Enter, OR pre already ends with \n\n  → exit the pre
+        const wantExit = ke.metaKey || ke.ctrlKey || fullText.endsWith('\n\n');
+
+        if (wantExit && fullText.length > 0) {
+          // Strip trailing \n's
+          const walker = document.createTreeWalker(b, NodeFilter.SHOW_TEXT);
+          let lastTxt: Text | null = null;
+          let n: Node | null;
+          while ((n = walker.nextNode())) lastTxt = n as Text;
+          while (lastTxt && lastTxt.textContent && lastTxt.textContent.endsWith('\n')) {
+            lastTxt.textContent = lastTxt.textContent.replace(/\n+$/, '');
+            if (lastTxt.textContent) break;
+            const prev = lastTxt.previousSibling;
+            lastTxt.remove();
+            lastTxt = prev && prev.nodeType === 3 ? (prev as Text) : null;
+          }
+          const np = document.createElement('p');
+          np.appendChild(document.createElement('br'));
+          b.parentNode!.insertBefore(np, b.nextSibling);
+          const r = document.createRange();
+          r.setStart(np, 0); r.collapse(true);
+          preSel.removeAllRanges(); preSel.addRange(r);
+          S.dirty = true; setSave('未保存'); schedSave();
+          return;
+        }
+
+        // Otherwise: insert \n (or \n\n if at end so the new line is visible)
         const atEnd = isAtBlockEnd(preRng, b);
-        document.execCommand('insertText', false, atEnd ? '\n\n' : '\n');
+        insertTextAtCursor(atEnd ? '\n\n' : '\n');
         if (atEnd) {
           const s2 = window.getSelection();
           if (s2 && s2.rangeCount) {
             const r2 = s2.getRangeAt(0);
-            if (r2.startOffset > 0) {
+            if (r2.startContainer.nodeType === 3 && r2.startOffset > 0) {
               const newR = document.createRange();
               newR.setStart(r2.startContainer, r2.startOffset - 1);
               newR.collapse(true);
@@ -523,7 +774,7 @@ export function attachEditor(): void {
     }
     if (ke.key === 'Tab' && b && b.tagName === 'PRE') {
       e.preventDefault();
-      document.execCommand('insertText', false, '  ');
+      insertTextAtCursor('  ');
     }
   });
 
@@ -531,10 +782,14 @@ export function attachEditor(): void {
   _ed.addEventListener('mouseup', refTb);
 
   // Todo checkbox click handler (delegated)
+  // innerHTML serializes ATTRIBUTES not properties — sync the `checked` attribute
+  // explicitly, otherwise the saved markdown will always be `[ ]` regardless of UI state.
   _ed.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
     if (target.classList.contains('n365-todo-cb')) {
       const cb = target as HTMLInputElement;
+      if (cb.checked) cb.setAttribute('checked', 'checked');
+      else cb.removeAttribute('checked');
       const txt = cb.nextElementSibling;
       if (txt && txt.classList.contains('n365-todo-txt')) {
         txt.classList.toggle('done', cb.checked);

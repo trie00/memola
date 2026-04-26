@@ -1,13 +1,15 @@
 // Page actions: create / delete / save plus the emoji picker.
 
 import { S } from '../state';
-import { SAVE_MS } from '../config';
+import { SAVE_MS, SITE, SITE_REL, FOLDER } from '../config';
 import { g, getEd, getOverlay } from './dom';
 import { setLoad, setSave, toast } from './ui-helpers';
 import { renderTree } from './tree';
 import { showView, doSelect } from './views';
-import { apiCreatePage, apiDeletePage, apiSavePage } from '../api/pages';
+import { apiCreatePage, apiDeletePage, apiSavePage, getPathForId } from '../api/pages';
 import { apiAddDbRow } from '../api/db';
+import { readFile, writeFile } from '../api/sp-core';
+import { getBody, mdToHtml } from '../lib/markdown';
 import { getDbFields } from './views';
 import { mkDbRow } from './views';
 import { isSlashActive, closeSlashMenu } from './editor';
@@ -221,6 +223,229 @@ export function attachEmojiPickerOutsideClick(): void {
     const target = e.target as Node;
     if (ep && ep.classList.contains('on') && !ep.contains(target) && target !== _emojiTarget) {
       ep.classList.remove('on');
+    }
+  });
+}
+
+// ── Page menu actions ──────────────────────────────────
+
+function downloadFile(filename: string, content: string, mime: string): void {
+  const blob = new Blob([content], { type: mime + ';charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function safeFilename(s: string): string {
+  return s.replace(/[/\\?%*:|"<>]/g, '_').slice(0, 100) || 'untitled';
+}
+
+function exportCss(): string {
+  return `
+:root { color-scheme: light; }
+body {
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif;
+  max-width: 720px; margin: 48px auto; padding: 0 24px;
+  color: rgb(55, 53, 47); background: #fff; line-height: 1.6; font-size: 16px;
+}
+h1, h2, h3 { line-height: 1.3; margin: 1.2em 0 .3em; }
+h1 { font-size: 2em; font-weight: 700; }
+h2 { font-size: 1.5em; font-weight: 600; }
+h3 { font-size: 1.25em; font-weight: 600; }
+p { margin: .25em 0; }
+ul, ol { padding-left: 1.6em; margin: .25em 0; }
+li + li { margin-top: 4px; }
+blockquote { border-left: 3px solid rgb(55, 53, 47); padding-left: .9em; opacity: .65; margin: .25em 0; }
+hr { border: none; border-top: 1px solid rgba(55, 53, 47, .16); margin: 1em 0; }
+pre {
+  background: rgb(247, 246, 243); padding: 14px 16px; border-radius: 4px;
+  font-family: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", Courier, monospace;
+  font-size: 85%; overflow-x: auto; white-space: pre; tab-size: 2; margin: .5em 0;
+}
+pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+code {
+  background: rgba(135, 131, 120, .2); padding: 2px 4px; border-radius: 3px;
+  font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 85%; color: #eb5757;
+}
+strong { font-weight: 600; }
+em { font-style: italic; }
+s, del { text-decoration: line-through; opacity: .7; }
+a { color: inherit; text-decoration: underline; opacity: .75; }
+.n365-callout {
+  display: flex; gap: 10px; background: rgb(241, 241, 239); border-radius: 4px;
+  padding: 12px 16px; margin: .8em 0;
+}
+.n365-callout + .n365-callout { margin-top: .8em; }
+.n365-callout-ic { font-size: 20px; flex-shrink: 0; line-height: 1.5; }
+.n365-callout-body { flex: 1; min-width: 0; }
+.n365-callout-body > p:first-child { margin-top: 0; }
+.n365-callout-body > p:last-child  { margin-bottom: 0; }
+.n365-todo { display: flex; align-items: flex-start; gap: 6px; margin: 4px 0; }
+.n365-todo-cb { margin-top: 5px; width: 14px; height: 14px; flex-shrink: 0; accent-color: rgb(35, 131, 226); }
+.n365-todo-txt { flex: 1; }
+.n365-todo-txt.done { text-decoration: line-through; opacity: .4; }
+`.replace(/\s+/g, ' ').trim();
+}
+
+function currentPage() {
+  if (!S.currentId) return null;
+  return S.pages.find((p) => p.Id === S.currentId) || null;
+}
+
+export async function exportMd(): Promise<void> {
+  const page = currentPage();
+  if (!page) return;
+  if (page.Type === 'database') {
+    toast('データベースはMD出力できません', 'err');
+    return;
+  }
+  try {
+    setLoad(true, 'エクスポート中...');
+    const path = getPathForId(page.Id);
+    const content = await readFile(path + '/index.md');
+    downloadFile(safeFilename(page.Title || '無題') + '.md', content, 'text/markdown');
+  } catch (err) {
+    toast('MD出力失敗: ' + (err as Error).message, 'err');
+  } finally {
+    setLoad(false);
+  }
+}
+
+export async function exportHtml(): Promise<void> {
+  const page = currentPage();
+  if (!page) return;
+  if (page.Type === 'database') {
+    toast('データベースはHTML出力できません', 'err');
+    return;
+  }
+  try {
+    setLoad(true, 'エクスポート中...');
+    const path = getPathForId(page.Id);
+    const md = await readFile(path + '/index.md');
+    const body = mdToHtml(getBody(md));
+    const title = page.Title || '無題';
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const css = exportCss();
+    const html =
+      '<!DOCTYPE html>\n<html lang="ja">\n<head>\n' +
+      '<meta charset="UTF-8">\n<title>' + esc(title) + '</title>\n' +
+      '<style>' + css + '</style>\n' +
+      '</head>\n<body>\n<h1>' + esc(title) + '</h1>\n' + body + '\n</body>\n</html>';
+    downloadFile(safeFilename(title) + '.html', html, 'text/html');
+  } catch (err) {
+    toast('HTML出力失敗: ' + (err as Error).message, 'err');
+  } finally {
+    setLoad(false);
+  }
+}
+
+export async function duplicateCurrent(): Promise<void> {
+  const page = currentPage();
+  if (!page) return;
+  if (page.Type === 'database') {
+    toast('データベースは複製できません', 'err');
+    return;
+  }
+  try {
+    setLoad(true, '複製中...');
+    const origPath = getPathForId(page.Id);
+    const origMd = await readFile(origPath + '/index.md');
+    const body = getBody(origMd);
+    const newTitle = (page.Title || '無題') + ' (コピー)';
+    const newPage = await apiCreatePage(newTitle, page.ParentId);
+    const newPath = getPathForId(newPage.Id);
+    const today = new Date().toISOString().slice(0, 10);
+    const newMd = '---\ntitle: ' + newTitle + '\nparent: ' + (newPage.ParentId || '') + '\ncreated: ' + today + '\n---\n\n' + body;
+    await writeFile(newPath + '/index.md', newMd);
+    S.pages.push(newPage);
+    renderTree();
+    await doSelect(newPage.Id);
+    toast('複製しました');
+  } catch (err) {
+    toast('複製失敗: ' + (err as Error).message, 'err');
+  } finally {
+    setLoad(false);
+  }
+}
+
+export async function copyPageLink(): Promise<void> {
+  const page = currentPage();
+  if (!page) return;
+  let url: string;
+  if (page.Type === 'database') {
+    const meta = S.meta.pages.find((p) => p.id === page.Id);
+    if (!meta || !meta.list) { toast('リンク取得失敗', 'err'); return; }
+    url = SITE + '/Lists/' + encodeURIComponent(meta.list);
+  } else {
+    const path = getPathForId(page.Id);
+    const folderUrlPath = FOLDER.substring(SITE_REL.length);
+    url = SITE + folderUrlPath + '/' + path + '/index.md';
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('リンクをコピーしました');
+  } catch {
+    toast('コピー失敗', 'err');
+  }
+}
+
+export function printCurrent(): void {
+  window.print();
+}
+
+export function showPageInfo(): void {
+  const page = currentPage();
+  if (!page) return;
+  if (page.Type === 'database') {
+    toast(`🗃 ${page.Title || '無題'} (DB) — ${S.dbItems.length}行 / ${S.dbFields.length}列`);
+    return;
+  }
+  const ed = getEd();
+  const text = (ed.textContent || '').replace(/\s+/g, ' ').trim();
+  const charCount = text.length;
+  const wordCount = text ? text.split(/\s+/).length : 0;
+  const blockCount = ed.querySelectorAll('p, h1, h2, h3, li, pre, blockquote, .n365-callout, .n365-todo, hr').length;
+  toast(`📄 ${page.Title || '無題'}: ${charCount}文字 / 約${wordCount}語 / ${blockCount}ブロック`);
+}
+
+let _pgmTarget: HTMLElement | null = null;
+
+export function togglePageMenu(btn: HTMLElement): void {
+  const pgm = g('pgm');
+  if (pgm.classList.contains('on')) {
+    hidePageMenu();
+    return;
+  }
+  if (!S.currentId) {
+    toast('ページを選択してください');
+    return;
+  }
+  const rect = btn.getBoundingClientRect();
+  const top = rect.bottom + 4;
+  const right = window.innerWidth - rect.right;
+  pgm.style.top = top + 'px';
+  pgm.style.right = right + 'px';
+  pgm.style.left = '';
+  pgm.classList.add('on');
+  _pgmTarget = btn;
+}
+
+export function hidePageMenu(): void {
+  g('pgm').classList.remove('on');
+  _pgmTarget = null;
+}
+
+export function attachPageMenuOutsideClick(): void {
+  document.addEventListener('mousedown', (e) => {
+    const pgm = g('pgm');
+    const target = e.target as Node;
+    if (pgm && pgm.classList.contains('on') && !pgm.contains(target) && target !== _pgmTarget && (!_pgmTarget || !_pgmTarget.contains(target))) {
+      hidePageMenu();
     }
   });
 }

@@ -10,6 +10,8 @@ import { execCmd, attachEditor } from './editor';
 import {
   doNew, doDel, doSave, schedSave, doNewDbRow, closeApp, onKey,
   showEmojiPicker, attachEmojiPickerOutsideClick,
+  exportMd, exportHtml, duplicateCurrent, copyPageLink, printCurrent, showPageInfo,
+  togglePageMenu, hidePageMenu, attachPageMenuOutsideClick,
 } from './actions';
 import { openSearch, closeSearch, renderQs, qsMove, qsConfirm, resetQsSel } from './search-ui';
 import { apiGetPages, apiSetIcon } from '../api/pages';
@@ -225,6 +227,28 @@ export function attachAll(): void {
 
   // Emoji outside-click closer
   attachEmojiPickerOutsideClick();
+
+  // Page menu (top-right "...")
+  g('pgm-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    togglePageMenu(g('pgm-btn'));
+  });
+  g('pgm').addEventListener('click', async (e) => {
+    const item = (e.target as HTMLElement).closest<HTMLElement>('.n365-pgm-item');
+    if (!item || !item.dataset.action) return;
+    const action = item.dataset.action;
+    hidePageMenu();
+    switch (action) {
+      case 'export-md':   await exportMd(); break;
+      case 'export-html': await exportHtml(); break;
+      case 'duplicate':   await duplicateCurrent(); break;
+      case 'copy-link':   await copyPageLink(); break;
+      case 'print':       printCurrent(); break;
+      case 'info':        showPageInfo(); break;
+      case 'delete':      if (S.currentId) await doDel(S.currentId); break;
+    }
+  });
+  attachPageMenuOutsideClick();
 
   // Global keydown
   document.addEventListener('keydown', onKey);

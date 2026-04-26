@@ -13,7 +13,11 @@ const result = esbuild.buildSync({
 });
 
 const bundled = result.outputFiles[0].text;
-const url = 'javascript:void(' + encodeURIComponent(bundled) + ');';
+// Wrap in an outer IIFE: the bundle starts with "use strict"; followed by an
+// inner IIFE (two statements). void(...) requires a single expression, so we
+// wrap them in function(){ ... }() to make it one expression.
+const wrapped = 'function(){' + bundled + '}()';
+const url = 'javascript:void(' + encodeURIComponent(wrapped) + ');';
 
 let html = fs.readFileSync('src/template.html', 'utf8');
 html = html.replaceAll('{{BOOKMARKLET_URL}}', url);

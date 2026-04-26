@@ -19,6 +19,7 @@ export function buildHtml(): string {
         '<button id="n365-sb-toggle" title="サイドバー">' + ICONS.sidebar + '</button>' +
         '<div id="n365-bc"></div>' +
         '<div id="n365-ss"></div>' +
+        '<button id="n365-pgm-btn" title="ページメニュー">' + ICONS.more + '</button>' +
       '</div>' +
       '<div id="n365-tb">' +
         '<button class="n365-b" data-cmd="h1" title="見出し1"><b>H1</b></button>' +
@@ -134,6 +135,18 @@ export function buildHtml(): string {
       '<div id="n365-qs-res"></div>' +
     '</div></div>' +
     '<div id="n365-emoji"><div id="n365-emoji-grid"></div><button id="n365-emoji-rm">アイコンを削除</button></div>' +
+    '<div id="n365-pgm">' +
+      '<div class="n365-pgm-item" data-action="export-md">' + ICONS.download + '<span>Markdownでエクスポート</span></div>' +
+      '<div class="n365-pgm-item" data-action="export-html">' + ICONS.download + '<span>HTMLでエクスポート</span></div>' +
+      '<div class="n365-pgm-sep"></div>' +
+      '<div class="n365-pgm-item" data-action="duplicate">' + ICONS.copy + '<span>複製</span></div>' +
+      '<div class="n365-pgm-item" data-action="copy-link">' + ICONS.link + '<span>リンクをコピー</span></div>' +
+      '<div class="n365-pgm-sep"></div>' +
+      '<div class="n365-pgm-item" data-action="print">' + ICONS.print + '<span>印刷</span></div>' +
+      '<div class="n365-pgm-item" data-action="info">' + ICONS.info + '<span>ページ情報</span></div>' +
+      '<div class="n365-pgm-sep"></div>' +
+      '<div class="n365-pgm-item danger" data-action="delete">' + ICONS.trash + '<span>削除</span></div>' +
+    '</div>' +
     '<div id="n365-tk"></div>'
   );
 }

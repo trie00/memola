@@ -24,13 +24,16 @@ export function domWalk(node: Node): string {
     return '\n- [' + (checked ? 'x' : ' ') + '] ' + txt + '\n';
   }
 
-  // Callout block
+  // Callout block: header line "> [emoji] line1", continuation lines prefixed with "> "
   if (tag === 'div' && el.classList.contains('n365-callout')) {
     const ic = el.querySelector('.n365-callout-ic');
     const body = el.querySelector('.n365-callout-body');
     const emoji = ic ? (ic.textContent || '').trim() : '💡';
-    const bodyText = body ? Array.from(body.childNodes).map(domWalk).join('').trim() : '';
-    return '\n> [' + emoji + '] ' + bodyText + '\n';
+    const bodyMd = body ? Array.from(body.childNodes).map(domWalk).join('').replace(/^\n+|\n+$/g, '') : '';
+    const lines = bodyMd.split('\n');
+    let result = '\n> [' + emoji + '] ' + (lines[0] || '') + '\n';
+    for (let k = 1; k < lines.length; k++) result += '> ' + lines[k] + '\n';
+    return result;
   }
 
   // Todo txt span — just return textContent
@@ -42,10 +45,24 @@ export function domWalk(node: Node): string {
   if (tag === 'h1') return '\n# ' + ch.trim() + '\n';
   if (tag === 'h2') return '\n## ' + ch.trim() + '\n';
   if (tag === 'h3') return '\n### ' + ch.trim() + '\n';
-  if (tag === 'p')  return '\n' + ch.trim() + '\n';
-  if (tag === 'strong' || tag === 'b') return '**' + ch + '**';
-  if (tag === 'em' || tag === 'i')     return '*' + ch + '*';
-  if (tag === 's' || tag === 'del' || tag === 'strike') return '~~' + ch + '~~';
+  if (tag === 'p') {
+    const trimmed = ch.trim();
+    // Empty paragraph (typed by pressing Enter on a blank line) — preserve it
+    if (!trimmed) return '\n<br>\n';
+    return '\n' + trimmed + '\n';
+  }
+  // Skip emitting markers around empty/whitespace-only inline elements.
+  // Browsers often leave behind <i></i>/<s></s> after applying then unapplying
+  // formatting, which would otherwise produce ambiguous markdown like ~~* *~~.
+  if (tag === 'strong' || tag === 'b') {
+    return (el.textContent || '').trim() ? '**' + ch + '**' : ch;
+  }
+  if (tag === 'em' || tag === 'i') {
+    return (el.textContent || '').trim() ? '*' + ch + '*' : ch;
+  }
+  if (tag === 's' || tag === 'del' || tag === 'strike') {
+    return (el.textContent || '').trim() ? '~~' + ch + '~~' : ch;
+  }
   if (tag === 'code') {
     const inPre = el.parentNode && (el.parentNode as Element).tagName &&
       (el.parentNode as Element).tagName.toLowerCase() === 'pre';
@@ -68,8 +85,14 @@ export function domWalk(node: Node): string {
   }
   if (tag === 'li')  return ch;
   if (tag === 'hr')  return '\n---\n';
-  if (tag === 'br')  return '\n';
+  if (tag === 'br')  return '  \n';
   if (tag === 'a')   return '[' + ch + '](' + (el.getAttribute('href') || '') + ')';
+  // Plain <div> (no recognized class) = treat as paragraph block.
+  // Chrome's contenteditable creates these on Enter when defaultParagraphSeparator
+  // hasn't been set; older saves may still contain them.
+  if (tag === 'div' && !el.className) {
+    return '\n' + ch.trim() + '\n';
+  }
   return ch;
 }
 
@@ -108,11 +131,16 @@ export function mdToHtml(md: string): string {
     // HR
     if (ln.match(/^---+$/) || ln.match(/^\*\*\*+$/)) { html += '<hr>'; i++; continue; }
 
-    // Todo: - [ ] or - [x]
-    if (ln.match(/^- \[[ x]\] /)) {
+    // Empty paragraph marker (single <br> on a line, our serialization for blank paragraphs)
+    if (ln.trim().match(/^<br\s*\/?>$/i)) {
+      html += '<p><br></p>'; i++; continue;
+    }
+
+    // Todo: - [ ] or - [x]  (trailing space optional — tail trim of file may strip it)
+    if (ln.match(/^- \[[ xX]\](\s|$)/)) {
       html += '<div class="n365-todo">';
-      const checked = ln.charAt(3) === 'x';
-      const todotxt = ln.replace(/^- \[[ x]\] /, '');
+      const checked = ln.charAt(3).toLowerCase() === 'x';
+      const todotxt = ln.replace(/^- \[[ xX]\]\s?/, '');
       html += '<input type="checkbox" class="n365-todo-cb"' + (checked ? ' checked' : '') + '>';
       html += '<span class="n365-todo-txt' + (checked ? ' done' : '') + '">' + inline(todotxt) + '</span>';
       html += '</div>';
@@ -122,17 +150,20 @@ export function mdToHtml(md: string): string {
     // Blockquote / callout
     if (ln.startsWith('> ')) {
       const firstLine = ln.slice(2);
-      // Callout: > [emoji] text
+      // Callout: > [emoji] text  (continuation lines: > more text, recursively parsed as md)
       const calloutMatch = firstLine.match(/^\[(.{1,4})\]\s*(.*)/);
       if (calloutMatch) {
         const calloutEmoji = calloutMatch[1];
         let calloutBody = calloutMatch[2] || '';
         i++;
         while (i < lines.length && lines[i].startsWith('> ')) {
-          calloutBody += ' ' + lines[i].slice(2); i++;
+          // Don't absorb another callout header
+          if (/^\[.{1,4}\]\s*/.test(lines[i].slice(2))) break;
+          calloutBody += '\n' + lines[i].slice(2); i++;
         }
+        const bodyHtml = mdToHtml(calloutBody) || '<p><br></p>';
         html += '<div class="n365-callout"><span class="n365-callout-ic">' + esc(calloutEmoji) +
-          '</span><div class="n365-callout-body"><p>' + inline(calloutBody) + '</p></div></div>';
+          '</span><div class="n365-callout-body">' + bodyHtml + '</div></div>';
         continue;
       }
       // Regular blockquote
@@ -171,9 +202,16 @@ export function mdToHtml(md: string): string {
       && !lines[i].match(/^- \[[ x]\] /)
       && !lines[i].match(/^\d+\.\s/)
       && !lines[i].trimStart().startsWith('```')) {
-      para += lines[i] + ' '; i++;
+      const cur = lines[i];
+      // Two-space-trailing = markdown hard break (use unprintable sentinel that survives esc)
+      if (cur.endsWith('  ')) para += cur.replace(/  +$/, '') + '';
+      else para += cur + ' ';
+      i++;
     }
-    if (para.trim()) html += '<p>' + inline(para.trim()) + '</p>';
+    if (para.trim()) {
+      const processed = inline(para.trim()).replace(//g, '<br>');
+      html += '<p>' + processed + '</p>';
+    }
   }
   return html;
 }
