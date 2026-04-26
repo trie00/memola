@@ -440,8 +440,27 @@
 #n365-overlay #n365-block-handle:active { cursor: grabbing; }
 #n365-overlay #n365-block-handle svg { display: block; }
 #n365-overlay .n365-block-dragging { opacity: 0.4; }
+/* Drop indicator (between blocks) — Notion風: 両端ドット付きの太めセンターライン */
 #n365-overlay .n365-block-placeholder {
-  height: 2px; background: var(--accent); margin: 4px 0; border-radius: 1px;
+  position: relative;
+  height: 3px; background: var(--accent);
+  margin: 8px 0; border-radius: 2px;
+  pointer-events: none;
+  box-shadow: 0 0 0 0.5px rgba(122, 138, 120, 0.3);
+  animation: n365-ph-pulse 1.2s ease-in-out infinite;
+}
+#n365-overlay .n365-block-placeholder::before,
+#n365-overlay .n365-block-placeholder::after {
+  content: ''; position: absolute;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent);
+  top: 50%; transform: translateY(-50%);
+}
+#n365-overlay .n365-block-placeholder::before { left: -4px; }
+#n365-overlay .n365-block-placeholder::after  { right: -4px; }
+@keyframes n365-ph-pulse {
+  0%,100% { opacity: 1; }
+  50%     { opacity: 0.65; }
 }
 
 /* ── Alternative DB views (list/gallery/calendar/gantt) ─ */
