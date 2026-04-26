@@ -888,6 +888,27 @@ export function attachEditor(): void {
     }
   });
 
+  // Notion-style: clicking on the empty area below the last block adds
+  // a new <p> at the end and focuses it.
+  _ed.addEventListener('mousedown', (e) => {
+    if (e.target !== _ed) return;        // clicked on a child block — let default handle
+    const last = _ed.lastElementChild as HTMLElement | null;
+    if (last) {
+      const r = last.getBoundingClientRect();
+      if (e.clientY < r.bottom) return;  // not below the last block
+    }
+    e.preventDefault();
+    const p = document.createElement('p');
+    p.appendChild(document.createElement('br'));
+    _ed.appendChild(p);
+    const rng = document.createRange();
+    rng.setStart(p, 0); rng.collapse(true);
+    const sel = window.getSelection();
+    if (sel) { sel.removeAllRanges(); sel.addRange(rng); }
+    _ed.focus();
+    S.dirty = true; setSave('未保存'); schedSave();
+  });
+
   // Floating selection toolbar
   document.addEventListener('selectionchange', () => {
     const sel = window.getSelection();
