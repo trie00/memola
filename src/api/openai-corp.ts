@@ -44,15 +44,26 @@ export interface CorpChatOpts {
   stream?: CorpChatHandlers;
 }
 
-/** Construct the chat completions endpoint URL. Honors per-model overrides
- *  (model-specific baseUrl / api-version / deployment-id from settings). */
+/** Construct the chat completions endpoint URL.
+ *
+ *  Per the gateway spec, the URL has the form:
+ *    {endpoint}/openai/deployments/{deployment-id}/chat/completions?api-version={api-version}
+ *
+ *  where `{endpoint}` already includes a date segment (the gateway-side
+ *  supported api version, e.g. ".../corpapi/2024-10-21") and `{api-version}`
+ *  in the query is *independent* (e.g. "2024-12-01-preview" for reasoning
+ *  models). Both can differ — early versions of this code injected the
+ *  api-version into the path too, which broke whenever the two diverged
+ *  (e.g. GPT-5 + o3 / o4-mini). We now treat baseUrl as the *full* endpoint
+ *  including its date segment, and put api-version only in the query.
+ */
 function chatUrlFor(modelId: string): string {
   const m = findCorpAiModel(modelId);
   if (!m) throw new Error('未知のモデル: ' + modelId);
   const ep = resolveCorpAiEndpoint(modelId);
   if (!ep.baseUrl) throw new Error('企業AI API ベース URL が未設定です (設定で構成)');
   if (!ep.deploymentId) throw new Error('企業AI API デプロイ名が未設定です (設定でプレフィックスを構成)');
-  return ep.baseUrl + '/' + ep.apiVersion +
+  return ep.baseUrl +
     '/openai/deployments/' + ep.deploymentId +
     '/chat/completions?api-version=' + ep.apiVersion;
 }

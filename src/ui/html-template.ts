@@ -260,8 +260,8 @@ export function buildHtml(): string {
       '<div class="n365-set-row" data-prov="corp"><label>企業AI API キー</label>' +
         '<input id="n365-set-corpai-key" type="password" placeholder="サブスクリプションキー">' +
       '</div>' +
-      '<div class="n365-set-row" data-prov="corp"><label>ベース URL</label>' +
-        '<input id="n365-set-corpai-baseurl" type="text" placeholder="https://gateway.example.com/myapi">' +
+      '<div class="n365-set-row" data-prov="corp"><label>ベース URL (エンドポイント・日付まで含む)</label>' +
+        '<input id="n365-set-corpai-baseurl" type="text" placeholder="https://gateway.example.com/myapi/2024-10-21">' +
       '</div>' +
       '<div class="n365-set-row" data-prov="corp"><label>デプロイ ID プレフィックス</label>' +
         '<input id="n365-set-corpai-prefix" type="text" placeholder="myco-openai-uat-">' +
@@ -270,7 +270,15 @@ export function buildHtml(): string {
         '<textarea id="n365-set-corpai-overrides" rows="6" placeholder=\'{"gpt-5":{"baseUrl":"https://...","apiVersion":"2025-01-01-preview","deploymentId":"..."}}\' style="font-family:var(--font-mono);font-size:11px"></textarea>' +
       '</div>' +
       '<div class="n365-set-row" data-prov="corp"><label></label>' +
-        '<div class="n365-set-hint">企業AI でもページ/DB 操作のツール機能を利用できます (Function Calling 経由)。<br>デプロイ ID は <code>{プレフィックス}{モデル名(.は削除)}</code> の形式で組み立てられます。<br>モデルごとにエンドポイントや api-version が違う場合は、上のオーバーライドに <code>{"モデル名":{"baseUrl":"...","apiVersion":"...","deploymentId":"..."}}</code> を入れてください (各フィールドは任意・未指定で全体設定にフォールバック)。</div>' +
+        '<div class="n365-set-hint">' +
+        '<b>URL の組み立て方</b>: <code>{ベースURL}/openai/deployments/{デプロイID}/chat/completions?api-version={api-version}</code>' +
+        '<br>※ ベース URL は<b>ゲートウェイの日付まで含めて</b>入力してください (例 <code>.../corpapi/2024-10-21</code>)' +
+        '<br>※ デプロイ ID は <code>{プレフィックス}{モデル名(.は削除)}</code> で組み立て' +
+        '<br>※ api-version は推論モデル (GPT-5系/o3/o4-mini) は <code>2024-12-01-preview</code>、それ以外は <code>2024-06-01</code> がデフォルト' +
+        '<br>—' +
+        '<br>モデル別に違う設定が必要な場合はオーバーライドに <code>{"モデル名":{"baseUrl":"...","apiVersion":"...","deploymentId":"..."}}</code> を記入。各フィールドは任意・未指定で全体設定にフォールバック。' +
+        '<br>企業AI でもページ/DB 操作のツール機能 (Function Calling) を利用可能。' +
+        '</div>' +
       '</div>' +
       '<div class="n365-set-section">表示</div>' +
       '<div class="n365-set-row"><label>表示密度</label><select id="n365-set-density"><option value="compact">コンパクト</option><option value="regular" selected>標準</option><option value="comfy">ゆったり</option></select></div>' +
