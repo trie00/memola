@@ -1,9 +1,13 @@
 // Rich-text editor: slash menu, exec commands, key handling, floating toolbar.
 
-import { S } from '../state';
+import { S, type Page } from '../state';
 import { g, getEd, getOverlay } from './dom';
 import { setSave } from './ui-helpers';
 import { schedSave } from './actions';
+import {
+  showPagePicker, updatePagePickerQuery, hide as hidePagePicker,
+  pagePickerActive, pagePickerCount, pagePickerMove, pagePickerCommit,
+} from './page-picker';
 
 interface SlashItem { cmd: string; icon: string; name: string; desc: string; cat: string }
 
@@ -26,6 +30,7 @@ const SLASH_ITEMS: SlashItem[] = [
   // データ
   { cat: 'データ', cmd: 'table',    icon: '⊞', name: '表',             desc: '簡易表 (3×2)・セル編集可' },
   { cat: 'データ', cmd: 'inlinedb', icon: '▤', name: 'インラインDB',    desc: 'ページにDBを埋め込む' },
+  { cat: 'データ', cmd: 'page-link', icon: '🔗', name: 'ページリンク',   desc: 'n365 内の他ページにリンク' },
   // AI
   { cat: 'AI',  cmd: 'ai',       icon: '✦',    name: 'AI 要約',         desc: 'このページを要約' },
   { cat: 'AI',  cmd: 'ai-rewrite', icon: '✦',  name: 'AI 改稿',         desc: 'トーン調整・敬体/常体' },
@@ -39,6 +44,14 @@ let _slashSel = 0;
 let _slashFiltered: SlashItem[] = [];
 let _slashNode: Node | null = null;
 
+// `[[` page-link autocomplete state. Tracked separately from slash so the
+// two trigger modes don't fight each other when both keys appear in
+// quick succession.
+let _wikiActive = false;
+let _wikiQuery = '';
+let _wikiNode: Node | null = null;
+let _wikiStartOffset = -1; // offset of the first `[` in _wikiNode
+
 export function isSlashActive(): boolean { return _slashActive; }
 
 export function closeSlashMenu(): void {
@@ -47,6 +60,63 @@ export function closeSlashMenu(): void {
   _slashSel = 0;
   _slashNode = null;
   g('slash').classList.remove('on');
+}
+
+function closeWikiPicker(): void {
+  _wikiActive = false;
+  _wikiQuery = '';
+  _wikiNode = null;
+  _wikiStartOffset = -1;
+  hidePagePicker();
+}
+
+/** Replace the `[[<query>` text with an atomic page-link chip pointing to the
+ *  picked page, then position the caret right after the chip with a single
+ *  trailing space so the user can keep typing. */
+function insertPageLinkAtWikiTrigger(page: Page): void {
+  const _ed = getEd();
+  if (!_wikiNode || !_ed.contains(_wikiNode) || _wikiStartOffset < 0) {
+    closeWikiPicker();
+    return;
+  }
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) { closeWikiPicker(); return; }
+  const txtNode = _wikiNode as Text;
+  const fullTxt = txtNode.textContent || '';
+  const rng0 = sel.getRangeAt(0);
+  const curOff = (rng0.startContainer === txtNode) ? rng0.startOffset : fullTxt.length;
+  // Verify the trigger is still intact (user might have backspaced past it)
+  if (fullTxt.substr(_wikiStartOffset, 2) !== '[[') {
+    closeWikiPicker();
+    return;
+  }
+  // Split the text node: keep [0, _wikiStartOffset) before the trigger, drop
+  // [_wikiStartOffset, curOff) which is the typed `[[query`, then resume
+  // with [curOff, end). Insert the link element + trailing space between.
+  const before = fullTxt.substring(0, _wikiStartOffset);
+  const after = fullTxt.substring(curOff);
+  const a = document.createElement('a');
+  a.className = 'n365-page-link';
+  a.setAttribute('data-page-id', page.Id);
+  a.setAttribute('contenteditable', 'false');
+  a.textContent = page.Title || '無題';
+  // Replace the trigger text node with: [before-text] [<a>] [space + after]
+  txtNode.textContent = before;
+  const parent = txtNode.parentNode;
+  if (!parent) { closeWikiPicker(); return; }
+  const tail = document.createTextNode(' ' + after);
+  parent.insertBefore(a, txtNode.nextSibling);
+  parent.insertBefore(tail, a.nextSibling);
+  // Caret right after the inserted space
+  const r = document.createRange();
+  r.setStart(tail, 1);
+  r.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(r);
+  closeWikiPicker();
+  S.dirty = true;
+  setSave('未保存');
+  schedSave();
 }
 
 function showSlashMenu(rect: { bottom: number; left: number }): void {
@@ -220,6 +290,37 @@ function applySlashCmd(cmd: string): void {
     return;
   } else if (cmd === 'table') {
     void import('./inline-table').then((m) => m.insertInlineTable(3, 1));
+    return;
+  } else if (cmd === 'page-link') {
+    // Open the page picker at the caret. Selection inserts an atomic
+    // <a class="n365-page-link"> chip with a trailing space for further typing.
+    const sel0 = window.getSelection();
+    if (!sel0 || !sel0.rangeCount) return;
+    const rect = sel0.getRangeAt(0).getBoundingClientRect();
+    showPagePicker({
+      anchor: { bottom: rect.bottom, left: rect.left },
+      onSelect: (p) => {
+        const s2 = window.getSelection();
+        if (!s2 || !s2.rangeCount) return;
+        const a = document.createElement('a');
+        a.className = 'n365-page-link';
+        a.setAttribute('data-page-id', p.Id);
+        a.setAttribute('contenteditable', 'false');
+        a.textContent = p.Title || '無題';
+        const tail = document.createTextNode(' ');
+        const r = s2.getRangeAt(0);
+        r.insertNode(tail);
+        r.insertNode(a);
+        // Caret right after the trailing space
+        const r2 = document.createRange();
+        r2.setStartAfter(tail);
+        r2.collapse(true);
+        s2.removeAllRanges();
+        s2.addRange(r2);
+        _ed.focus();
+        S.dirty = true; setSave('未保存'); schedSave();
+      },
+    });
     return;
   } else {
     execCmd(cmd);
@@ -602,6 +703,32 @@ export function attachEditor(): void {
       const txt = node.textContent || '';
       const offset = range.startOffset;
       const before = txt.substring(0, offset);
+      // `[[query` page-link trigger — match between the last `[[` and the
+      // caret. Cancel if a closing `]]`, newline, or another `[[` appears.
+      const wikiMatch = before.match(/\[\[([^\[\]\n]*)$/);
+      if (wikiMatch) {
+        const startIdx = before.lastIndexOf('[[');
+        _wikiActive = true;
+        _wikiQuery = wikiMatch[1] || '';
+        _wikiNode = node;
+        _wikiStartOffset = startIdx;
+        const rect = range.getBoundingClientRect();
+        if (!pagePickerActive()) {
+          showPagePicker({
+            anchor: { bottom: rect.bottom, left: rect.left },
+            query: _wikiQuery,
+            onSelect: (p) => insertPageLinkAtWikiTrigger(p),
+            onCancel: () => closeWikiPicker(),
+          });
+        } else {
+          updatePagePickerQuery(_wikiQuery);
+        }
+        // Wiki trigger and slash menu are mutually exclusive
+        if (_slashActive) closeSlashMenu();
+        return;
+      }
+      if (_wikiActive) closeWikiPicker();
+
       const slashMatch = before.match(/(^|\s)\/(\w*)$/);
       if (slashMatch) {
         _slashActive = true;
@@ -612,6 +739,9 @@ export function attachEditor(): void {
         showSlashMenu(rect);
         return;
       }
+    } else {
+      // caret moved off a text node — close any open trigger
+      if (_wikiActive) closeWikiPicker();
     }
     if (_slashActive) closeSlashMenu();
   });
@@ -620,6 +750,20 @@ export function attachEditor(): void {
     // Skip during IME composition (Japanese input etc.)
     const ke = e as KeyboardEvent;
     if (ke.isComposing || ke.keyCode === 229) return;
+
+    // Wiki-style `[[` autocomplete takes precedence over slash menu when
+    // active, but both keybindings overlap so we handle them carefully.
+    if (_wikiActive && pagePickerActive()) {
+      if (ke.key === 'ArrowDown') { e.preventDefault(); pagePickerMove(1); return; }
+      if (ke.key === 'ArrowUp')   { e.preventDefault(); pagePickerMove(-1); return; }
+      if (ke.key === 'Enter') {
+        if (pagePickerCount() > 0) { e.preventDefault(); pagePickerCommit(); return; }
+        // No matches → just close picker, let Enter through as a newline
+        closeWikiPicker();
+      }
+      if (ke.key === 'Escape') { e.preventDefault(); closeWikiPicker(); return; }
+      // Spaces are allowed in queries (page titles often have spaces) — don't dismiss on space
+    }
 
     if (_slashActive) {
       if (ke.key === 'ArrowDown') {
@@ -884,6 +1028,31 @@ export function attachEditor(): void {
       if (txt && txt.classList.contains('n365-todo-txt')) {
         txt.classList.toggle('done', cb.checked);
         S.dirty = true; setSave('未保存'); schedSave();
+      }
+    }
+    // Internal page-link → navigate via doSelect.
+    const linkEl = target.closest<HTMLElement>('a.n365-page-link');
+    if (linkEl) {
+      e.preventDefault();
+      const pageId = linkEl.getAttribute('data-page-id') || '';
+      const pendingTitle = linkEl.getAttribute('data-pending') === '1'
+        ? (linkEl.textContent || '').trim()
+        : '';
+      const target2 = pageId
+        ? S.pages.find((p) => p.Id === pageId)
+        : (pendingTitle ? S.pages.find((p) => (p.Title || '') === pendingTitle) : null);
+      if (target2) {
+        // Resolve pending title-only links to their canonical id form so
+        // future opens are stable across renames.
+        if (pendingTitle && !pageId) {
+          linkEl.setAttribute('data-page-id', target2.Id);
+          linkEl.removeAttribute('data-pending');
+          S.dirty = true; setSave('未保存'); schedSave();
+        }
+        void import('./views').then((m) => m.doSelect(target2.Id));
+      } else {
+        void import('./ui-helpers').then((m) =>
+          m.toast('リンク先のページが見つかりません', 'err'));
       }
     }
   });

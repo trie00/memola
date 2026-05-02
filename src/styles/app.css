@@ -1547,6 +1547,105 @@
 #n365-overlay .n365-slash-name { font-size: var(--fs-md); color: var(--ink); }
 #n365-overlay .n365-slash-desc { font-size: 10px; color: var(--ink-3); margin-top: 1px; }
 
+/* ── Internal page-link chip ──────────────────────────── */
+#n365-overlay .n365-page-link {
+  display: inline;
+  padding: 0 3px;
+  margin: 0 1px;
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(55, 53, 47, 0.25);
+  background: transparent;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: background 0.12s, border-color 0.12s;
+  /* Atomic chip: contenteditable=false makes the browser treat it as one
+     unit. Adding a tiny zwsp before/after via CSS would help caret movement
+     but most browsers handle this correctly without it. */
+}
+#n365-overlay .n365-page-link::before {
+  content: '↗';
+  font-size: 0.78em;
+  margin-right: 2px;
+  color: var(--ink-3);
+  vertical-align: 1px;
+}
+#n365-overlay .n365-page-link:hover {
+  background: rgba(55, 53, 47, 0.08);
+  border-bottom-color: rgba(55, 53, 47, 0.5);
+}
+#n365-overlay .n365-page-link.broken {
+  color: #b13a3a;
+  border-bottom-color: rgba(177, 58, 58, 0.4);
+  text-decoration: line-through;
+  text-decoration-color: rgba(177, 58, 58, 0.5);
+}
+#n365-overlay .n365-page-link.broken::before {
+  content: '⚠';
+  color: #b13a3a;
+}
+#n365-overlay .n365-page-link.broken:hover {
+  background: rgba(177, 58, 58, 0.10);
+}
+
+/* ── Page picker (autocomplete & /page) ──────────────── */
+#n365-overlay .n365-page-picker {
+  position: fixed;
+  background: var(--paper);
+  border-radius: var(--r-3);
+  box-shadow: var(--sh-flyout);
+  border: 1px solid var(--paper-3);
+  min-width: 280px;
+  max-width: 380px;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 2147483646;
+  padding: 4px 0;
+}
+#n365-overlay .n365-page-picker-empty {
+  padding: 12px 14px;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+  text-align: center;
+}
+#n365-overlay .n365-page-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: var(--r-2);
+  margin: 0 4px;
+  transition: background var(--tr-fast);
+  font-size: var(--fs-md);
+  white-space: nowrap;
+  overflow: hidden;
+}
+#n365-overlay .n365-page-picker-item:hover,
+#n365-overlay .n365-page-picker-item.sel {
+  background: var(--accent-soft);
+}
+#n365-overlay .n365-page-picker-icon {
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+  font-size: 14px;
+}
+#n365-overlay .n365-page-picker-name {
+  color: var(--ink);
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#n365-overlay .n365-page-picker-path {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  margin-left: 4px;
+}
+
 /* ── Quick search ─────────────────────────────────────── */
 #n365-qs {
   position: absolute; inset: 0; background: rgba(0,0,0,.3);

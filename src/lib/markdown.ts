@@ -116,7 +116,18 @@ export function domWalk(node: Node): string {
     const alt = (el as HTMLImageElement).getAttribute('alt') || '';
     return '![' + alt + '](' + src + ')';
   }
-  if (tag === 'a')   return '[' + ch + '](' + (el.getAttribute('href') || '') + ')';
+  if (tag === 'a') {
+    // Internal page-link: serialize to wiki-style `[[<id>|<title>]]` so the
+    // round-trip is stable across renames (id is canonical, title is just
+    // a snapshot for human-readable Markdown).
+    if (el.classList.contains('n365-page-link')) {
+      const pid = el.getAttribute('data-page-id') || '';
+      const text = (el.textContent || '').trim();
+      if (pid) return '[[' + pid + '|' + text + ']]';
+      return '[[' + text + ']]';
+    }
+    return '[' + ch + '](' + (el.getAttribute('href') || '') + ')';
+  }
   // Plain <div> (no recognized class) = treat as paragraph block.
   // Chrome's contenteditable creates these on Enter when defaultParagraphSeparator
   // hasn't been set; older saves may still contain them.
@@ -137,6 +148,16 @@ export function mdToHtml(md: string): string {
   }
   function inline(t: string): string {
     return esc(t)
+      // Internal page-link with id: [[<id>|<title>]] → atomic anchor chip.
+      // Match before standard [text](url) so the inner [..] aren't parsed as
+      // image/link syntax. contenteditable=false makes the chip behave as a
+      // single deletable unit inside the editor.
+      .replace(/\[\[(\d+)\|([^\]]+)\]\]/g,
+        '<a class="n365-page-link" data-page-id="$1" contenteditable="false">$2</a>')
+      // Bare [[<title>]] (not yet resolved to an id) — kept for hand-typed
+      // links. Click handler resolves to id at navigation time.
+      .replace(/\[\[([^\[\]\|]+)\]\]/g,
+        '<a class="n365-page-link" data-pending="1" contenteditable="false">$1</a>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       .replace(/~~(.+?)~~/g, '<s>$1</s>')

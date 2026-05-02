@@ -127,6 +127,39 @@ describe('markdown', () => {
     });
   });
 
+  describe('internal page links', () => {
+    it('round-trips a wiki-style page link with id', () => {
+      // [[<id>|<title>]] is the canonical form persisted to SP
+      expect(rt('see [[123|Project A]] for details')).toContain('[[123|Project A]]');
+    });
+
+    it('renders the link as an atomic anchor with data-page-id', () => {
+      const html = mdToHtml('[[42|Foo]]');
+      expect(html).toContain('class="n365-page-link"');
+      expect(html).toContain('data-page-id="42"');
+      expect(html).toContain('contenteditable="false"');
+      expect(html).toContain('>Foo<');
+    });
+
+    it('round-trips bare title-only links (pending resolution)', () => {
+      // [[title]] without an id is allowed for hand-typed links — the click
+      // handler resolves and rewrites them on first navigation.
+      expect(rt('hello [[Foo Bar]] world')).toContain('[[Foo Bar]]');
+    });
+
+    it('marks pending page links so the renderer can resolve later', () => {
+      const html = mdToHtml('[[Pending]]');
+      expect(html).toContain('data-pending="1"');
+      expect(html).not.toContain('data-page-id=');
+    });
+
+    it('does not mistake a markdown link for a page link', () => {
+      const html = mdToHtml('[label](https://example.com)');
+      expect(html).toContain('<a href="https://example.com">label</a>');
+      expect(html).not.toContain('n365-page-link');
+    });
+  });
+
   describe('edge cases', () => {
     it('handles empty input', () => {
       expect(mdToHtml('')).toBe('');

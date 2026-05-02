@@ -104,6 +104,8 @@ export async function doSelect(id: string): Promise<void> {
       getEd().innerHTML = await apiLoadContent(id);
       // Re-bind inline-table cell handlers (Tab nav, hover buttons) after load
       void import('./inline-table').then((m) => m.reattachInlineTables(getEd()));
+      // Mark page-link chips whose target page is missing (broken-link visual)
+      void import('./page-picker').then((m) => m.markBrokenPageLinks(getEd()));
       // Track file meta so we can detect remote updates and conflicts on save
       const fm = await apiLoadFileMeta(id);
       if (fm) {
