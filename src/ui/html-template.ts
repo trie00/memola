@@ -11,8 +11,7 @@ export function buildHtml(): string {
           '<span id="n365-ws-name">n365</span>' +
           '<span class="n365-ws-caret">▾</span>' +
         '</button>' +
-        '<button id="n365-sb-collapse" title="折りたたむ (Ctrl+\\)">«</button>' +
-        '<button id="n365-x" title="閉じる(Esc)">' + ICONS.close + '</button>' +
+        '<button id="n365-sb-collapse" class="n365-pane-x" title="サイドバーを閉じる (Ctrl+\\)">' + ICONS.close + '</button>' +
       '</div>' +
       '<div class="n365-snav" id="n365-search-nav">' + ICONS.search + '<span>検索</span><span class="n365-snav-hint">Ctrl K</span></div>' +
       '<div class="n365-quick-wrap"><button class="n365-quick-add" id="n365-quick-add">' + ICONS.plus + '<span>新規</span></button></div>' +
@@ -21,6 +20,7 @@ export function buildHtml(): string {
       '<div id="n365-sb-ft">' +
         '<button class="n365-nb" id="n365-settings-btn" title="設定">⚙<span>設定</span></button>' +
         '<button class="n365-nb" id="n365-trash-btn">' + ICONS.trash + '<span>ゴミ箱</span></button>' +
+        '<button class="n365-nb" id="n365-x" title="アプリを閉じる (Esc)">' + ICONS.exit + '<span>閉じる</span></button>' +
       '</div>' +
       '<div id="n365-create-menu">' +
         '<div class="n365-cm-section">作成</div>' +
@@ -33,11 +33,23 @@ export function buildHtml(): string {
         '<div class="n365-cm-item" data-cm="tpl-tasks"><span class="n365-cm-ic">✓</span><span class="n365-cm-name">タスクDB</span></div>' +
       '</div>' +
     '</aside>' +
-    '<div id="n365-rail-flyout"><div id="n365-rail-flyout-list"></div></div>' +
     '<main id="n365-main">' +
       '<div id="n365-top">' +
         '<button id="n365-sb-toggle" title="サイドバー (Ctrl+\\)">' + ICONS.sidebar + '</button>' +
         '<div id="n365-bc"></div>' +
+        '<button id="n365-pub-tag" class="n365-pub-tag" style="display:none" title="公開状態">' +
+          '<span class="n365-pub-tag-dot"></span><span class="n365-pub-tag-label">公開中</span>' +
+        '</button>' +
+        '<div id="n365-pub-pop" class="n365-pub-pop" style="display:none">' +
+          '<div class="n365-pub-pop-msg"></div>' +
+          '<div class="n365-pub-pop-row">' +
+            '<button class="n365-pub-pop-btn primary" data-pub-act="sync">公開ページに同期</button>' +
+            '<button class="n365-pub-pop-btn" data-pub-act="open">公開ページを開く</button>' +
+            '<button class="n365-pub-pop-btn" data-pub-act="copy">URL をコピー</button>' +
+            '<button class="n365-pub-pop-btn danger" data-pub-act="unpublish">公開を解除</button>' +
+            '<button class="n365-pub-pop-btn ghost" data-pub-act="close">閉じる</button>' +
+          '</div>' +
+        '</div>' +
         '<div id="n365-ss"></div>' +
         '<button id="n365-outline-btn" class="n365-tog-btn" title="目次">' + ICONS.sort + '<span>目次</span></button>' +
         '<button id="n365-props-btn" class="n365-tog-btn" title="プロパティ">' + ICONS.info + '<span>プロパティ</span></button>' +
@@ -65,7 +77,7 @@ export function buildHtml(): string {
       '</div>' +
       '<div id="n365-content-row">' +
       '<aside id="n365-outline">' +
-        '<div id="n365-outline-hd"><span>目次</span><button class="n365-pane-x" id="n365-outline-x" title="閉じる">«</button></div>' +
+        '<div id="n365-outline-hd"><span>目次</span><button class="n365-pane-x" id="n365-outline-x" title="閉じる">' + ICONS.close + '</button></div>' +
         '<div id="n365-outline-list"></div>' +
       '</aside>' +
       '<div id="n365-ea"><div id="n365-ei">' +
@@ -90,8 +102,9 @@ export function buildHtml(): string {
               '<span id="n365-pg-icon"></span>' +
               '<button class="n365-pg-icon-empty" id="n365-add-icon">アイコンを追加</button>' +
             '</div>' +
+            '<textarea id="n365-ttl" rows="1" placeholder="タイトルなし"></textarea>' +
           '</div>' +
-          '<textarea id="n365-ttl" rows="1" placeholder="タイトルなし"></textarea>' +
+          '<div id="n365-row-props" class="n365-row-props"></div>' +
           '<div id="n365-ed" contenteditable="true" spellcheck="false"></div>' +
         '</div>' +
       '</div></div>' +
@@ -138,22 +151,24 @@ export function buildHtml(): string {
         '</div>' +
       '</div>' +
       '<aside id="n365-props">' +
-        '<div id="n365-props-hd"><span>プロパティ</span><button class="n365-pane-x" id="n365-props-x" title="閉じる">»</button></div>' +
+        '<div id="n365-props-hd"><span>プロパティ</span><button class="n365-pane-x" id="n365-props-x" title="閉じる">' + ICONS.close + '</button></div>' +
         '<div id="n365-props-list"></div>' +
       '</aside>' +
       '<aside id="n365-ai-panel">' +
         '<div id="n365-ai-hd">' +
           '<span class="n365-ai-title">' + ICONS.sparkle + '<span>AIチャット</span></span>' +
-          '<select id="n365-ai-hist" title="会話履歴"></select>' +
+          '<button id="n365-ai-new" title="新しい会話">' + ICONS.plus + '</button>' +
           '<button id="n365-ai-clear" title="現在の会話を削除">' + ICONS.trash + '</button>' +
           '<button id="n365-ai-key" title="APIキー設定">⚙</button>' +
-          '<button id="n365-ai-close" title="閉じる">' + ICONS.close + '</button>' +
+          '<button id="n365-ai-close" class="n365-pane-x" title="閉じる">' + ICONS.close + '</button>' +
+        '</div>' +
+        '<div id="n365-ai-hist-row">' +
+          '<select id="n365-ai-hist" title="会話履歴"></select>' +
         '</div>' +
         '<div id="n365-ai-messages"></div>' +
         '<div id="n365-ai-chips"></div>' +
         '<div id="n365-ai-inputarea">' +
           '<textarea id="n365-ai-input" placeholder="このページについて聞く…" rows="2"></textarea>' +
-          '<span class="n365-ai-kbd">⌘↵</span>' +
           '<button id="n365-ai-send" title="送信 (⌘↵)">' + ICONS.send + '</button>' +
         '</div>' +
       '</aside>' +
@@ -236,6 +251,8 @@ export function buildHtml(): string {
       '<div class="n365-pgm-sep"></div>' +
       '<div class="n365-pgm-item" data-action="duplicate">' + ICONS.copy + '<span>複製</span></div>' +
       '<div class="n365-pgm-item" data-action="copy-link">' + ICONS.link + '<span>リンクをコピー</span></div>' +
+      '<div class="n365-pgm-item" data-action="publish">' + ICONS.link + '<span class="n365-pgm-publish-label">Web 公開</span></div>' +
+      '<div class="n365-pgm-item" data-action="copy-pub-url" style="display:none">' + ICONS.copy + '<span>公開 URL をコピー</span></div>' +
       '<div class="n365-pgm-sep"></div>' +
       '<div class="n365-pgm-item" data-action="print">' + ICONS.print + '<span>印刷</span></div>' +
       '<div class="n365-pgm-item" data-action="info">' + ICONS.info + '<span>ページ情報</span></div>' +

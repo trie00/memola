@@ -7,14 +7,14 @@ interface PaneSpec {
   storageKey: string;
   min: number;
   max: number;
-  enabled?: () => boolean; // optional: skip handle when false (e.g. sidebar in rail)
+  enabled?: () => boolean; // optional: skip handle when false (e.g. sidebar collapsed)
 }
 
 const SPECS: PaneSpec[] = [
   { paneId: 'n365-sb',      edge: 'right', storageKey: 'n365.pane.sb',      min: 160, max: 360,
     enabled: () => {
       const sb = document.getElementById('n365-sb');
-      return !!sb && !sb.classList.contains('collapsed') && !sb.classList.contains('rail');
+      return !!sb && !sb.classList.contains('collapsed');
     } },
   { paneId: 'n365-outline', edge: 'right', storageKey: 'n365.pane.outline', min: 180, max: 400 },
   { paneId: 'n365-props',   edge: 'left',  storageKey: 'n365.pane.props',   min: 200, max: 480 },

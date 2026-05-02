@@ -1,7 +1,10 @@
-// SharePoint list/field/item REST helpers, used to back databases.
+// SharePoint list / field / item REST helpers backing the n365-pages list and
+// every per-DB list. Higher-level page semantics live in api/pages.ts; this
+// module only deals with raw list mechanics.
 
 import { SITE } from '../config';
 import { getDigest } from './digest';
+import { spListUrl, spGetD, ODATA_POST_HEADERS } from './sp-rest';
 import type { ListField, ListItem } from '../state';
 
 interface SPField {
@@ -17,17 +20,13 @@ export async function createList(listTitle: string): Promise<void> {
   const d = await getDigest();
   const r = await fetch(SITE + '/_api/web/lists', {
     method: 'POST',
-    headers: {
-      Accept: 'application/json;odata=verbose',
-      'Content-Type': 'application/json;odata=verbose',
-      'X-RequestDigest': d,
-    },
+    headers: { ...ODATA_POST_HEADERS, 'X-RequestDigest': d },
     credentials: 'include',
     body: JSON.stringify({
       __metadata: { type: 'SP.List' },
       BaseTemplate: 100,
       Title: listTitle,
-      Description: 'n365 database',
+      Description: 'n365',
     }),
   });
   if (!r.ok) throw new Error('リスト作成失敗: ' + r.status);
@@ -35,7 +34,7 @@ export async function createList(listTitle: string): Promise<void> {
 
 export async function deleteList(listTitle: string): Promise<void> {
   const d = await getDigest();
-  await fetch(SITE + "/_api/web/lists/getbytitle('" + listTitle + "')", {
+  await fetch(spListUrl(listTitle), {
     method: 'POST',
     headers: { 'X-RequestDigest': d, 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' },
     credentials: 'include',
@@ -44,29 +43,22 @@ export async function deleteList(listTitle: string): Promise<void> {
 
 export async function getListEntityType(listTitle: string): Promise<string> {
   if (_etCache[listTitle]) return _etCache[listTitle];
-  const r = await fetch(
-    SITE + "/_api/web/lists/getbytitle('" + listTitle + "')?$select=ListItemEntityTypeFullName",
-    { headers: { Accept: 'application/json;odata=verbose' }, credentials: 'include' },
+  const d = await spGetD<{ ListItemEntityTypeFullName: string }>(
+    spListUrl(listTitle, '?$select=ListItemEntityTypeFullName'),
   );
-  if (!r.ok) throw new Error('エンティティタイプ取得失敗');
-  // SP REST envelope shape — narrowed locally because this never appears in TS types.
-  const j = (await r.json()) as { d: { ListItemEntityTypeFullName: string } };
-  _etCache[listTitle] = j.d.ListItemEntityTypeFullName;
+  if (!d) throw new Error('エンティティタイプ取得失敗');
+  _etCache[listTitle] = d.ListItemEntityTypeFullName;
   return _etCache[listTitle];
 }
 
 export async function getListFields(listTitle: string): Promise<ListField[]> {
-  const r = await fetch(
-    SITE + "/_api/web/lists/getbytitle('" + listTitle +
-      "')/fields?$filter=Hidden eq false and ReadOnlyField eq false&$select=Title,InternalName,FieldTypeKind,Choices",
-    { headers: { Accept: 'application/json;odata=verbose' }, credentials: 'include' },
+  const d = await spGetD<{ results: SPField[] }>(
+    spListUrl(listTitle,
+      "/fields?$filter=Hidden eq false and ReadOnlyField eq false&$select=Title,InternalName,FieldTypeKind,Choices"),
   );
-  if (!r.ok) throw new Error('スキーマ取得失敗: ' + r.status);
-  const j = (await r.json()) as { d: { results: SPField[] } };
-  return j.d.results
+  if (!d) throw new Error('スキーマ取得失敗');
+  return d.results
     .filter((f) => [2, 3, 4, 6, 8, 9].indexOf(f.FieldTypeKind) >= 0)
-    // Hide n365-internal columns (e.g. _n365_body for row page content)
-    .filter((f) => !(f.InternalName || '').startsWith('_n365_') && !(f.Title || '').startsWith('_n365_'))
     .map((f) => {
       const field: ListField = {
         Title: f.Title,
@@ -81,17 +73,15 @@ export async function getListFields(listTitle: string): Promise<ListField[]> {
 }
 
 export async function getListItems(listTitle: string): Promise<ListItem[]> {
-  const r = await fetch(
-    SITE + "/_api/web/lists/getbytitle('" + listTitle + "')/items?$orderby=Id&$top=500",
-    { headers: { Accept: 'application/json;odata=verbose' }, credentials: 'include' },
+  const d = await spGetD<{ results: ListItem[] }>(
+    spListUrl(listTitle, '/items?$orderby=Id&$top=500'),
   );
-  if (!r.ok) throw new Error('データ取得失敗: ' + r.status);
-  const j = (await r.json()) as { d: { results: ListItem[] } };
+  if (!d) throw new Error('データ取得失敗');
   // SharePoint REST prefixes internal names that start with `_` (including
   // encoded non-ASCII like `_x3042_…`) with `OData_` in the response. Mirror
   // each such property under its non-prefixed name so callers can look up
   // values by the field's actual InternalName.
-  return j.d.results.map((item) => {
+  return d.results.map((item) => {
     const fixed: ListItem = item;
     for (const k of Object.keys(item)) {
       if (k.startsWith('OData_')) {
@@ -109,29 +99,52 @@ export async function createListItem(
 ): Promise<ListItem> {
   const et = await getListEntityType(listTitle);
   const d = await getDigest();
-  data.__metadata = { type: et };
-  const r = await fetch(SITE + "/_api/web/lists/getbytitle('" + listTitle + "')/items", {
+  // SP REST entity types prefix any property whose InternalName begins with
+  // `_` (including encoded non-ASCII names like `_x30b9_...` for ステータス)
+  // with `OData_`. Without this, SP returns 400 「property does not exist on
+  // type」for Japanese-named columns. The read side (getListItems) mirrors
+  // this in reverse.
+  const payload: Record<string, unknown> = { __metadata: { type: et } };
+  for (const k of Object.keys(data)) {
+    if (k === '__metadata') continue;
+    const outKey = k.startsWith('_') ? 'OData_' + k : k;
+    payload[outKey] = data[k];
+  }
+  const r = await fetch(spListUrl(listTitle, '/items'), {
     method: 'POST',
-    headers: {
-      Accept: 'application/json;odata=verbose',
-      'Content-Type': 'application/json;odata=verbose',
-      'X-RequestDigest': d,
-    },
+    headers: { ...ODATA_POST_HEADERS, 'X-RequestDigest': d },
     credentials: 'include',
-    body: JSON.stringify(data),
+    body: JSON.stringify(payload),
   });
-  if (!r.ok) throw new Error('行追加失敗: ' + r.status);
+  if (!r.ok) {
+    let detail = '';
+    try {
+      const txt = await r.text();
+      // SP returns JSON like {"error":{"code":"...","message":{"value":"..."}}}
+      const m = txt.match(/"value"\s*:\s*"([^"]+)"/);
+      if (m) detail = ' — ' + m[1];
+      else if (txt.length < 300) detail = ' — ' + txt;
+    } catch { /* ignore */ }
+    // If digest expired or schema changed, retry once after invalidating caches
+    if (r.status === 403 || r.status === 401) {
+      delete _etCache[listTitle];
+    }
+    throw new Error('行追加失敗: ' + r.status + detail);
+  }
   const j = (await r.json()) as { d: ListItem };
   return j.d;
 }
 
 export async function deleteListItem(listTitle: string, itemId: number): Promise<void> {
   const d = await getDigest();
-  const r = await fetch(SITE + "/_api/web/lists/getbytitle('" + listTitle + "')/items(" + itemId + ")", {
+  const r = await fetch(spListUrl(listTitle, '/items(' + itemId + ')'), {
     method: 'POST',
     headers: { 'X-RequestDigest': d, 'X-HTTP-Method': 'DELETE', 'If-Match': '*' },
     credentials: 'include',
   });
+  // 404 = already gone — treat as success (idempotent delete). This avoids
+  // spurious failures during undo/redo when a row was deleted by another path.
+  if (r.status === 404) return;
   if (!r.ok) throw new Error('削除失敗: ' + r.status);
 }
 
@@ -142,7 +155,8 @@ export async function addListField(
   choices?: string[],
 ): Promise<unknown> {
   const typeMap: Record<number, string> = {
-    2: 'SP.FieldText', 3: 'SP.FieldMultiLineText', 4: 'SP.FieldDateTime', 8: 'SP.FieldBoolean', 9: 'SP.FieldNumber', 6: 'SP.FieldChoice',
+    2: 'SP.FieldText', 3: 'SP.FieldMultiLineText', 4: 'SP.FieldDateTime',
+    8: 'SP.FieldBoolean', 9: 'SP.FieldNumber', 6: 'SP.FieldChoice',
   };
   const d = await getDigest();
   const kindNum = typeof typeKind === 'string' ? parseInt(typeKind, 10) : typeKind;
@@ -173,13 +187,9 @@ export async function addListField(
   }
   // Invalidate any cached entity-type/field schema so the next update picks up the new field.
   delete _etCache[listTitle];
-  const r = await fetch(SITE + "/_api/web/lists/getbytitle('" + listTitle + "')/fields", {
+  const r = await fetch(spListUrl(listTitle, '/fields'), {
     method: 'POST',
-    headers: {
-      Accept: 'application/json;odata=verbose',
-      'Content-Type': 'application/json;odata=verbose',
-      'X-RequestDigest': d,
-    },
+    headers: { ...ODATA_POST_HEADERS, 'X-RequestDigest': d },
     credentials: 'include',
     body: JSON.stringify(body),
   });
@@ -193,22 +203,18 @@ export async function updateListItem(
   itemId: number,
   data: Record<string, unknown>,
 ): Promise<void> {
-  // Use validateUpdateListItem instead of MERGE — it uses display names / internal
-  // names dynamically and bypasses the entity-type schema cache, which otherwise
+  // Use validateUpdateListItem instead of MERGE — it accepts both display and
+  // internal names and bypasses the entity-type schema cache, which otherwise
   // rejects non-ASCII field names added in the same session.
   const d = await getDigest();
   const formValues = Object.entries(data)
     .filter(([k]) => k !== '__metadata')
     .map(([k, v]) => ({ FieldName: k, FieldValue: v == null ? '' : String(v) }));
   const r = await fetch(
-    SITE + "/_api/web/lists/getbytitle('" + listTitle + "')/items(" + itemId + ")/validateUpdateListItem",
+    spListUrl(listTitle, '/items(' + itemId + ')/validateUpdateListItem'),
     {
       method: 'POST',
-      headers: {
-        Accept: 'application/json;odata=verbose',
-        'Content-Type': 'application/json;odata=verbose',
-        'X-RequestDigest': d,
-      },
+      headers: { ...ODATA_POST_HEADERS, 'X-RequestDigest': d },
       credentials: 'include',
       body: JSON.stringify({ formValues, bNewDocumentUpdate: false }),
     },
@@ -230,3 +236,4 @@ export async function updateListItem(
     throw new Error('更新失敗: ' + errs.map((e) => e.FieldName + ': ' + e.ErrorMessage).join(', '));
   }
 }
+

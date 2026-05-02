@@ -1,7 +1,6 @@
 // Event-listener registration & app bootstrap.
 
 import { S } from '../state';
-import { SITE, FOLDER } from '../config';
 import { g, getEd } from './dom';
 import { setLoad, setSave, toast, autoR } from './ui-helpers';
 import { renderTree } from './tree';
@@ -21,6 +20,7 @@ import {
 } from './ai-chat';
 import { toggleOutline, applyOutlineState, attachOutlineWatcher } from './outline';
 import { togglePropertiesPanel, applyPropertiesState } from './properties-panel';
+import { attachPubTag, syncPubTag } from './pub-tag';
 import { showWorkspaceMenu, getCurrentWorkspaceName } from './workspaces';
 import { openTrash, closeTrash } from './trash';
 import { exportCsv, importCsv } from './csv-io';
@@ -32,18 +32,16 @@ function applyFocusMode(): void {
   const isFocus = localStorage.getItem(FOCUS_KEY) === '1';
   if (isFocus) {
     ov.classList.add('focus-mode');
-    // 集中モード時はサイドバーを自動 rail 化（明示的な状態は保存しない）
-    document.getElementById('n365-sb')?.classList.add('rail');
+    // Focus mode auto-hides the sidebar (don't persist this state)
+    document.getElementById('n365-sb')?.classList.add('collapsed');
   } else {
     ov.classList.remove('focus-mode');
-    // 復帰時は永続化された状態を復元
+    // Restore persisted visibility on exit
     const saved = (() => { try { return localStorage.getItem('n365.sidebar'); } catch { return null; } })();
     const sb = document.getElementById('n365-sb');
     if (sb) {
-      sb.classList.remove('rail');
       sb.classList.remove('collapsed');
-      if (saved === 'rail') sb.classList.add('rail');
-      else if (saved === 'collapsed') sb.classList.add('collapsed');
+      if (saved === 'collapsed') sb.classList.add('collapsed');
     }
   }
 }
@@ -54,25 +52,23 @@ function toggleFocusMode(): void {
   applyFocusMode();
 }
 
-// ビューポート < 900px 自動折畳（明示状態は上書きしない）
+// ビューポート < 900px で自動折畳（明示状態を上書きしない）
 function applyViewportAutoCollapse(): void {
   const sb = document.getElementById('n365-sb');
   if (!sb) return;
   if (window.innerWidth < 900) {
-    if (!sb.classList.contains('rail') && !sb.classList.contains('collapsed')) {
+    if (!sb.classList.contains('collapsed')) {
       sb.dataset.autoCollapsed = '1';
-      sb.classList.add('rail');
+      sb.classList.add('collapsed');
     }
   } else if (sb.dataset.autoCollapsed === '1') {
     delete sb.dataset.autoCollapsed;
-    sb.classList.remove('rail');
+    sb.classList.remove('collapsed');
   }
 }
-import { apiGetPages, apiSetIcon } from '../api/pages';
+import { apiGetPages, apiSetIcon, apiSetTitle } from '../api/pages';
 import { apiCreateDb } from '../api/db';
-import { ensureFolder } from '../api/sp-core';
 import { addListField, getListFields, getListItems } from '../api/sp-list';
-import { saveMeta } from '../api/meta';
 
 async function doNewDb(parentId: string): Promise<void> {
   try {
@@ -89,96 +85,24 @@ export function attachAll(): void {
   // Close button
   g('x').addEventListener('click', closeApp);
 
-  // Sidebar toggle (topbar button = 3-state cycle)
-  g('sb-toggle').addEventListener('click', () => {
-    const sb = g('sb');
-    if (sb.classList.contains('collapsed')) { sb.classList.remove('collapsed'); sb.classList.remove('rail'); }
-    else if (sb.classList.contains('rail')) { sb.classList.remove('rail'); sb.classList.add('collapsed'); }
-    else sb.classList.add('rail');
-    persistSidebarState();
-  });
-
-  // Sidebar header collapse button (« → rail)
-  const sbCollapseBtn = document.getElementById('n365-sb-collapse');
-  if (sbCollapseBtn) {
-    sbCollapseBtn.addEventListener('click', () => {
-      const sb = g('sb');
-      if (sb.classList.contains('rail')) {
-        sb.classList.remove('rail');
-        sbCollapseBtn.textContent = '«';
-      } else {
-        sb.classList.add('rail');
-        sbCollapseBtn.textContent = '»';
-      }
-      persistSidebarState();
-    });
-  }
+  // Sidebar visibility — 2 states: visible / collapsed (no more rail).
+  // Topbar toggle and the in-sidebar × button both hide; topbar shows when hidden.
   function persistSidebarState(): void {
     const sb = g('sb');
-    const state = sb.classList.contains('collapsed')
-      ? 'collapsed'
-      : sb.classList.contains('rail') ? 'rail' : 'expanded';
+    const state = sb.classList.contains('collapsed') ? 'collapsed' : 'expanded';
     try { localStorage.setItem('n365.sidebar', state); } catch { /* ignore */ }
   }
+  g('sb-toggle').addEventListener('click', () => {
+    g('sb').classList.toggle('collapsed');
+    persistSidebarState();
+  });
+  document.getElementById('n365-sb-collapse')?.addEventListener('click', () => {
+    g('sb').classList.add('collapsed');
+    persistSidebarState();
+  });
   try {
-    const saved = localStorage.getItem('n365.sidebar');
-    if (saved === 'rail') { g('sb').classList.add('rail'); if (sbCollapseBtn) sbCollapseBtn.textContent = '»'; }
-    else if (saved === 'collapsed') g('sb').classList.add('collapsed');
+    if (localStorage.getItem('n365.sidebar') === 'collapsed') g('sb').classList.add('collapsed');
   } catch { /* ignore */ }
-
-  // Rail flyout: hover on tree row in rail-mode → show 220px flyout listing children
-  const flyout = document.getElementById('n365-rail-flyout');
-  const flyoutList = document.getElementById('n365-rail-flyout-list');
-  let flyoutShowTimer: number | null = null;
-  let flyoutHideTimer: number | null = null;
-  function clearFlyoutTimers(): void {
-    if (flyoutShowTimer !== null) { window.clearTimeout(flyoutShowTimer); flyoutShowTimer = null; }
-    if (flyoutHideTimer !== null) { window.clearTimeout(flyoutHideTimer); flyoutHideTimer = null; }
-  }
-  function showFlyout(rowEl: HTMLElement): void {
-    if (!flyout || !flyoutList) return;
-    if (!g('sb').classList.contains('rail')) return;
-    const pageId = rowEl.dataset.pageId;
-    if (!pageId) return;
-    const rect = rowEl.getBoundingClientRect();
-    flyout.style.top = rect.top + 'px';
-    flyoutList.innerHTML = '';
-    // Show this row + its children
-    const page = S.pages.find((p) => p.Id === pageId);
-    if (page) {
-      const head = document.createElement('div');
-      head.className = 'n365-tr';
-      head.style.fontWeight = '500';
-      head.textContent = page.Title || '無題';
-      head.addEventListener('click', () => { void doSelect(pageId); flyout.classList.remove('on'); });
-      flyoutList.appendChild(head);
-      S.pages.filter((p) => p.ParentId === pageId).forEach((c) => {
-        const r = document.createElement('div');
-        r.className = 'n365-tr';
-        r.textContent = '  ' + (c.Title || '無題');
-        r.addEventListener('click', () => { void doSelect(c.Id); flyout.classList.remove('on'); });
-        flyoutList.appendChild(r);
-      });
-    }
-    flyout.classList.add('on');
-  }
-  document.addEventListener('mouseover', (e) => {
-    const target = e.target as HTMLElement;
-    const row = target.closest<HTMLElement>('#n365-tree .n365-tr');
-    if (row && g('sb').classList.contains('rail')) {
-      clearFlyoutTimers();
-      flyoutShowTimer = window.setTimeout(() => showFlyout(row), 100);
-    }
-  });
-  document.addEventListener('mouseout', (e) => {
-    const target = e.target as HTMLElement;
-    if (target.closest('#n365-tree') || target.closest('#n365-rail-flyout')) {
-      clearFlyoutTimers();
-      flyoutHideTimer = window.setTimeout(() => { flyout?.classList.remove('on'); }, 200);
-    }
-  });
-  flyout?.addEventListener('mouseenter', clearFlyoutTimers);
-  flyout?.addEventListener('mouseleave', () => { flyout.classList.remove('on'); });
 
   // New page buttons (empty-state CTA)
   g('ne').addEventListener('click', () => { doNew(''); });
@@ -254,13 +178,13 @@ export function attachAll(): void {
   g('mc').addEventListener('click', () => { g('md').classList.remove('on'); });
   g('mk').addEventListener('click', async () => {
     g('md').classList.remove('on');
-    setLoad(true, 'フォルダを作成中...');
+    setLoad(true, 'リストを準備中...');
     try {
-      await ensureFolder();
+      // apiGetPages auto-creates the n365-pages list and its columns on first call
       S.pages = await apiGetPages();
       renderTree();
-      toast('n365-pages フォルダを作成しました');
-    } catch (e) { toast('作成に失敗: ' + (e as Error).message, 'err'); }
+      toast('n365-pages リストを初期化しました');
+    } catch (e) { toast('初期化に失敗: ' + (e as Error).message, 'err'); }
     finally { setLoad(false); }
   });
 
@@ -331,7 +255,10 @@ export function attachAll(): void {
   });
   g('dv-ttl').addEventListener('blur', () => {
     if (S.currentId) {
-      saveMeta().catch((e: Error) => { toast('タイトル保存失敗: ' + e.message, 'err'); });
+      const newTitle = (g('dv-ttl').textContent || '').trim() || '無題';
+      apiSetTitle(S.currentId, newTitle).catch((e: Error) => {
+        toast('タイトル保存失敗: ' + e.message, 'err');
+      });
     }
   });
 
@@ -398,8 +325,14 @@ export function attachAll(): void {
     apiSetIcon(id, emoji).then(() => {
       const dvIcon = g('dv-pg-icon');
       const dvAdd = g('dv-add-icon');
-      if (emoji) { dvIcon.textContent = emoji; dvIcon.style.display = 'inline-block'; dvAdd.style.display = 'none'; }
-      else { dvIcon.style.display = 'none'; dvAdd.style.display = 'inline-flex'; }
+      const dvHd = document.getElementById('n365-dv-hd');
+      if (emoji) {
+        dvIcon.textContent = emoji; dvIcon.style.display = 'inline-block'; dvAdd.style.display = 'none';
+        dvHd?.classList.remove('no-icon');
+      } else {
+        dvIcon.style.display = 'none'; dvAdd.style.display = '';
+        dvHd?.classList.add('no-icon');
+      }
       renderTree();
     }).catch((e: Error) => { toast('アイコン保存失敗: ' + e.message, 'err'); });
   }
@@ -414,7 +347,18 @@ export function attachAll(): void {
     if (!S.currentId) return;
     const id = S.currentId;
     apiSetIcon(id, '').then(() => {
-      renderPageIcon(id);
+      // Update whichever view (page or DB) is currently showing the icon.
+      const meta = S.meta.pages.find((p) => p.id === id);
+      if (meta?.type === 'database') {
+        const dvIcon = g('dv-pg-icon');
+        const dvAdd = g('dv-add-icon');
+        const dvHd = document.getElementById('n365-dv-hd');
+        dvIcon.style.display = 'none';
+        dvAdd.style.display = '';
+        dvHd?.classList.add('no-icon');
+      } else {
+        renderPageIcon(id);
+      }
       renderTree();
     }).catch((e: Error) => { toast('アイコン削除失敗: ' + e.message, 'err'); });
   });
@@ -455,9 +399,13 @@ export function attachAll(): void {
   // Emoji outside-click closer
   attachEmojiPickerOutsideClick();
 
+  // Publish-status tag in the top bar
+  attachPubTag();
+
   // Page menu (top-right "...")
   g('pgm-btn').addEventListener('click', (e) => {
     e.stopPropagation();
+    syncPublishMenuItem();
     togglePageMenu(g('pgm-btn'));
   });
   g('pgm').addEventListener('click', async (e) => {
@@ -470,6 +418,8 @@ export function attachAll(): void {
       case 'export-html': await exportHtml(); break;
       case 'duplicate':   await duplicateCurrent(); break;
       case 'copy-link':   await copyPageLink(); break;
+      case 'publish':     await togglePublish(); break;
+      case 'copy-pub-url': await copyPublishedUrl(); break;
       case 'print':       printCurrent(); break;
       case 'info':        showPageInfo(); break;
       case 'focus':       toggleFocusMode(); break;
@@ -477,6 +427,58 @@ export function attachAll(): void {
     }
   });
   attachPageMenuOutsideClick();
+  // Refresh the publish/unpublish label every time the menu opens
+  function syncPublishMenuItem(): void {
+    const lbl = document.querySelector('.n365-pgm-publish-label');
+    const copyItem = document.querySelector<HTMLElement>('[data-action="copy-pub-url"]');
+    const publishItem = document.querySelector<HTMLElement>('[data-action="publish"]');
+    // Only real pages (not DB views, not row-as-page) can be published.
+    const isRealPage = !!S.currentId && S.currentType === 'page' && !S.currentRow;
+    if (!isRealPage) {
+      if (publishItem) publishItem.style.display = 'none';
+      if (copyItem) copyItem.style.display = 'none';
+      return;
+    }
+    if (publishItem) publishItem.style.display = '';
+    void import('../api/publish').then((m) => {
+      const pub = m.isPagePublished(S.currentId!);
+      if (lbl) lbl.textContent = pub ? 'Web 公開を解除' : 'Web 公開';
+      if (copyItem) copyItem.style.display = pub ? '' : 'none';
+    });
+  }
+  async function togglePublish(): Promise<void> {
+    const id = S.currentId;
+    if (!id) return;
+    const m = await import('../api/publish');
+    if (m.isPagePublished(id)) {
+      if (!confirm('Web 公開を解除します。SP 上の公開ページ（Site Page）も削除されます。よろしいですか？')) return;
+      try {
+        await m.unpublishPage(id);
+        toast('公開を解除しました');
+      } catch (e) { toast('解除失敗: ' + (e as Error).message, 'err'); }
+      syncPubTag();
+    } else {
+      const titleEl = g('ttl') as HTMLTextAreaElement | null;
+      const ed = getEd();
+      const title = (titleEl?.value || '').trim() || '無題';
+      const { htmlToMd } = await import('../lib/markdown');
+      const bodyMd = htmlToMd(ed.innerHTML || '');
+      try {
+        const url = await m.publishPage(id, title, bodyMd);
+        try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
+        toast('公開しました（URL をクリップボードにコピー）');
+      } catch (e) { toast('公開失敗: ' + (e as Error).message, 'err'); }
+      syncPubTag();
+    }
+  }
+  async function copyPublishedUrl(): Promise<void> {
+    const id = S.currentId;
+    if (!id) return;
+    const m = await import('../api/publish');
+    const url = m.publishedUrlFor(id);
+    try { await navigator.clipboard.writeText(url); toast('URL をコピーしました'); }
+    catch { toast('コピー失敗', 'err'); }
+  }
 
   // Apply persisted focus mode + viewport-based auto collapse
   applyFocusMode();
@@ -540,17 +542,24 @@ export function attachAll(): void {
 
   // Outline panel
   g('outline-btn').addEventListener('click', toggleOutline);
+  document.getElementById('n365-outline-x')?.addEventListener('click', () => {
+    void import('./outline').then((m) => m.setOutlineOpen(false));
+  });
   attachOutlineWatcher();
   applyOutlineState();
 
   // Properties panel
   g('props-btn').addEventListener('click', togglePropertiesPanel);
+  document.getElementById('n365-props-x')?.addEventListener('click', () => {
+    void import('./properties-panel').then((m) => m.setPropertiesOpen(false));
+  });
   applyPropertiesState();
 
   // AI chat panel
   g('ai-btn').addEventListener('click', toggleAiPanel);
   g('ai-close').addEventListener('click', closeAiPanel);
   g('ai-clear').addEventListener('click', clearAiHistory);
+  document.getElementById('n365-ai-new')?.addEventListener('click', () => newAiSession());
   g('ai-hist').addEventListener('change', () => {
     const v = (g('ai-hist') as HTMLSelectElement).value;
     if (v === '__new__') newAiSession();
@@ -574,6 +583,18 @@ export function attachAll(): void {
       void sendAiMessage(ta.value);
     }
   });
+  // Auto-grow up to 10 lines (~232px) on each input, then scroll.
+  // We also nudge scrollTop to max so the bottom padding stays visible — the
+  // browser's default cursor-into-view scroll lands flush with the bottom edge,
+  // leaving the cursor seemingly without margin.
+  const aiInputTa = g('ai-input') as HTMLTextAreaElement;
+  aiInputTa.addEventListener('input', () => {
+    aiInputTa.style.height = 'auto';
+    aiInputTa.style.height = Math.min(aiInputTa.scrollHeight, 232) + 'px';
+    // setting beyond max clamps to (scrollHeight - clientHeight); shows the
+    // bottom padding-bottom region.
+    aiInputTa.scrollTop = aiInputTa.scrollHeight;
+  });
   // Quick chips
   const chips = g('ai-chips');
   getQuickPrompts().forEach((p) => {
@@ -594,11 +615,7 @@ export function attachAll(): void {
 export async function init(): Promise<void> {
   setLoad(true);
   try {
-    const r = await fetch(SITE + "/_api/web/GetFolderByServerRelativeUrl('" + FOLDER + "')", {
-      headers: { Accept: 'application/json;odata=verbose' },
-      credentials: 'include',
-    });
-    if (!r.ok) { setLoad(false); g('md').classList.add('on'); return; }
+    // n365-pages list is auto-created by apiGetPages on first call
     S.pages = await apiGetPages();
     renderTree();
     showView('empty');

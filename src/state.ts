@@ -1,15 +1,20 @@
 // Shared application state and types.
 
+import type { ApiMessage } from './api/anthropic';
+
 export interface PageMeta {
   id: string;
   title: string;
   parent: string;
-  path: string;
   type?: 'page' | 'database';
-  list?: string;
+  list?: string;              // backing SP list name when type === 'database'
   icon?: string;
-  trashed?: number;          // unix ms when moved to trash; absent = active
+  trashed?: number;           // unix ms when moved to trash; absent = active
   pinned?: boolean;
+  published?: boolean;        // true → mirrored as a Modern Site Page (.aspx)
+  publishedUrl?: string;      // absolute URL of the Site Page when published
+  publishedSitePageId?: number; // SP.Publishing.SitePage Id (used to update / delete)
+  publishedDirty?: boolean;   // true → page edited since the last sync to the Site Page
 }
 
 export interface Meta {
@@ -45,16 +50,19 @@ export interface AppState {
   dbItems: ListItem[];
   dbList: string;
   dbSort: { field: string | null; asc: boolean };
-  dbFilter: string;
   /** Notion-style multi-field AND filters */
   dbFilters: { field: string; op: 'contains' | 'equals' | 'not_empty' | 'empty'; value: string }[];
   dbView: 'table' | 'board';
   dbColumnWidths: Record<string, number>;
   /** When viewing a DB row as a full page, holds list/item identity. */
   currentRow: { listTitle: string; itemId: number; dbId: string } | null;
+  /** Currently checkbox-selected row ids in the DB view. Reset on DB switch. */
+  dbSelected: Set<number>;
   ai: {
     panelOpen: boolean;
-    messages: { role: 'user' | 'assistant'; content: string }[];
+    /** Full structured Tool Use history. tool_use / tool_result blocks are
+     *  preserved across turns so Claude remembers prior actions. */
+    messages: ApiMessage[];
     loading: boolean;
   };
   sync: {
@@ -77,11 +85,11 @@ export const S: AppState = {
   dbItems: [],
   dbList: '',
   dbSort: { field: null, asc: true },
-  dbFilter: '',
   dbFilters: [],
   dbView: 'table',
   dbColumnWidths: {},
   currentRow: null,
+  dbSelected: new Set<number>(),
   ai: { panelOpen: false, messages: [], loading: false },
   sync: { pageId: null, loadedModified: null, loadedEtag: null, pollTimer: null },
   expanded: new Set<string>(),

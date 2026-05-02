@@ -1,19 +1,23 @@
 // Page actions: create / delete / save plus the emoji picker.
 
 import { S } from '../state';
-import { SAVE_MS, SITE, SITE_REL, FOLDER } from '../config';
+import { SAVE_MS, SITE } from '../config';
 import { g, getEd, getOverlay } from './dom';
 import { setLoad, setSave, toast } from './ui-helpers';
 import { renderTree } from './tree';
 import { showView, doSelect } from './views';
-import { apiCreatePage, apiDeletePage, apiSavePage, getPathForId, apiTrashPage } from '../api/pages';
+import {
+  apiCreatePage, apiDeletePage, apiSavePage, apiTrashPage,
+  apiLoadRawBody, PAGES_LIST,
+} from '../api/pages';
 import { apiAddDbRow } from '../api/db';
-import { readFile, writeFile } from '../api/sp-core';
-import { getBody, mdToHtml } from '../lib/markdown';
+import { mdToHtml } from '../lib/markdown';
+import { collectDescendantIds } from '../lib/page-tree';
 import { getDbFields } from './views';
 import { mkDbRow } from './views';
 import { isSlashActive, closeSlashMenu } from './editor';
 import { closeSearch } from './search-ui';
+import { syncPubTag } from './pub-tag';
 
 let _svT: ReturnType<typeof setTimeout> | undefined;
 
@@ -30,11 +34,7 @@ export async function doNew(parentId: string): Promise<void> {
   finally { setLoad(false); }
 }
 
-export function collectIds(id: string): string[] {
-  let r = [id];
-  S.pages.filter((p) => p.ParentId === id).forEach((c) => { r = r.concat(collectIds(c.Id)); });
-  return r;
-}
+const collectIds = (id: string): string[] => collectDescendantIds(S.pages, id);
 
 export async function doDel(id: string): Promise<void> {
   const page = S.pages.find((p) => p.Id === id);
@@ -99,6 +99,7 @@ export async function doSave(): Promise<void> {
         if (force.ok) {
           if (S.sync.pageId === S.currentId) S.sync.loadedEtag = force.etag;
           S.dirty = false; setSave('保存済み');
+          syncPubTag();
         }
       } else {
         // Reload from server, dropping local edits
@@ -120,7 +121,12 @@ export async function doSave(): Promise<void> {
     S.dirty = false;
     setSave('保存済み');
     renderTree();
-    setTimeout(() => { if (!S.dirty) setSave(''); }, 2000);
+    syncPubTag();
+    // 旧コードはここで 2 秒後に setSave('') してラベルを再描画していたが、
+    // それは現在時刻を上書きするだけで実害があった
+    // (ページ切替後にこのタイマーが走ると新ページの正しい保存時刻を踏み潰す)。
+    // setSave('保存済み') の時点で「保存済 HH:MM」は出ているので、
+    // 追加のタイマーは不要。
   } catch (e) { toast('保存に失敗: ' + (e as Error).message, 'err'); setSave('保存失敗'); }
   finally { S.saving = false; }
 }
@@ -142,6 +148,12 @@ export function doNewDbRow(): void {
   const tr = document.createElement('tr');
   tr.className = 'n365-dr-new';
   let saved = false;
+
+  // Leading checkbox cell — empty placeholder so column alignment matches the
+  // existing rows (which now have a checkbox column at the start).
+  const cbTd = document.createElement('td');
+  cbTd.className = 'n365-td-cb';
+  tr.appendChild(cbTd);
 
   fields.forEach((f) => {
     const td = document.createElement('td');
@@ -181,11 +193,12 @@ export function doNewDbRow(): void {
     saved = true;
     try {
       setLoad(true, '追加中...');
-      const item = await apiAddDbRow(S.dbList, data);
+      const { addRowWithUndo } = await import('./db-history');
+      const item = await addRowWithUndo(S.dbList, data);
       S.dbItems.push(item);
       tr.remove();
       g('dtb').appendChild(mkDbRow(item, fields));
-      toast('行を追加しました');
+      toast('行を追加しました（⌘Z で取消可能）');
     } catch (e) {
       toast('追加失敗: ' + (e as Error).message, 'err');
       tr.remove();
@@ -211,6 +224,33 @@ export function closeApp(): void {
 
 export function onKey(e: KeyboardEvent): void {
   const mod = e.ctrlKey || e.metaKey;
+  // ── DB undo / redo ────────────────────────────────────
+  // Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z = redo. Active only while viewing a DB.
+  if (mod && (e.key === 'z' || e.key === 'Z')) {
+    if (S.currentType === 'database' && S.dbList && !isEditableTarget(e.target)) {
+      e.preventDefault();
+      const isRedo = e.shiftKey;
+      void import('./db-history').then(async (m) => {
+        try {
+          const r = isRedo ? await m.redoDb(S.dbList) : await m.undoDb(S.dbList);
+          if (!r) toast(isRedo ? '再実行できる操作がありません' : '取り消す操作がありません');
+        } catch (err) { toast((isRedo ? '再実行' : '取り消し') + '失敗: ' + (err as Error).message, 'err'); }
+      });
+      return;
+    }
+  }
+  // Cmd/Ctrl+A in DB view → select all visible rows
+  if (mod && (e.key === 'a' || e.key === 'A') && !e.shiftKey) {
+    if (S.currentType === 'database' && S.dbList && !isEditableTarget(e.target)) {
+      e.preventDefault();
+      void import('./views').then((m) => {
+        const visible = m.getSortedFilteredItems();
+        visible.forEach((it) => S.dbSelected.add(it.Id));
+        m.renderDbTable();
+      });
+      return;
+    }
+  }
   if (mod && e.key === 's') { e.preventDefault(); clearSaveTimer(); doSave(); return; }
   if (mod && e.key === 'k') { e.preventDefault(); openSearchProxy(); return; }
   if (mod && e.key === 'j') { e.preventDefault(); toggleAiProxy(); return; }
@@ -245,6 +285,17 @@ export function onKey(e: KeyboardEvent): void {
 
 function toggleAiProxy(): void {
   void import('./ai-chat').then((m) => m.toggleAiPanel());
+}
+
+/** True when the focused element is a typing context. We avoid eating the
+ *  browser's native undo (cell text editing) when the user is mid-edit. */
+function isEditableTarget(t: EventTarget | null): boolean {
+  const el = t as HTMLElement | null;
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  if (el.isContentEditable) return true;
+  return false;
 }
 
 // Late-bound to avoid an actions <-> search-ui circular import edge case.
@@ -386,9 +437,11 @@ export async function exportMd(): Promise<void> {
   }
   try {
     setLoad(true, 'エクスポート中...');
-    const path = getPathForId(page.Id);
-    const content = await readFile(path + '/index.md');
-    downloadFile(safeFilename(page.Title || '無題') + '.md', content, 'text/markdown');
+    const body = await apiLoadRawBody(page.Id);
+    const today = new Date().toISOString().slice(0, 10);
+    const fm = '---\ntitle: ' + (page.Title || '無題') + '\nparent: ' + (page.ParentId || '') +
+      '\nexported: ' + today + '\n---\n\n';
+    downloadFile(safeFilename(page.Title || '無題') + '.md', fm + body, 'text/markdown');
   } catch (err) {
     toast('MD出力失敗: ' + (err as Error).message, 'err');
   } finally {
@@ -405,9 +458,8 @@ export async function exportHtml(): Promise<void> {
   }
   try {
     setLoad(true, 'エクスポート中...');
-    const path = getPathForId(page.Id);
-    const md = await readFile(path + '/index.md');
-    const body = mdToHtml(getBody(md));
+    const md = await apiLoadRawBody(page.Id);
+    const body = mdToHtml(md);
     const title = page.Title || '無題';
     const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const css = exportCss();
@@ -433,15 +485,14 @@ export async function duplicateCurrent(): Promise<void> {
   }
   try {
     setLoad(true, '複製中...');
-    const origPath = getPathForId(page.Id);
-    const origMd = await readFile(origPath + '/index.md');
-    const body = getBody(origMd);
+    const body = await apiLoadRawBody(page.Id);
     const newTitle = (page.Title || '無題') + ' (コピー)';
     const newPage = await apiCreatePage(newTitle, page.ParentId);
-    const newPath = getPathForId(newPage.Id);
-    const today = new Date().toISOString().slice(0, 10);
-    const newMd = '---\ntitle: ' + newTitle + '\nparent: ' + (newPage.ParentId || '') + '\ncreated: ' + today + '\n---\n\n' + body;
-    await writeFile(newPath + '/index.md', newMd);
+    // Save the duplicated body via apiSavePage (passes through htmlToMd; pre-escape by mdToHtml round-trip would lose info)
+    // Instead, write raw markdown directly through updateListItem.
+    const { updateListItem } = await import('../api/sp-list');
+    const itemId = parseInt(newPage.Id, 10);
+    if (itemId) await updateListItem(PAGES_LIST, itemId, { Body: body });
     S.pages.push(newPage);
     renderTree();
     await doSelect(newPage.Id);
@@ -462,9 +513,8 @@ export async function copyPageLink(): Promise<void> {
     if (!meta || !meta.list) { toast('リンク取得失敗', 'err'); return; }
     url = SITE + '/Lists/' + encodeURIComponent(meta.list);
   } else {
-    const path = getPathForId(page.Id);
-    const folderUrlPath = FOLDER.substring(SITE_REL.length);
-    url = SITE + folderUrlPath + '/' + path + '/index.md';
+    // Link to the page row in the n365-pages list
+    url = SITE + '/Lists/' + encodeURIComponent(PAGES_LIST) + '/DispForm.aspx?ID=' + encodeURIComponent(page.Id);
   }
   try {
     await navigator.clipboard.writeText(url);

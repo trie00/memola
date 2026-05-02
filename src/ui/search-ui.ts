@@ -1,21 +1,22 @@
-// Quick search overlay: title (local) + body (SP Search) results.
+// Quick search overlay — local title search across pages/DBs + action palette.
+//
+// Body (full-text) search is intentionally not provided: the previous SP-Search
+// path indexed markdown files in a document library, but pages now live as rows
+// in the n365-pages list. Searching list bodies via SP REST is left as future
+// work; until then this overlay is title + action only.
 
 import { S, type Page } from '../state';
 import { g } from './dom';
 import { ancs } from './tree';
 import { doSelect } from './views';
-import { spSearch } from '../api/search';
-import { escHtml, renderSnippet, pageFromSPPath as pageFromSPPathPure } from '../lib/search-utils';
+import { escHtml } from '../lib/search-utils';
 
 interface CmdAction { id: string; label: string; icon: string; key: string; run: () => void; }
 
 let _qsSel = 0;
-let _qsItems: Array<{ kind: 'page' | 'action'; page?: Page; summary?: string; action?: CmdAction }> = [];
+let _qsItems: Array<{ kind: 'page' | 'action'; page?: Page; action?: CmdAction }> = [];
 let _qsTitleItems: Page[] = [];
 let _qsDbItems: Page[] = [];
-let _qsBodyItems: Array<{ page: Page; summary: string }> = [];
-let _qsBodyLoading = false;
-let _qsToken = 0;
 let _qsActions: CmdAction[] = [];
 
 export function setCommandActions(actions: CmdAction[]): void {
@@ -32,7 +33,6 @@ export function openSearch(): void {
 
 export function closeSearch(): void {
   g('qs').classList.remove('on');
-  _qsToken++;
 }
 
 export function getPagePath(id: string): string {
@@ -40,48 +40,13 @@ export function getPagePath(id: string): string {
   return ancestors.map((p) => p.Title || '無題').join(' / ');
 }
 
-export function pageFromSPPath(spPath: string): Page | null {
-  return pageFromSPPathPure(spPath, S.meta, S.pages);
-}
-
 export function renderQs(q: string): void {
-  // Title search (instant, local) — separate pages and DBs
   const matchedPages = S.pages.filter((p) => {
     if (!q) return true;
     return (p.Title || '').toLowerCase().includes(q.toLowerCase());
   });
   _qsTitleItems = matchedPages.filter((p) => p.Type !== 'database').slice(0, 15);
   _qsDbItems = matchedPages.filter((p) => p.Type === 'database').slice(0, 8);
-
-  _qsBodyItems = [];
-  _qsBodyLoading = false;
-
-  // Body search (debounced, async via SP Search)
-  if (q && q.trim().length >= 2) {
-    _qsBodyLoading = true;
-    const token = ++_qsToken;
-    setTimeout(() => {
-      if (token !== _qsToken) return;
-      spSearch(q).then((hits) => {
-        if (token !== _qsToken) return;
-        const seen: Record<string, boolean> = {};
-        _qsTitleItems.forEach((p) => { seen[p.Id] = true; });
-        _qsBodyItems = hits.map((h) => {
-          const p = pageFromSPPath(h.path);
-          if (!p || seen[p.Id]) return null;
-          return { page: p, summary: h.summary };
-        }).filter((x): x is { page: Page; summary: string } => x !== null);
-        _qsBodyLoading = false;
-        rebuildQsDom();
-      }).catch(() => {
-        _qsBodyLoading = false;
-        rebuildQsDom();
-      });
-    }, 300);
-  } else {
-    _qsToken++;
-  }
-
   rebuildQsDom();
 }
 
@@ -100,8 +65,8 @@ export function rebuildQsDom(): void {
     hd.textContent = ql ? 'ページ' : '最近のページ';
     res.appendChild(hd);
     _qsTitleItems.forEach((p) => {
-      _qsItems.push({ kind: 'page', page: p, summary: '' });
-      res.appendChild(buildQsPageItem(p, '', _qsItems.length - 1));
+      _qsItems.push({ kind: 'page', page: p });
+      res.appendChild(buildQsPageItem(p, _qsItems.length - 1));
     });
   }
 
@@ -112,26 +77,9 @@ export function rebuildQsDom(): void {
     hd.textContent = 'DB';
     res.appendChild(hd);
     _qsDbItems.forEach((p) => {
-      _qsItems.push({ kind: 'page', page: p, summary: '' });
-      res.appendChild(buildQsPageItem(p, '', _qsItems.length - 1));
+      _qsItems.push({ kind: 'page', page: p });
+      res.appendChild(buildQsPageItem(p, _qsItems.length - 1));
     });
-  }
-
-  // ── 本文ヒット ──
-  if (!isActionMode && _qsBodyItems.length > 0) {
-    const hd = document.createElement('div');
-    hd.className = 'n365-qs-section';
-    hd.textContent = '本文';
-    res.appendChild(hd);
-    _qsBodyItems.forEach((item) => {
-      _qsItems.push({ kind: 'page', page: item.page, summary: item.summary });
-      res.appendChild(buildQsPageItem(item.page, item.summary, _qsItems.length - 1));
-    });
-  } else if (!isActionMode && _qsBodyLoading) {
-    const ld = document.createElement('div');
-    ld.className = 'n365-qs-loading';
-    ld.textContent = '🔍 本文を検索中...';
-    res.appendChild(ld);
   }
 
   // ── アクション ──
@@ -164,14 +112,14 @@ export function rebuildQsDom(): void {
     res.appendChild(buildQsActionItem(helpAction, _qsItems.length - 1));
   }
 
-  if (_qsItems.length === 0 && !_qsBodyLoading) {
+  if (_qsItems.length === 0) {
     res.innerHTML = '<div class="n365-qs-empty">見つかりませんでした</div>';
   }
 
   if (_qsSel >= _qsItems.length) _qsSel = 0;
 }
 
-export function buildQsPageItem(p: Page, summary: string, idx: number): HTMLDivElement {
+export function buildQsPageItem(p: Page, idx: number): HTMLDivElement {
   const div = document.createElement('div');
   div.className = 'n365-qs-item' + (idx === _qsSel ? ' sel' : '');
   const isDb = p.Type === 'database';
@@ -181,7 +129,6 @@ export function buildQsPageItem(p: Page, summary: string, idx: number): HTMLDivE
     '<div style="flex:1;min-width:0">' +
       '<div class="n365-qs-title">' + escHtml(p.Title || '無題') + '</div>' +
       (pathStr ? '<div class="n365-qs-path">' + escHtml(pathStr) + '</div>' : '') +
-      (summary ? '<div class="n365-qs-snippet">' + renderSnippet(summary) + '</div>' : '') +
     '</div>';
   div.addEventListener('click', () => {
     closeSearch();

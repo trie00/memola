@@ -60,22 +60,6 @@
   box-sizing: border-box; margin: 0; padding: 0;
 }
 
-/* ── Rail flyout (hover popover when sidebar is collapsed to 44px) ── */
-#n365-overlay #n365-rail-flyout {
-  position: fixed; left: var(--sidebar-collapsed-w); top: 0; width: 220px;
-  background: var(--paper); border: 1px solid var(--paper-3);
-  border-radius: var(--r-3); box-shadow: var(--sh-flyout);
-  display: none; z-index: 2147483646;
-  font-family: var(--font-ui); font-size: var(--fs-md);
-  padding: 4px 0; max-height: 60vh; overflow-y: auto;
-}
-#n365-overlay #n365-rail-flyout.on { display: block; }
-#n365-overlay #n365-rail-flyout-list .n365-tr {
-  padding: 4px 10px; cursor: pointer; min-height: 26px;
-  display: flex; align-items: center; gap: 6px; border-radius: 0;
-}
-#n365-overlay #n365-rail-flyout-list .n365-tr:hover { background: var(--paper-2-strong); }
-
 /* ── Pane resize handles (sidebar / outline / props / AI) ── */
 #n365-overlay .n365-pane-resize {
   position: absolute; top: 0; bottom: 0;
@@ -104,21 +88,8 @@
   display: flex; flex-direction: column; flex-shrink: 0;
   overflow: hidden; transition: width 0.2s ease;
 }
-#n365-sb.collapsed { width: 0; }
-#n365-sb.rail { width: var(--sidebar-collapsed-w); }
-#n365-sb.rail #n365-ws-name,
-#n365-sb.rail .n365-ws-caret,
-#n365-sb.rail #n365-sb-collapse,
-#n365-sb.rail #n365-x { display: none; }
-#n365-sb.rail #n365-sb-hd { padding: 8px 0; justify-content: center; }
-#n365-sb.rail #n365-ws-btn { padding: 0; justify-content: center; }
-#n365-sb.rail #n365-search-nav span:not(:first-child) { display: none; }
-#n365-sb.rail #n365-search-nav { justify-content: center; padding: 4px 0; margin: 4px 4px 0; }
-#n365-sb.rail .n365-sl-label { display: none; }
-#n365-sb.rail .n365-tl, #n365-sb.rail .n365-ta { display: none; }
-#n365-sb.rail .n365-tr { padding-left: 6px !important; justify-content: center; }
-#n365-sb.rail .n365-nb span:not(:first-child) { display: none; }
-#n365-sb.rail .n365-nb { justify-content: center; }
+/* !important to beat the inline width set by pane-resize.ts. */
+#n365-sb.collapsed { width: 0 !important; border-right: none; }
 #n365-sb-hd {
   padding: 10px 8px 6px; display: flex; align-items: center; gap: 4px;
   font-size: var(--fs-md); font-weight: 600; color: var(--ink);
@@ -132,19 +103,10 @@
   flex-shrink: 0; letter-spacing: 0;
 }
 #n365-overlay .n365-ws-caret { opacity: 0.4; font-size: 10px; flex-shrink: 0; }
-#n365-overlay #n365-sb-collapse {
-  border: none; background: transparent; cursor: pointer;
-  color: var(--ink-3); padding: 4px 6px; border-radius: var(--r-1);
-  font-size: 12px; line-height: 1; flex-shrink: 0;
-}
-#n365-overlay #n365-sb-collapse:hover { background: var(--paper-2-strong); color: var(--ink); }
-#n365-x {
-  margin-left: auto; border: none; background: transparent; cursor: pointer;
-  color: var(--ink); padding: 4px; border-radius: 4px; line-height: 0;
-  opacity: 0.4; display: flex; align-items: center; justify-content: center;
-}
-#n365-x:hover { background: rgba(55, 53, 47, 0.08); opacity: 1; }
-#n365-x svg { width: 14px; height: 14px; }
+#n365-overlay #n365-sb-collapse { flex-shrink: 0; }
+/* Close-app button now lives in the footer alongside 設定 / ゴミ箱 — uses the
+ * same .n365-nb styling. SVG is sized to match the trash icon. */
+#n365-overlay #n365-x svg { width: 16px; height: 16px; }
 
 #n365-overlay .n365-snav {
   padding: 6px 12px; margin: 6px 12px 0;
@@ -208,6 +170,9 @@
 }
 
 #n365-tree-wrap { flex: 1; overflow-y: auto; padding: 2px 8px 2px 4px; }
+/* Bottom padding gives a drop zone below the last visible row so the user can
+   drop a page as a top-level page at the very end of the tree. */
+#n365-overlay #n365-tree { padding-bottom: 80px; }
 #n365-sb-ft { padding: 8px; border-top: 1px solid var(--paper-3); flex-shrink: 0; }
 
 #n365-overlay .n365-nb {
@@ -220,8 +185,23 @@
 #n365-overlay .n365-nb svg { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.6; }
 
 /* ── Tree nodes ───────────────────────────────────────── */
-#n365-overlay .n365-tr-dragging { opacity: 0.4; }
+#n365-overlay .n365-tr-dragging,
+#n365-overlay .n365-tr-dragging-descendant { opacity: 0.08; }
 #n365-overlay .n365-tr-dropover { background: var(--accent-soft) !important; outline: 1px solid var(--accent); outline-offset: -1px; }
+/* Floating sibling-drop indicator (positioned globally so it can extend
+ * leftward past the row to show "promote to ancestor" drops). */
+#n365-overlay .n365-tr-drop-line {
+  position: fixed; height: 2px; pointer-events: none;
+  z-index: 2147483647; display: none;
+  background: var(--accent);
+  border-radius: 1px;
+}
+#n365-overlay .n365-tr-drop-line.on { display: block; }
+#n365-overlay .n365-tr-drop-dot {
+  position: absolute; top: -3px; left: -4px;
+  width: 8px; height: 8px; background: var(--accent); border-radius: 50%;
+}
+#n365-overlay .n365-tr-drop-dot.right { left: auto; right: -4px; }
 #n365-overlay .n365-tr {
   display: flex; align-items: center; padding: 0 8px 0 4px;
   border-radius: var(--r-2); cursor: pointer; user-select: none;
@@ -284,6 +264,119 @@
 #n365-ss[data-state="dirty"] { color: var(--ink); }
 #n365-ss[data-state="offline"] { color: var(--danger); }
 
+/* ── Publish-status tag (sits to the right of the breadcrumb) ──────── */
+#n365-overlay #n365-pub-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  font-family: inherit;
+  padding: 3px 10px;
+  margin-left: 8px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: #2f6f5e;            /* solid green-teal: published & in-sync */
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: filter 0.12s, background 0.12s, box-shadow 0.12s;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  box-shadow: 0 1px 2px rgba(47, 111, 94, 0.25);
+}
+#n365-overlay #n365-pub-tag:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 2px 6px rgba(47, 111, 94, 0.35);
+}
+#n365-overlay #n365-pub-tag .n365-pub-tag-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #aef0d6;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.18);
+}
+#n365-overlay #n365-pub-tag.dirty {
+  background: #c47f1c;             /* solid amber: dirty */
+  box-shadow: 0 1px 2px rgba(196, 127, 28, 0.28);
+}
+#n365-overlay #n365-pub-tag.dirty:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 2px 6px rgba(196, 127, 28, 0.40);
+}
+#n365-overlay #n365-pub-tag.dirty .n365-pub-tag-dot {
+  background: #ffd98a;
+  animation: n365-pub-pulse 1.6s ease-in-out infinite;
+}
+@keyframes n365-pub-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.55; transform: scale(0.78); }
+}
+#n365-overlay #n365-pub-tag.busy {
+  opacity: 0.65;
+  pointer-events: none;
+}
+#n365-overlay .n365-pub-pop {
+  position: fixed;
+  z-index: 1300;
+  background: var(--bg);
+  border: 1px solid rgba(55, 53, 47, 0.14);
+  border-radius: 6px;
+  box-shadow: rgba(15, 15, 15, 0.05) 0 0 0 1px, rgba(15, 15, 15, 0.10) 0 3px 6px,
+              rgba(15, 15, 15, 0.20) 0 9px 24px;
+  padding: 12px;
+  width: 280px;
+}
+#n365-overlay .n365-pub-pop-msg {
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+#n365-overlay .n365-pub-pop-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#n365-overlay .n365-pub-pop-btn {
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  padding: 6px 10px;
+  border: 1px solid rgba(55, 53, 47, 0.16);
+  background: rgba(55, 53, 47, 0.03);
+  color: var(--ink);
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+#n365-overlay .n365-pub-pop-btn:hover {
+  background: rgba(55, 53, 47, 0.08);
+}
+#n365-overlay .n365-pub-pop-btn.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+#n365-overlay .n365-pub-pop-btn.primary:hover {
+  filter: brightness(0.92);
+}
+#n365-overlay .n365-pub-pop-btn.danger {
+  color: #b13a3a;
+  border-color: rgba(177, 58, 58, 0.30);
+}
+#n365-overlay .n365-pub-pop-btn.danger:hover {
+  background: rgba(177, 58, 58, 0.08);
+}
+#n365-overlay .n365-pub-pop-btn.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-3);
+  text-align: center;
+}
+#n365-overlay .n365-pub-pop-btn.ghost:hover {
+  background: rgba(55, 53, 47, 0.06);
+  color: var(--ink-2);
+}
+
 /* ── Formatting toolbar ───────────────────────────────── */
 #n365-tb {
   border-bottom: 1px solid rgba(55, 53, 47, 0.09); padding: 3px 16px;
@@ -320,22 +413,42 @@
 #n365-overlay.focus-mode #n365-top:hover { opacity: 1; }
 
 /* Page header / icon */
-#n365-pg-hd { margin-bottom: 8px; }
-#n365-icon-wrap { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+/* Page header layout:
+ *   - When an icon IS set    → icon on the LEFT of the title (flex row).
+ *   - When NO icon is set    → "アイコンを追加" button floats ABOVE the title in
+ *                              an absolutely-positioned slot. The header has
+ *                              padding-top reserved so the layout doesn't
+ *                              shift when the button appears on hover. */
+#n365-pg-hd {
+  position: relative; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+#n365-pg-hd.no-icon, #n365-dv-hd.no-icon { padding-top: 32px; }
+#n365-icon-wrap { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 #n365-pg-icon {
-  font-size: 48px; line-height: 1; cursor: pointer; display: none;
+  font-size: 40px; line-height: 1; cursor: pointer; display: none;
   border-radius: 6px; padding: 4px; transition: background 0.1s;
 }
 #n365-pg-icon:hover { background: rgba(55, 53, 47, 0.08); }
+/* "アイコンを追加" — absolutely positioned in the reserved slot above the title.
+ * Visible only while the header is hovered. JS hard-hides it when an icon IS set. */
 .n365-pg-icon-empty {
+  position: absolute; top: 0; left: 0;
+  display: none;                                /* hidden until header hover */
   font-size: 13px; color: var(--ink-4); padding: 4px 8px; border: none;
   background: transparent; cursor: pointer; border-radius: 4px; font-family: inherit;
+  align-items: center; gap: 4px;
+  opacity: 0; transition: opacity var(--tr-fast);
+}
+#n365-overlay #n365-pg-hd:hover .n365-pg-icon-empty,
+#n365-overlay #n365-dv-hd:hover .n365-pg-icon-empty {
+  display: inline-flex; opacity: 1;
 }
 .n365-pg-icon-empty:hover { background: rgba(55, 53, 47, 0.08); color: var(--ink-3); }
 
 #n365-ttl {
-  font-size: 28px; font-weight: 600; line-height: 1.3; color: var(--ink); margin-bottom: 4px;
-  outline: none; border: none; width: 100%; background: transparent;
+  font-size: 28px; font-weight: 600; line-height: 1.3; color: var(--ink); margin: 0;
+  outline: none; border: none; flex: 1 1 0; min-width: 0; background: transparent;
   font-family: var(--font-serif); resize: none; overflow: hidden; padding: 0; display: block;
   letter-spacing: -0.005em;
 }
@@ -443,13 +556,14 @@
   border-radius: 6px; font-size: 13px; background: var(--ink); color: #fff;
   box-shadow: 0 4px 16px rgba(0,0,0,.2); z-index: 2147483648;
   opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s;
-  pointer-events: none; max-width: 320px;
+  pointer-events: none; max-width: 560px; word-break: break-word; white-space: pre-wrap;
 }
 #n365-tk.on { opacity: 1; transform: translateY(0); }
 #n365-tk.er { background: var(--danger); }
 
 /* ── Block drag handle (Notion-style ⋮⋮) ─────────────── */
-#n365-overlay #n365-block-handle {
+#n365-overlay #n365-block-handle,
+#n365-overlay #n365-row-handle {
   position: absolute; display: none;
   align-items: center; justify-content: center;
   width: 18px; cursor: grab;
@@ -457,9 +571,12 @@
   border-radius: var(--r-2);
   z-index: 10; transition: opacity var(--tr-fast), background var(--tr-fast);
 }
-#n365-overlay #n365-block-handle:hover { background: var(--paper-2); opacity: 1; }
-#n365-overlay #n365-block-handle:active { cursor: grabbing; }
-#n365-overlay #n365-block-handle svg { display: block; }
+#n365-overlay #n365-block-handle:hover,
+#n365-overlay #n365-row-handle:hover { background: var(--paper-2); opacity: 1; }
+#n365-overlay #n365-block-handle:active,
+#n365-overlay #n365-row-handle:active { cursor: grabbing; }
+#n365-overlay #n365-block-handle svg,
+#n365-overlay #n365-row-handle svg { display: block; }
 #n365-overlay .n365-block-dragging { opacity: 0.4; }
 /* Drop indicator (between blocks) — Notion風: 両端ドット付きの太めセンターライン */
 #n365-overlay .n365-block-placeholder {
@@ -547,6 +664,18 @@
 
 /* Gantt view */
 #n365-overlay .n365-gantt { font-size: var(--fs-sm); }
+#n365-overlay .n365-gantt-cfg {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid var(--paper-3);
+  font-size: var(--fs-sm); color: var(--ink-3);
+}
+#n365-overlay .n365-gantt-cfg-sel {
+  border: 1px solid var(--paper-3); background: var(--paper); color: var(--ink);
+  padding: 3px 8px; border-radius: var(--r-1); font-family: inherit; font-size: var(--fs-sm);
+  cursor: pointer; outline: none;
+}
+#n365-overlay .n365-gantt-cfg-sel:hover { border-color: var(--ink-4); }
+#n365-overlay .n365-gantt-cfg-sel:focus { border-color: var(--accent); }
 #n365-overlay .n365-gantt-header { display: flex; padding-left: 200px; border-bottom: 1px solid var(--paper-3); }
 #n365-overlay .n365-gantt-day {
   width: 28px; flex-shrink: 0; padding: var(--s-2) 0;
@@ -864,12 +993,17 @@
   display: flex; align-items: center;
 }
 #n365-overlay #n365-outline-hd > span:first-child { flex: 1; }
+/* Pane close × — unified design across sidebar / outline / properties / AI.
+ * Matches the AI panel header buttons (transparent, opacity 0.5 → 1 on hover). */
 #n365-overlay .n365-pane-x {
   border: none; background: transparent; cursor: pointer;
-  color: var(--ink-3); font-size: 12px; line-height: 1;
-  padding: 2px 4px; border-radius: var(--r-1);
+  color: var(--ink); padding: 4px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0.5; line-height: 0;
+  transition: opacity var(--tr-fast), background var(--tr-fast);
 }
-#n365-overlay .n365-pane-x:hover { background: var(--paper-2-strong); color: var(--ink); }
+#n365-overlay .n365-pane-x:hover { background: rgba(55, 53, 47, 0.08); opacity: 1; }
+#n365-overlay .n365-pane-x svg { width: 14px; height: 14px; display: block; }
 #n365-overlay #n365-outline-list { overflow-y: auto; flex: 1; }
 #n365-overlay .n365-outline-item {
   font-size: var(--fs-md); color: var(--ink);
@@ -1004,12 +1138,22 @@
   padding: 12px 16px; border-bottom: 1px solid var(--paper-3);
   flex-shrink: 0; min-height: 44px;
 }
-#n365-overlay #n365-ai-hist {
-  flex: 1; min-width: 0; max-width: 140px;
-  border: 1px solid var(--paper-3); border-radius: var(--r-2);
-  background: var(--paper); padding: 2px 6px; font-size: var(--fs-sm);
-  font-family: inherit; color: var(--ink); cursor: pointer;
+/* History dropdown row — sits on its own line below the AI header so the
+ * select has full panel width and the title isn't cramped. */
+#n365-overlay #n365-ai-hist-row {
+  padding: 8px 16px 10px; border-bottom: 1px solid var(--paper-3);
+  flex-shrink: 0;
 }
+#n365-overlay #n365-ai-hist {
+  width: 100%; box-sizing: border-box;
+  border: 1px solid var(--paper-3); border-radius: var(--r-2);
+  background: var(--paper); padding: 8px 12px;
+  font-size: var(--fs-sm); font-family: inherit; color: var(--ink);
+  cursor: pointer; outline: none;
+  transition: border-color var(--tr-fast);
+}
+#n365-overlay #n365-ai-hist:hover { border-color: var(--ink-4); }
+#n365-overlay #n365-ai-hist:focus { border-color: var(--accent); }
 #n365-overlay #n365-ai-hd .n365-ai-title {
   display: flex; align-items: center; gap: 6px; font-size: 13px;
   font-weight: 600; color: var(--ink); flex: 1;
@@ -1057,6 +1201,11 @@
   font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 90%;
 }
 #n365-overlay .n365-ai-loading { opacity: 0.55; font-style: italic; }
+#n365-overlay .n365-ai-trace {
+  margin-top: 6px; padding-top: 6px;
+  border-top: 1px dashed var(--paper-3);
+  font-size: 10.5px; color: var(--ink-3);
+}
 
 #n365-overlay #n365-ai-chips {
   display: flex; gap: 6px; padding: 8px 16px 0; flex-wrap: wrap; flex-shrink: 0;
@@ -1074,32 +1223,44 @@
   position: relative; padding: 12px 16px 16px;
   border-top: 1px solid var(--paper-3); flex-shrink: 0;
 }
+/* Auto-grows up to 10 lines (~210px), then scrolls. JS in wiring.ts updates
+ * the height on each `input` event so the textarea matches the content.
+ * scroll-padding-bottom keeps the cursor above the bottom border when the
+ * textarea auto-scrolls (otherwise the cursor lands flush against the edge). */
 #n365-overlay #n365-ai-input {
-  width: 100%; min-height: 40px; max-height: 130px; padding: 10px 40px 10px 14px;
+  width: 100%; min-height: 44px; max-height: 232px;
+  padding: 10px 44px 16px 14px;
   border: 1px solid var(--paper-3); border-radius: var(--r-2);
   font-size: var(--fs-sm); font-family: inherit; resize: none; outline: none;
-  color: var(--ink); background: var(--paper); line-height: 1.4;
-  box-sizing: border-box;
+  color: var(--ink); background: var(--paper); line-height: 1.5;
+  box-sizing: border-box; overflow-y: auto;
+  scroll-padding-bottom: 16px;
 }
 #n365-overlay #n365-ai-input:focus {
   border-color: var(--accent); background: var(--paper);
   box-shadow: 0 0 0 1px var(--accent-soft);
 }
 #n365-overlay #n365-ai-input::placeholder { color: var(--ink-4); }
-#n365-overlay .n365-ai-kbd {
-  position: absolute; right: 56px; bottom: 24px;
-  font-family: var(--font-mono); font-size: 10px; color: var(--ink-4);
-  pointer-events: none;
-}
+/* Send button — rounded rectangle (matches +新規 corner radius). Faded by
+ * default, accent fill on hover (Claude Code style). Anchored fully inside
+ * the textarea with comfortable margin from the inner border. */
 #n365-overlay #n365-ai-send {
-  position: absolute; right: 22px; bottom: 20px;
-  background: var(--accent); color: var(--paper); border: none;
-  width: 30px; height: 30px; border-radius: var(--r-2); cursor: pointer;
+  position: absolute; right: 24px; bottom: 26px;
+  background: transparent; color: var(--ink-3); border: none;
+  width: 28px; height: 24px; border-radius: var(--r-2);
+  cursor: pointer; padding: 0;
   display: flex; align-items: center; justify-content: center;
+  opacity: 0.6;
+  transition: background var(--tr-fast), color var(--tr-fast), opacity var(--tr-fast);
 }
-#n365-overlay #n365-ai-send:hover { background: var(--accent-strong); }
-#n365-overlay #n365-ai-send:disabled { opacity: 0.4; cursor: not-allowed; }
-#n365-overlay #n365-ai-send svg { width: 14px; height: 14px; }
+#n365-overlay #n365-ai-send:hover {
+  background: var(--accent); color: #fff; opacity: 1;
+}
+#n365-overlay #n365-ai-send.stop {
+  background: var(--accent); color: #fff; opacity: 1;
+}
+#n365-overlay #n365-ai-send.stop:hover { background: var(--accent-strong); }
+#n365-overlay #n365-ai-send svg { width: 14px; height: 14px; display: block; }
 
 /* ── Page menu (top-right "..." dropdown) ────────────── */
 #n365-overlay #n365-pgm-btn {
@@ -1171,6 +1332,173 @@
 #n365-overlay .n365-btn.s { background: rgba(55, 53, 47, .08); color: var(--ink); }
 #n365-overlay .n365-btn.p:hover { background: var(--accent-strong); }
 #n365-overlay .n365-btn.s:hover { background: rgba(55, 53, 47, .14); }
+
+/* ── Row properties (Notion-style row-as-page meta panel) ─ */
+#n365-overlay .n365-row-props {
+  margin: 6px 0 18px;
+  padding: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+#n365-overlay .n365-row-props:empty { display: none; }
+#n365-overlay .n365-rp-row {
+  display: grid; grid-template-columns: 140px 1fr; align-items: center;
+  gap: 8px; padding: 4px 0;
+  border-radius: 4px;
+  transition: background .1s;
+}
+#n365-overlay .n365-rp-row:hover { background: rgba(55, 53, 47, .03); }
+#n365-overlay .n365-rp-label {
+  font-size: var(--fs-sm); color: var(--ink-3);
+  padding: 4px 6px;
+  user-select: none;
+}
+#n365-overlay .n365-rp-value { padding: 0; min-width: 0; }
+#n365-overlay .n365-rp-input {
+  width: 100%; box-sizing: border-box;
+  border: 1px solid transparent; background: transparent;
+  padding: 4px 6px; border-radius: 4px;
+  font-family: inherit; font-size: var(--fs-md); color: var(--ink);
+}
+#n365-overlay .n365-rp-input:hover { background: rgba(55, 53, 47, .04); }
+#n365-overlay .n365-rp-input:focus {
+  outline: none; background: var(--paper);
+  border-color: rgba(55, 53, 47, .16);
+}
+#n365-overlay .n365-rp-multi { resize: vertical; min-height: 32px; line-height: 1.5; }
+#n365-overlay .n365-rp-date { font-family: var(--font-mono, ui-monospace, monospace); }
+#n365-overlay .n365-rp-invalid { border-color: #b1361e !important; background: rgba(225, 88, 88, .06); }
+/* Choice button (replaces native <select> in row-props) */
+#n365-overlay .n365-rp-choice {
+  text-align: left; cursor: pointer; min-height: 32px;
+  display: flex; align-items: center;
+}
+#n365-overlay .n365-rp-placeholder { color: var(--ink-4); }
+
+/* Choice popover (custom dropdown styled like the create-menu) */
+#n365-overlay .n365-choice-pop {
+  position: fixed; z-index: 2147483647;
+  background: var(--paper); border: 1px solid var(--paper-3);
+  border-radius: var(--r-3); padding: 6px;
+  box-shadow: var(--sh-flyout);
+  font-family: var(--font-ui);
+  max-height: 320px; overflow-y: auto;
+}
+#n365-overlay .n365-cp-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; cursor: pointer; border-radius: var(--r-2);
+  font-size: var(--fs-md); color: var(--ink);
+  transition: background var(--tr-fast);
+  user-select: none;
+}
+#n365-overlay .n365-cp-item:hover { background: var(--paper-2); }
+#n365-overlay .n365-cp-item.sel { background: var(--accent-soft); }
+#n365-overlay .n365-cp-ic {
+  width: 16px; text-align: center; flex-shrink: 0;
+  color: var(--accent); font-weight: 600;
+}
+#n365-overlay .n365-cp-label { flex: 1; min-width: 0; }
+#n365-overlay .n365-cp-empty { color: var(--ink-4); }
+#n365-overlay .n365-cp-sub { font-size: var(--fs-xs); color: var(--ink-3); margin-left: 8px; }
+/* Date wrapper: text input + small calendar picker icon */
+#n365-overlay .n365-rp-date-wrap {
+  display: flex; align-items: center; gap: 4px;
+}
+#n365-overlay .n365-rp-date-wrap .n365-rp-input { flex: 1; min-width: 0; }
+#n365-overlay .n365-rp-date-pick {
+  width: 24px; height: 24px; padding: 0; border: 1px solid transparent;
+  background: transparent; border-radius: 4px; cursor: pointer;
+  color-scheme: light;                /* keep native picker readable */
+}
+#n365-overlay .n365-rp-date-pick:hover { background: rgba(55,53,47,.06); border-color: rgba(55,53,47,.12); }
+/* Hide the textual portion of the native date input — only show the icon */
+#n365-overlay .n365-rp-date-pick::-webkit-datetime-edit { display: none; }
+#n365-overlay .n365-rp-date-pick::-webkit-calendar-picker-indicator {
+  cursor: pointer; opacity: 0.6; padding: 0; margin: 0;
+}
+#n365-overlay .n365-rp-date-pick::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+
+/* Same wrapper for DB table cells */
+#n365-overlay .n365-dc-date-wrap {
+  display: inline-flex; align-items: center; gap: 4px; width: 100%;
+}
+#n365-overlay .n365-dc-date-wrap .n365-dc-date-inp { flex: 1; min-width: 0; }
+#n365-overlay .n365-dc-date-pick {
+  width: 22px; height: 22px; padding: 0; border: 1px solid transparent;
+  background: transparent; border-radius: 4px; cursor: pointer;
+  color-scheme: light;
+}
+#n365-overlay .n365-dc-date-pick:hover { background: rgba(55,53,47,.06); border-color: rgba(55,53,47,.12); }
+#n365-overlay .n365-dc-date-pick::-webkit-datetime-edit { display: none; }
+#n365-overlay .n365-dc-date-pick::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; }
+#n365-overlay .n365-dc-date-pick::-webkit-calendar-picker-indicator:hover { opacity: 1; }
+#n365-overlay .n365-rp-checkbox { display: inline-flex; align-items: center; padding: 4px 6px; }
+#n365-overlay .n365-rp-checkbox input { margin: 0; cursor: pointer; }
+
+/* ── Diff modal (Tool Use update_page confirmation) ───── */
+#n365-overlay .n365-diff-modal {
+  position: fixed; inset: 0; background: rgba(15, 15, 15, .35);
+  display: none; align-items: center; justify-content: center;
+  z-index: 2147483647; backdrop-filter: blur(2px); padding: 24px;
+}
+#n365-overlay .n365-diff-modal.on { display: flex; }
+#n365-overlay .n365-diff-card {
+  background: var(--paper); border-radius: var(--r-3);
+  box-shadow: var(--sh-modal);
+  max-width: 720px; width: 100%; max-height: 80vh;
+  display: flex; flex-direction: column;
+  font-family: var(--font-ui); color: var(--ink);
+}
+#n365-overlay .n365-diff-head { padding: 20px 24px 12px; border-bottom: 1px solid rgba(55,53,47,.09); }
+#n365-overlay .n365-diff-head h2 { margin: 0 0 4px; font-size: var(--fs-lg); font-weight: 600; }
+#n365-overlay .n365-diff-sub { font-size: var(--fs-sm); color: var(--ink-3); }
+#n365-overlay .n365-diff-label {
+  font-size: var(--fs-sm); color: var(--ink-3); margin-bottom: 6px;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+#n365-overlay .n365-diff-title-row {
+  padding: 14px 24px; border-bottom: 1px solid rgba(55,53,47,.06);
+  display: grid; grid-template-columns: max-content 1fr auto 1fr; gap: 10px; align-items: center;
+}
+#n365-overlay .n365-diff-title-old {
+  text-decoration: line-through; color: var(--ink-3);
+  background: rgba(225, 88, 88, .08); padding: 4px 8px; border-radius: 4px;
+}
+#n365-overlay .n365-diff-title-new {
+  color: var(--ink);
+  background: rgba(120, 178, 120, .14); padding: 4px 8px; border-radius: 4px; font-weight: 500;
+}
+#n365-overlay .n365-diff-arrow { color: var(--ink-3); font-size: var(--fs-md); }
+#n365-overlay .n365-diff-body { padding: 14px 24px; flex: 1 1 auto; overflow: auto; min-height: 0; }
+#n365-overlay .n365-diff-pre {
+  background: #fafaf8; border: 1px solid rgba(55,53,47,.09); border-radius: 6px;
+  padding: 12px; margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px; line-height: 1.55;
+  white-space: pre; overflow-x: auto;
+  max-height: 50vh;
+}
+#n365-overlay .n365-diff-line { display: block; }
+#n365-overlay .n365-diff-eq  { color: var(--ink-3); }
+#n365-overlay .n365-diff-add { color: #1a7f37; background: rgba(120, 178, 120, .14); }
+#n365-overlay .n365-diff-del { color: #b1361e; background: rgba(225, 88, 88, .08); }
+#n365-overlay .n365-diff-empty {
+  padding: 28px 24px; text-align: center; color: var(--ink-3); font-size: var(--fs-sm);
+}
+#n365-overlay .n365-diff-fields { padding: 14px 24px; border-bottom: 1px solid rgba(55,53,47,.06); }
+#n365-overlay .n365-diff-fields-tbl {
+  width: 100%; border-collapse: collapse; font-size: 12.5px;
+}
+#n365-overlay .n365-diff-fields-tbl td {
+  padding: 4px 8px; vertical-align: top;
+}
+#n365-overlay .n365-diff-fname {
+  font-weight: 500; color: var(--ink-3); white-space: nowrap;
+  padding-right: 12px !important;
+}
+#n365-overlay .n365-diff-actions {
+  display: flex; gap: 10px; justify-content: flex-end;
+  padding: 14px 24px 18px; border-top: 1px solid rgba(55,53,47,.09);
+}
 
 /* ── Floating toolbar ─────────────────────────────────── */
 #n365-ftb {
@@ -1302,17 +1630,21 @@
 #n365-dv-hd, #n365-db-views, #n365-db-tb, #n365-filter-bar {
   width: 100%;
 }
-#n365-dv-hd { margin-bottom: 24px; flex-shrink: 0; }
-#n365-dv-icon-wrap { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+/* DB view header: same layout as page header (icon LEFT, add-icon ABOVE). */
+#n365-dv-hd {
+  position: relative; margin-bottom: 24px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+#n365-dv-icon-wrap { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 #n365-dv-pg-icon {
-  font-size: 48px; line-height: 1; cursor: pointer; display: none;
+  font-size: 40px; line-height: 1; cursor: pointer; display: none;
   border-radius: 6px; padding: 4px; transition: background 0.1s;
 }
 #n365-dv-pg-icon:hover { background: var(--paper-2-strong); }
 #n365-dv-ttl {
   font-family: var(--font-serif); letter-spacing: -0.005em;
   font-size: 28px; font-weight: 600; line-height: 1.3; color: var(--ink);
-  outline: none; min-width: 40px; padding: 0; display: block;
+  outline: none; min-width: 40px; padding: 0; flex: 1 1 0;
 }
 #n365-dv-ttl:empty::before { content: "無題"; color: var(--ink-4); }
 
@@ -1540,6 +1872,70 @@
 }
 #n365-dt th.n365-th-add:hover { opacity: 1; color: var(--ink); background: var(--paper-2); }
 #n365-dt th.n365-th-del, #n365-dt td.n365-td-del { width: 32px; padding: 0; }
+
+/* ── Row selection checkbox (Notion-style hover-reveal) ── */
+#n365-dt th.n365-th-cb, #n365-dt td.n365-td-cb {
+  width: 24px; padding: 0; text-align: center;
+}
+#n365-overlay .n365-cb {
+  margin: 0; cursor: pointer; vertical-align: middle;
+  width: 14px; height: 14px;
+}
+/* Body checkboxes: hidden by default, shown on row hover or when any selected */
+#n365-overlay #n365-dt tbody td.n365-td-cb .n365-cb { visibility: hidden; }
+#n365-overlay #n365-dt tbody tr:hover td.n365-td-cb .n365-cb,
+#n365-overlay #n365-dt.n365-has-sel tbody td.n365-td-cb .n365-cb { visibility: visible; }
+/* Header checkbox: shown on header hover or when any selected */
+#n365-overlay #n365-dt thead th.n365-th-cb .n365-cb { visibility: hidden; }
+#n365-overlay #n365-dt thead:hover th.n365-th-cb .n365-cb,
+#n365-overlay #n365-dt.n365-has-sel thead th.n365-th-cb .n365-cb { visibility: visible; }
+/* Selected-row highlight */
+#n365-overlay #n365-dt tr.n365-tr-sel td { background: var(--accent-soft); }
+
+/* ── Bulk-actions toolbar (paper-toned, anchored above filter bar) ─────── */
+/* Position is set by db-bulk.ts to hover just above the filter/sort/group row. */
+#n365-overlay .n365-db-bulkbar {
+  position: fixed; top: 0; left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  display: none; align-items: center; gap: 8px;
+  padding: 6px 8px 6px 14px;
+  background: var(--paper); color: var(--ink);
+  border: 1px solid var(--paper-3);
+  border-radius: var(--r-3);
+  box-shadow: var(--sh-flyout);
+  font-family: var(--font-ui); font-size: var(--fs-sm);
+  z-index: 2147483646;
+  opacity: 0; transition: opacity .12s, transform .12s;
+  pointer-events: none;
+}
+#n365-overlay .n365-db-bulkbar.on {
+  display: flex; opacity: 1; transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+#n365-overlay .n365-db-bulkbar-count {
+  padding-right: 10px; border-right: 1px solid var(--paper-3);
+  white-space: nowrap; color: var(--ink-3); font-weight: 500;
+}
+#n365-overlay .n365-db-bulkbar-btn {
+  border: 1px solid var(--paper-3);
+  background: var(--paper); color: var(--ink);
+  padding: 5px 12px; border-radius: var(--r-2);
+  font-family: inherit; font-size: var(--fs-sm); cursor: pointer;
+  transition: background var(--tr-fast), border-color var(--tr-fast), color var(--tr-fast);
+}
+#n365-overlay .n365-db-bulkbar-btn:hover {
+  background: var(--paper-2); border-color: var(--ink-4);
+}
+#n365-overlay .n365-db-bulkbar-btn.danger:hover {
+  background: rgba(225, 88, 88, 0.10);
+  border-color: var(--danger); color: var(--danger);
+}
+#n365-overlay .n365-db-bulkbar-btn.ghost {
+  background: transparent; color: var(--ink-3); border-color: transparent;
+}
+#n365-overlay .n365-db-bulkbar-btn.ghost:hover {
+  background: var(--paper-2); color: var(--ink);
+}
 #n365-overlay .n365-del-btn {
   opacity: 0; border: none; background: transparent; cursor: pointer;
   color: var(--ink-3); font-size: 14px; padding: 4px 6px; border-radius: 3px;
@@ -1548,17 +1944,77 @@
 #n365-dt tr:hover .n365-del-btn { opacity: 1; }
 #n365-overlay .n365-del-btn:hover { background: rgba(184, 83, 74, .12); color: var(--danger); }
 
-/* DB row "open as page" button */
+/* ── DB drag-reorder indicators ───────────────────────── */
+/* Column header drag */
+#n365-overlay #n365-dt th { cursor: grab; }
+#n365-overlay #n365-dt th.n365-th-dragging { opacity: 0.4; }
+#n365-overlay #n365-dt th.n365-th-drop-before { box-shadow: inset 3px 0 0 var(--accent); }
+#n365-overlay #n365-dt th.n365-th-drop-after  { box-shadow: inset -3px 0 0 var(--accent); }
+/* Table row drag — single floating line (positioned by db-row-drag.ts) */
+#n365-overlay #n365-dt tr.n365-tr-dragging { opacity: 0.4; }
+#n365-overlay .n365-row-drop-line {
+  position: fixed; height: 2px; pointer-events: none;
+  z-index: 2147483647; display: none;
+  background: var(--accent); border-radius: 1px;
+}
+#n365-overlay .n365-row-drop-line.on { display: block; }
+/* Kanban / gallery card drag */
+#n365-overlay .n365-kb-card { cursor: grab; }
+#n365-overlay .n365-kb-card.n365-kb-card-dragging,
+#n365-overlay .n365-gv-card.n365-kb-card-dragging { opacity: 0.08; }
+/* Selected card (multi-select via shift+click) — bold accent outline */
+#n365-overlay .n365-kb-card.n365-card-sel,
+#n365-overlay .n365-gv-card.n365-card-sel {
+  outline: 2px solid var(--accent); outline-offset: -1px;
+  background: var(--accent-soft);
+}
+/* Floating card-drop-line (kanban: horizontal, gallery: vertical) */
+#n365-overlay .n365-card-drop-line {
+  position: fixed; height: 2px; pointer-events: none;
+  z-index: 2147483647; display: none;
+  background: var(--accent); border-radius: 1px;
+}
+#n365-overlay .n365-card-drop-line.on { display: block; }
+#n365-overlay .n365-card-drop-line.vertical { height: auto; width: 2px; }
+/* Generic list drag (still uses item-drop-* on the list view's plain rows) */
+#n365-overlay .n365-item-dragging { opacity: 0.08; }
+#n365-overlay .n365-item-drop-before { box-shadow: inset 0 3px 0 var(--accent); }
+#n365-overlay .n365-item-drop-after  { box-shadow: inset 0 -3px 0 var(--accent); }
+
+/* DB row "open as page" button — shared across all views */
 #n365-overlay .n365-row-open {
-  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
   border: none; background: var(--paper); color: var(--ink-3);
   width: 22px; height: 22px; border-radius: var(--r-1);
   cursor: pointer; opacity: 0; font-size: 12px;
-  display: flex; align-items: center; justify-content: center;
+  display: inline-flex; align-items: center; justify-content: center;
   transition: opacity var(--tr-fast), background var(--tr-fast);
+  flex-shrink: 0;
 }
-#n365-overlay #n365-dt tr:hover .n365-row-open { opacity: 1; }
+/* Table cell: absolutely positioned in the title cell */
+#n365-overlay #n365-dt td .n365-row-open {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+}
+#n365-overlay #n365-dt tr:hover .n365-row-open,
+#n365-overlay .n365-kb-card:hover .n365-row-open,
+#n365-overlay .n365-lv-row:hover .n365-row-open,
+#n365-overlay .n365-gv-card:hover .n365-row-open,
+#n365-overlay .n365-cal-event:hover .n365-row-open,
+#n365-overlay .n365-gantt-label:hover .n365-row-open { opacity: 1; }
 #n365-overlay .n365-row-open:hover { background: var(--paper-2-strong); color: var(--ink); }
+
+/* View-specific layout tweaks for the inline button */
+#n365-overlay .n365-kb-card { display: flex; align-items: center; gap: 6px; }
+#n365-overlay .n365-kb-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#n365-overlay .n365-lv-row { display: flex; align-items: center; gap: 8px; }
+#n365-overlay .n365-lv-row > div { min-width: 0; }
+#n365-overlay .n365-lv-row .n365-lv-title { flex: 0 0 auto; }
+#n365-overlay .n365-lv-row .n365-lv-sub { flex: 1; min-width: 0; }
+#n365-overlay .n365-gv-card { position: relative; }
+#n365-overlay .n365-gv-card .n365-row-open { position: absolute; top: 6px; right: 6px; }
+#n365-overlay .n365-cal-event { display: flex; align-items: center; gap: 4px; }
+#n365-overlay .n365-cal-event-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#n365-overlay .n365-gantt-label { display: flex; align-items: center; gap: 4px; }
+#n365-overlay .n365-gantt-label-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* DB Select chips — Notion風パステル */
 #n365-overlay .n365-select-chip {

@@ -1,11 +1,10 @@
 // Foreground polling: while a page is open, check every N seconds whether
-// somebody else updated the file. Surface a toast with a "今すぐ反映" link.
+// somebody else updated the row. Surface a toast with a "今すぐ反映" link.
 
 import { S } from '../state';
-import { getPathForId } from '../api/pages';
-import { getFileMeta } from '../api/sync';
-import { g } from './dom';
-import { toast, setSave } from './ui-helpers';
+import { apiLoadFileMeta } from '../api/pages';
+import { getListItemEditor, getCurrentUser } from '../api/sync';
+import { setSave } from './ui-helpers';
 import { doSelect } from './views';
 
 const POLL_INTERVAL_MS = 30_000;
@@ -32,16 +31,28 @@ async function checkOnce(): Promise<void> {
   if (document.hidden) return;                          // tab not visible — skip
   const id = S.sync.pageId;
   if (!id || S.currentId !== id) return;                // page changed — skip
+  if (S.saving || S.dirty) return;                      // local save in flight — skip
   const page = S.pages.find((p) => p.Id === id);
   if (!page || page.Type === 'database') return;
   try {
-    const path = getPathForId(id);
-    const meta = await getFileMeta(path + '/index.md');
+    const meta = await apiLoadFileMeta(id);
     if (!meta) return;
-    if (meta.modified !== S.sync.loadedModified) {
-      // Someone updated the file
-      showStaleBanner(meta.editorTitle, meta.modified, meta.etag, id);
+    if (meta.modified === S.sync.loadedModified) return;
+    // Modified advanced — find out who did it. Many local side-channel writers
+    // (icon, pin, Web 公開, AI tools, etc.) update the row without refreshing
+    // S.sync.loadedModified, so a self-echo is common. Filter those out by
+    // comparing the editor against the signed-in user.
+    const [editor, me] = await Promise.all([
+      getListItemEditor(id).catch(() => ''),
+      getCurrentUser(),
+    ]);
+    if (editor && me && editor === me) {
+      // Silent self-update — sync local watermark and don't bother the user.
+      S.sync.loadedModified = meta.modified;
+      S.sync.loadedEtag = meta.etag;
+      return;
     }
+    showStaleBanner(editor, meta.modified, meta.etag, id);
   } catch { /* ignore transient errors */ }
 }
 
@@ -81,8 +92,4 @@ function hideStaleBanner(): void {
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-export function notifyConflictOnSave(): void {
-  toast('保存できませんでした: 他のユーザーが編集中です。リロードして再試行してください。', 'err', 6000);
 }

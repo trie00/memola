@@ -5,8 +5,8 @@
 import { S } from '../state';
 import { g } from './dom';
 import { ancs } from './tree';
-import { getPathForId } from '../api/pages';
-import { getFileMeta } from '../api/sync';
+import { apiLoadFileMeta, PAGES_LIST } from '../api/pages';
+import { getListItemEditor } from '../api/sync';
 
 const PANEL_KEY = 'n365.properties.open';
 
@@ -65,18 +65,19 @@ export async function renderProperties(): Promise<void> {
     row('アイコン', meta.icon || '-') +
     row('ID', id) +
     (page.Type === 'database' && meta.list ? row('SP リスト', meta.list) : '') +
-    (page.Type !== 'database' ? row('ファイル', meta.path + '/index.md') : '') +
+    (page.Type !== 'database' ? row('リスト項目', PAGES_LIST + ' #' + id) : '') +
     '<div class="n365-prop-row n365-prop-loading">最終更新者を取得中...</div>';
 
   if (page.Type !== 'database') {
     try {
-      const fm = await getFileMeta(getPathForId(id) + '/index.md');
+      const fm = await apiLoadFileMeta(id);
+      const editor = await getListItemEditor(id).catch(() => '');
       const loading = list.querySelector('.n365-prop-loading');
       if (loading) loading.remove();
       if (fm) {
         const time = new Date(fm.modified).toLocaleString('ja-JP');
         list.insertAdjacentHTML('beforeend', row('最終更新', time));
-        list.insertAdjacentHTML('beforeend', row('編集者', fm.editorTitle || '不明'));
+        list.insertAdjacentHTML('beforeend', row('編集者', editor || '不明'));
       }
     } catch { /* ignore */ }
   } else {

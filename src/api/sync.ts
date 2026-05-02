@@ -1,61 +1,34 @@
-// Detect remote updates while a page is open. Polls the file's LastModified
-// timestamp and compares it with the version we loaded. ETag-based conflict
-// detection is layered on top of writeFile via writeFileIfMatch.
+// Helpers for the "外部更新を検知してバナー" path.
+//
+// `getListItemEditor` returns the display name of whoever last modified an
+// n365-pages row. `getCurrentUser` returns the signed-in user's display name
+// (cached for the session). Together they let the watcher distinguish a real
+// foreign edit from an echo of the current user's own write — needed because
+// many side-channel writers (icon change, pin, Web 公開, AI tools, …) update
+// the row without refreshing `S.sync.loadedModified`.
 
-import { SITE, FOLDER } from '../config';
-import { getDigest } from './digest';
+import { PAGES_LIST } from './pages';
+import { SITE } from '../config';
+import { spListUrl, spGetD } from './sp-rest';
 
-export interface FileMeta {
-  modified: string;            // ISO timestamp
-  editorTitle: string;         // editor display name
-  etag: string;                // SP file ETag (e.g. "\"5,3\"")
+export async function getListItemEditor(pageId: string): Promise<string> {
+  const itemId = parseInt(pageId, 10);
+  if (!itemId) return '';
+  const d = await spGetD<{ Editor?: { Title?: string } }>(
+    spListUrl(PAGES_LIST, '/items(' + itemId + ')?$select=Editor/Title&$expand=Editor'),
+  );
+  return d?.Editor?.Title || '';
 }
 
-export async function getFileMeta(relPath: string): Promise<FileMeta | null> {
-  const url =
-    SITE +
-    "/_api/web/GetFileByServerRelativeUrl('" + FOLDER + '/' + relPath + "')" +
-    '/ListItemAllFields?$select=Modified,Editor/Title&$expand=Editor';
-  const r = await fetch(url, {
-    headers: { Accept: 'application/json;odata=verbose' },
-    credentials: 'include',
-  });
-  if (!r.ok) return null;
-  const j = (await r.json()) as {
-    d: { Modified: string; Editor: { Title: string }; __metadata: { etag: string } };
-  };
-  return {
-    modified: j.d.Modified,
-    editorTitle: j.d.Editor?.Title || '',
-    etag: j.d.__metadata?.etag || '',
-  };
-}
+let _currentUserPromise: Promise<string> | null = null;
 
-// Conflict-aware write. Returns 'ok' | 'conflict'. On conflict the caller
-// should fetch the fresh file and merge / prompt the user.
-export async function writeFileIfMatch(
-  relPath: string,
-  content: string,
-  etag: string,
-): Promise<'ok' | 'conflict'> {
-  const d = await getDigest();
-  const lastSlash = relPath.lastIndexOf('/');
-  const folderRel = lastSlash >= 0 ? FOLDER + '/' + relPath.substring(0, lastSlash) : FOLDER;
-  const fileName = lastSlash >= 0 ? relPath.substring(lastSlash + 1) : relPath;
-  const url =
-    SITE +
-    "/_api/web/GetFolderByServerRelativeUrl('" + folderRel + "')/Files/add(url='" +
-    encodeURIComponent(fileName) + "',overwrite=true)";
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'X-RequestDigest': d,
-      ...(etag ? { 'If-Match': etag } : {}),
-    },
-    credentials: 'include',
-    body: content,
-  });
-  if (r.status === 412) return 'conflict';
-  if (!r.ok) throw new Error('保存失敗: ' + r.status);
-  return 'ok';
+/** Display name (Title) of the signed-in SharePoint user. Cached for the
+ *  session — fetched lazily on first call. Returns '' on failure. */
+export function getCurrentUser(): Promise<string> {
+  if (_currentUserPromise) return _currentUserPromise;
+  _currentUserPromise = (async () => {
+    const d = await spGetD<{ Title?: string }>(SITE + '/_api/web/currentuser?$select=Title');
+    return d?.Title || '';
+  })().catch(() => '');
+  return _currentUserPromise;
 }

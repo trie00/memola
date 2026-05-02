@@ -298,26 +298,3 @@ export function mdToHtml(md: string): string {
   return html;
 }
 
-export function buildMdFile(title: string, parentId: string, bodyHtml: string): string {
-  const fm = '---\ntitle: ' + title + '\nparent: ' + (parentId || '') +
-    '\ncreated: ' + new Date().toISOString().slice(0, 10) + '\n---\n\n';
-  return fm + htmlToMd(bodyHtml);
-}
-
-export function parseMeta(content: string): Record<string, string> {
-  const m: Record<string, string> = { title: '', parent: '' };
-  if (!content || !content.startsWith('---')) return m;
-  const end = content.indexOf('---', 3);
-  if (end < 0) return m;
-  content.substring(3, end).trim().split('\n').forEach((l) => {
-    const c = l.indexOf(':'); if (c < 0) return;
-    m[l.substring(0, c).trim()] = l.substring(c + 1).trim();
-  });
-  return m;
-}
-
-export function getBody(content: string): string {
-  if (!content || !content.startsWith('---')) return content || '';
-  const end = content.indexOf('---', 3);
-  return end < 0 ? content : content.substring(end + 3).trim();
-}

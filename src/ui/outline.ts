@@ -21,7 +21,10 @@ export function toggleOutline(): void { setOutlineOpen(!isOutlineOpen()); }
 export function applyOutlineState(): void {
   const panel = g('outline');
   const btn = document.getElementById('n365-outline-btn');
-  if (isOutlineOpen() && S.currentType === 'page' && S.currentId) {
+  const isPage = S.currentType === 'page' && !!S.currentId;
+  // Outline isn't meaningful for DB views — hide the topbar toggle entirely.
+  if (btn) btn.style.display = isPage ? '' : 'none';
+  if (isOutlineOpen() && isPage) {
     panel.classList.add('on');
     btn?.classList.add('on');
     renderOutline();
