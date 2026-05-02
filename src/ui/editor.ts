@@ -347,6 +347,25 @@ function applySlashCmd(cmd: string): void {
   } else if (cmd === 'table') {
     void import('./inline-table').then((m) => m.insertInlineTable(3, 1));
     return;
+  } else if (cmd === 'inlinedb') {
+    // Open the page picker filtered to DB pages, then insert a linked-DB
+    // block at the caret. The block renders asynchronously from the live
+    // SP data so it stays in sync with the underlying DB.
+    const sel0 = window.getSelection();
+    if (!sel0 || !sel0.rangeCount) return;
+    const rect = sel0.getRangeAt(0).getBoundingClientRect();
+    showPagePicker({
+      anchor: { bottom: rect.bottom, left: rect.left },
+      dbsOnly: true,
+      onSelect: (p) => {
+        void import('./linked-db').then((m) => {
+          m.insertLinkedDb(p.Id);
+          _ed.focus();
+          S.dirty = true; setSave('未保存'); schedSave();
+        });
+      },
+    });
+    return;
   } else if (cmd === 'page-link') {
     // Open the page picker at the caret. Selection inserts an atomic
     // <a class="n365-page-link"> chip with a trailing space for further typing.

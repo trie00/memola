@@ -110,6 +110,8 @@ export async function doSelect(id: string): Promise<void> {
       void import('./inline-table').then((m) => m.reattachInlineTables(getEd()));
       // Mark page-link chips whose target page is missing (broken-link visual)
       void import('./page-picker').then((m) => m.markBrokenPageLinks(getEd()));
+      // Populate any inline linked-DB embeds with live data from SP
+      void import('./linked-db').then((m) => m.renderAllLinkedDbs(getEd()));
       // Track file meta so we can detect remote updates and conflicts on save
       const fm = await apiLoadFileMeta(id);
       if (fm) {

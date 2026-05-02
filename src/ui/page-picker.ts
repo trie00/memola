@@ -17,6 +17,9 @@ interface PickerOptions {
   onSelect: (page: Page) => void;
   /** Called when the user dismisses without picking (Esc, blur). */
   onCancel?: () => void;
+  /** When true, only DB pages (Type='database') appear in results. Used by
+   *  the linked-DB embed flow which has no business showing regular pages. */
+  dbsOnly?: boolean;
 }
 
 interface ActivePicker {
@@ -25,6 +28,11 @@ interface ActivePicker {
   selIdx: number;
   opts: PickerOptions;
   query: string;
+}
+
+function applyTypeFilter(pages: Page[], opts: PickerOptions): Page[] {
+  if (!opts.dbsOnly) return pages;
+  return pages.filter((p) => p.Type === 'database');
 }
 
 let _active: ActivePicker | null = null;
@@ -147,7 +155,7 @@ export function showPagePicker(opts: PickerOptions): void {
     el,
     opts,
     query,
-    filtered: matchPages(query),
+    filtered: applyTypeFilter(matchPages(query), opts),
     selIdx: 0,
   };
   render();
@@ -156,7 +164,7 @@ export function showPagePicker(opts: PickerOptions): void {
 export function updatePagePickerQuery(query: string): void {
   if (!_active) return;
   _active.query = query;
-  _active.filtered = matchPages(query);
+  _active.filtered = applyTypeFilter(matchPages(query), _active.opts);
   if (_active.selIdx >= _active.filtered.length) _active.selIdx = 0;
   render();
 }

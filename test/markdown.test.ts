@@ -180,6 +180,41 @@ describe('markdown', () => {
     });
   });
 
+  describe('linked-db embed', () => {
+    it('round-trips a linked-db comment with dbId + view', () => {
+      const md = '<!-- n365-linkdb dbId="123" view="table" -->';
+      // mdToHtml emits a placeholder div, htmlToMd emits back the comment.
+      // Compare the resulting markdown to ensure shape is stable.
+      expect(rt(md)).toContain('n365-linkdb');
+      expect(rt(md)).toContain('dbId="123"');
+      expect(rt(md)).toContain('view="table"');
+    });
+
+    it('renders the linked-db marker as an empty atomic div', () => {
+      const html = mdToHtml('<!-- n365-linkdb dbId="42" view="table" -->');
+      expect(html).toContain('class="n365-linkdb"');
+      expect(html).toContain('contenteditable="false"');
+      expect(html).toContain('data-db-id="42"');
+      expect(html).toContain('data-view="table"');
+      // Body is empty — the renderer fills it in at view time
+      expect(html).toMatch(/<div [^>]*data-view="table"[^>]*><\/div>/);
+    });
+
+    it('preserves filter / sort attributes when present', () => {
+      const md = '<!-- n365-linkdb dbId="9" view="table" filter="status=open" sort="title" -->';
+      const out = rt(md);
+      expect(out).toContain('filter="status=open"');
+      expect(out).toContain('sort="title"');
+    });
+
+    it('omits filter / sort attrs when not set', () => {
+      const md = '<!-- n365-linkdb dbId="9" view="table" -->';
+      const out = rt(md);
+      expect(out).not.toContain('filter=');
+      expect(out).not.toContain('sort=');
+    });
+  });
+
   describe('edge cases', () => {
     it('handles empty input', () => {
       expect(mdToHtml('')).toBe('');

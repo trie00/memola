@@ -717,6 +717,111 @@
   cursor: pointer;
 }
 
+/* ── Linked-DB inline embed ───────────────────────────── */
+#n365-overlay .n365-linkdb {
+  margin: 16px 0;
+  border: 1px solid var(--paper-3);
+  border-radius: var(--r-3);
+  background: var(--paper);
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+#n365-overlay .n365-linkdb-loading,
+#n365-overlay .n365-linkdb-broken,
+#n365-overlay .n365-linkdb-error {
+  padding: 14px 16px;
+  font-size: var(--fs-sm);
+  color: var(--ink-3);
+}
+#n365-overlay .n365-linkdb-broken,
+#n365-overlay .n365-linkdb-error {
+  color: #b13a3a;
+  background: rgba(177, 58, 58, 0.04);
+  border-left: 3px solid rgba(177, 58, 58, 0.4);
+}
+#n365-overlay .n365-linkdb-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--paper-3);
+  background: rgba(55, 53, 47, 0.025);
+}
+#n365-overlay .n365-linkdb-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+#n365-overlay .n365-linkdb-name {
+  font-weight: 600;
+  color: var(--ink);
+  flex-shrink: 0;
+}
+#n365-overlay .n365-linkdb-count {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  flex: 1;
+}
+#n365-overlay .n365-linkdb-open {
+  border: 1px solid var(--paper-3);
+  background: var(--paper);
+  color: var(--ink-2);
+  border-radius: var(--r-2);
+  padding: 3px 9px;
+  font-size: var(--fs-xs);
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s;
+}
+#n365-overlay .n365-linkdb-open:hover {
+  background: rgba(55, 53, 47, 0.06);
+  color: var(--ink);
+}
+#n365-overlay .n365-linkdb-tablewrap {
+  max-height: 420px;
+  overflow: auto;
+}
+#n365-overlay .n365-linkdb-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+#n365-overlay .n365-linkdb-table th,
+#n365-overlay .n365-linkdb-table td {
+  text-align: left;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--paper-2);
+  vertical-align: top;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+#n365-overlay .n365-linkdb-table th {
+  font-weight: 500;
+  color: var(--ink-3);
+  background: rgba(55, 53, 47, 0.02);
+  font-size: var(--fs-xs);
+  text-transform: none;
+  letter-spacing: 0.02em;
+  position: sticky; top: 0; z-index: 1;
+}
+#n365-overlay .n365-linkdb-table tr:last-child td {
+  border-bottom: none;
+}
+#n365-overlay .n365-linkdb-table tr:hover td {
+  background: rgba(55, 53, 47, 0.03);
+}
+#n365-overlay .n365-linkdb-title-cell {
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 500;
+}
+#n365-overlay .n365-linkdb-title-cell:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: rgba(55, 53, 47, 0.4);
+}
+
 /* ── Inline table block (Notion-like) ─────────────────── */
 #n365-overlay .n365-itbl-wrap {
   position: relative; margin: 10px 0;

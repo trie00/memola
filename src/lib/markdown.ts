@@ -37,6 +37,21 @@ export function domWalk(node: Node): string {
     return out;
   }
 
+  // Linked-DB embed block: round-trips as a single HTML comment so the
+  // payload survives Markdown editing without leaking rendered children.
+  // The block's body is regenerated at view-load time from `data-db-id` etc.
+  if (tag === 'div' && el.classList.contains('n365-linkdb')) {
+    const dbId = el.getAttribute('data-db-id') || '';
+    const view = el.getAttribute('data-view') || 'table';
+    const filterAttr = el.getAttribute('data-filter') || '';
+    const sortAttr = el.getAttribute('data-sort') || '';
+    let out = '\n<!-- n365-linkdb dbId="' + dbId + '" view="' + view + '"';
+    if (filterAttr) out += ' filter="' + filterAttr.replace(/"/g, '&quot;') + '"';
+    if (sortAttr)   out += ' sort="' + sortAttr.replace(/"/g, '&quot;') + '"';
+    out += ' -->\n';
+    return out;
+  }
+
   // Skip todo checkbox inputs
   if (tag === 'input' && el.classList.contains('n365-todo-cb')) return '';
 
@@ -185,6 +200,30 @@ export function mdToHtml(md: string): string {
       let code = ''; i++;
       while (i < lines.length && !lines[i].trimStart().startsWith('```')) { code += lines[i] + '\n'; i++; }
       html += '<pre><code>' + esc(code) + '</code></pre>'; i++; continue;
+    }
+
+    // Linked-DB embed marker: a single-line HTML comment that carries the
+    // dbId / view / filter / sort. Renders as an empty placeholder div with
+    // those attributes — a JS pass populates the table contents at view time
+    // from the live SP data (DB rows aren't part of the page Markdown).
+    const ldb = ln.match(/^\s*<!--\s*n365-linkdb\s+([^>]*?)\s*-->\s*$/);
+    if (ldb) {
+      const attrs = ldb[1];
+      const get = (key: string): string => {
+        const m = attrs.match(new RegExp(key + '="([^"]*)"'));
+        return m ? m[1].replace(/&quot;/g, '"') : '';
+      };
+      const dbId = get('dbId');
+      const view = get('view') || 'table';
+      const filter = get('filter');
+      const sort = get('sort');
+      html += '<div class="n365-linkdb" contenteditable="false"' +
+        ' data-db-id="' + esc(dbId) + '"' +
+        ' data-view="' + esc(view) + '"' +
+        (filter ? ' data-filter="' + esc(filter) + '"' : '') +
+        (sort ? ' data-sort="' + esc(sort) + '"' : '') +
+        '></div>';
+      i++; continue;
     }
 
     // Headings
