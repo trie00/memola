@@ -17,6 +17,11 @@ interface SlashItem {
   cat: string;
   /** Optional keyboard shortcut hint (rendered as a kbd badge in the menu). */
   kbd?: string;
+  /** Optional markdown shortcut. When the slash query is a prefix of `md`,
+   *  the item is filtered to the top of the menu so the user can type
+   *  `/##` to jump straight to 見出し2 etc. Also rendered as the kbd badge
+   *  if `kbd` is not set. */
+  md?: string;
 }
 
 // Platform-specific modifier label for kbd badges.
@@ -28,19 +33,19 @@ const SLASH_ITEMS: SlashItem[] = [
   { cat: 'ナビゲーション', cmd: 'nav-forward', icon: '→', name: '進む',            desc: '次のページへ',            kbd: MOD + ' ]' },
   // 基本
   { cat: '基本', cmd: 'p',       icon: 'T',    name: 'テキスト',        desc: 'プレーンテキスト' },
-  { cat: '基本', cmd: 'h1',      icon: 'H1',   name: '見出し1',         desc: '大きな見出し' },
-  { cat: '基本', cmd: 'h2',      icon: 'H2',   name: '見出し2',         desc: '中見出し' },
-  { cat: '基本', cmd: 'h3',      icon: 'H3',   name: '見出し3',         desc: '小見出し' },
+  { cat: '基本', cmd: 'h1',      icon: 'H1',   name: '見出し1',         desc: '大きな見出し',         md: '#' },
+  { cat: '基本', cmd: 'h2',      icon: 'H2',   name: '見出し2',         desc: '中見出し',             md: '##' },
+  { cat: '基本', cmd: 'h3',      icon: 'H3',   name: '見出し3',         desc: '小見出し',             md: '###' },
   { cat: '基本', cmd: 'callout', icon: '💡',   name: 'コールアウト',    desc: 'ハイライトボックス' },
-  { cat: '基本', cmd: 'quote',   icon: '❝',    name: '引用',            desc: '引用ブロック' },
+  { cat: '基本', cmd: 'quote',   icon: '❝',    name: '引用',            desc: '引用ブロック',         md: '>' },
   // リスト
-  { cat: 'リスト', cmd: 'ul',    icon: '•',    name: '箇条書き',        desc: 'シンプルな箇条書き' },
-  { cat: 'リスト', cmd: 'ol',    icon: '1.',   name: '番号付き',        desc: '番号付き箇条書き' },
-  { cat: 'リスト', cmd: 'todo',  icon: '☐',    name: 'ToDoリスト',      desc: 'チェックボックス付き' },
+  { cat: 'リスト', cmd: 'ul',    icon: '•',    name: '箇条書き',        desc: 'シンプルな箇条書き',  md: '-' },
+  { cat: 'リスト', cmd: 'ol',    icon: '1.',   name: '番号付き',        desc: '番号付き箇条書き',    md: '1.' },
+  { cat: 'リスト', cmd: 'todo',  icon: '☐',    name: 'ToDoリスト',      desc: 'チェックボックス付き', md: '[]' },
   // メディア
-  { cat: 'メディア', cmd: 'hr',  icon: '—',    name: '区切り線',        desc: 'セクション区切り' },
+  { cat: 'メディア', cmd: 'hr',  icon: '—',    name: '区切り線',        desc: 'セクション区切り',     md: '---' },
   // コード
-  { cat: 'コード', cmd: 'pre',   icon: '</>',  name: 'コードブロック',  desc: 'シンタックスハイライト' },
+  { cat: 'コード', cmd: 'pre',   icon: '</>',  name: 'コードブロック',  desc: 'シンタックスハイライト', md: '```' },
   // データ
   { cat: 'データ', cmd: 'table',    icon: '⊞', name: '表',             desc: '簡易表 (3×2)・セル編集可' },
   { cat: 'データ', cmd: 'inlinedb', icon: '▤', name: 'インラインDB',    desc: 'ページにDBを埋め込む' },
@@ -133,13 +138,40 @@ function insertPageLinkAtWikiTrigger(page: Page): void {
   schedSave();
 }
 
+/** Filter slash items by `_slashQuery`. When the query starts with a
+ *  markdown shortcut character (`#`, `-`, `>`, `[`, `1`, `\``), filter on
+ *  `md` (Markdown notation prefix) instead of the name/cmd substring. This
+ *  is what enables `/##` → 見出し2 etc. */
+function filterSlashItems(): SlashItem[] {
+  if (!_slashQuery) return SLASH_ITEMS;
+  // If the query looks like a markdown shortcut (any non-word starting char),
+  // try md-prefix matching first. Exact md matches are sorted first, then
+  // longer-md matches that still share the prefix.
+  const startsWithMd = !/^\w/.test(_slashQuery);
+  if (startsWithMd) {
+    const mdHits = SLASH_ITEMS.filter((it) => it.md && it.md.startsWith(_slashQuery));
+    if (mdHits.length > 0) {
+      return mdHits.sort((a, b) => {
+        const aExact = a.md === _slashQuery ? 0 : 1;
+        const bExact = b.md === _slashQuery ? 0 : 1;
+        if (aExact !== bExact) return aExact - bExact;
+        return (a.md?.length || 0) - (b.md?.length || 0);
+      });
+    }
+    // No md hits — return empty so the menu closes (rather than showing
+    // unrelated text matches for cryptic markdown queries).
+    return [];
+  }
+  // Word-style query → match by name / cmd as before.
+  const q = _slashQuery.toLowerCase();
+  return SLASH_ITEMS.filter((it) =>
+    it.name.toLowerCase().includes(q) || it.cmd.toLowerCase().includes(q),
+  );
+}
+
 function showSlashMenu(rect: { bottom: number; left: number }): void {
   const el = g('slash');
-  _slashFiltered = SLASH_ITEMS.filter((item) => {
-    if (!_slashQuery) return true;
-    return item.name.toLowerCase().includes(_slashQuery.toLowerCase()) ||
-      item.cmd.toLowerCase().includes(_slashQuery.toLowerCase());
-  });
+  _slashFiltered = filterSlashItems();
   if (_slashFiltered.length === 0) { closeSlashMenu(); return; }
   if (_slashSel >= _slashFiltered.length) _slashSel = 0;
 
@@ -156,7 +188,9 @@ function showSlashMenu(rect: { bottom: number; left: number }): void {
     }
     const div = document.createElement('div');
     div.className = 'n365-slash-item' + (idx === _slashSel ? ' sel' : '');
-    const kbdHtml = item.kbd ? '<div class="n365-slash-kbd">' + item.kbd + '</div>' : '';
+    // Display priority: explicit kbd > md notation > nothing
+    const hint = item.kbd || item.md;
+    const kbdHtml = hint ? '<div class="n365-slash-kbd">' + hint + '</div>' : '';
     div.innerHTML =
       '<div class="n365-slash-icon">' + item.icon + '</div>' +
       '<div class="n365-slash-body"><div class="n365-slash-name">' + item.name + '</div><div class="n365-slash-desc">' + item.desc + '</div></div>' +
@@ -751,7 +785,9 @@ export function attachEditor(): void {
       }
       if (_wikiActive) closeWikiPicker();
 
-      const slashMatch = before.match(/(^|\s)\/(\w*)$/);
+      // Allow any non-whitespace chars after `/` so markdown notation like
+      // `/##`, `/-`, `/[]`, `/>` and `/```` can filter the menu directly.
+      const slashMatch = before.match(/(^|\s)\/(\S*)$/);
       if (slashMatch) {
         _slashActive = true;
         _slashQuery = slashMatch[2] || '';
