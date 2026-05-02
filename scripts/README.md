@@ -32,29 +32,51 @@ n365 (browser)  ─── fetch ───>  http://localhost:18080  ─┐
 
 #### 1) 環境変数を設定
 
+##### `CORP_AI_TARGET` の値とは
+
+ゲートウェイの **ベース URL**。本物の chat-completions URL から
+`/{api-version}/openai/deployments/...` 以降を取り除いた部分。
+
+```
+https://<host>/<path>/{api-version}/openai/deployments/<deploy>/chat/completions
+└──────── これが CORP_AI_TARGET ──────┘
+```
+
+例: 実 URL が `https://gateway.example.com/customapi/2024-06-01/...` なら:
+```
+CORP_AI_TARGET=https://gateway.example.com/customapi
+```
+
+##### `CORP_AI_PROXY` の値とは
+
+オンプレプロキシのアドレス。`http://<host>:<port>` 形式。
+社内ネットワーク資料や IT 部門から取得。
+認証付きの場合は `http://user:pass@host:port` も可。
+
+##### 設定方法
+
 シェル (macOS / Linux):
 
 ```sh
-export CORP_AI_TARGET="https://gateway.example.com/myapi"
+export CORP_AI_TARGET="https://gateway.example.com/customapi"
 export CORP_AI_PROXY="http://onprem-proxy.example.com:8080"
 ```
 
 Windows (cmd):
 
 ```cmd
-set CORP_AI_TARGET=https://gateway.example.com/myapi
+set CORP_AI_TARGET=https://gateway.example.com/customapi
 set CORP_AI_PROXY=http://onprem-proxy.example.com:8080
 ```
 
 Windows (PowerShell):
 
 ```powershell
-$env:CORP_AI_TARGET = 'https://gateway.example.com/myapi'
+$env:CORP_AI_TARGET = 'https://gateway.example.com/customapi'
 $env:CORP_AI_PROXY  = 'http://onprem-proxy.example.com:8080'
 ```
 
-`CORP_AI_TARGET` と `CORP_AI_PROXY` の実値は社内ドキュメントや IT 部門
-から取得。`CORP_AI_PORT` (既定 18080) も必要なら設定可。
+`CORP_AI_PORT` (既定 18080) も必要なら設定可。
 
 #### 2) リレーを起動
 
@@ -70,14 +92,13 @@ Windows なら `scripts/corp-ai-relay.bat` または `corp-ai-relay.ps1` を
 ```
 ────────────────────────────────────────────────────────────────
   listen  : http://127.0.0.1:18080
-  target  : https://gateway.example.com/myapi
+  target  : https://gateway.example.com/customapi
   proxy   : http://onprem-proxy.example.com:8080
 ────────────────────────────────────────────────────────────────
-n365 の設定モーダルに以下を入力:
-  プロバイダ : 企業AI API
-  ベース URL : http://localhost:18080/myapi
-    ※ ベース URL の path は target と同じにしてください
-    ※ 例: http://localhost:18080/myapi
+n365 の設定モーダルに「ベース URL」を入力 (どちらでも可):
+  A: http://localhost:18080
+  B: http://localhost:18080/customapi    (実 URL のパスを保ったまま localhost に
+                                           置き換える形 — 視認性◎)
 ────────────────────────────────────────────────────────────────
 Ctrl+C で終了
 ```
@@ -86,8 +107,8 @@ Ctrl+C で終了
 
 1. n365 を起動 → 設定 (⚙)
 2. **プロバイダ**: `企業AI API`
-3. **ベース URL**: `http://localhost:18080/<path>`  
-   `<path>` は CORP_AI_TARGET の path 部分と同じ (例 `/myapi`)
+3. **ベース URL**: 上記 A / B のどちらか (リレーが自動でパスを揃えるので
+   どちらでも動作)
 4. **デプロイ ID プレフィックス**: 組織の規約に合わせて
 5. **企業AI API キー**: サブスクリプションキー
 6. 保存
@@ -109,7 +130,7 @@ Ctrl+C で終了
 
 ```sh
 python3 scripts/corp-ai-relay.py \
-  --target https://gateway.example.com/myapi \
+  --target https://gateway.example.com/customapi \
   --proxy http://onprem-proxy:8080 \
   --port 18080
 ```

@@ -62,11 +62,21 @@ except ImportError:
 def make_handler(target_url: str, proxy_url: str | None):
     """Build a request handler bound to a specific upstream + proxy.
 
-    `target_url` is the gateway base; the request path is appended verbatim.
+    URL composition rule:
+      - `target_url` is the full gateway prefix incl. its path component
+        (e.g. ``https://gateway.example.com/customapi``).
+      - The incoming request path may optionally repeat the same prefix
+        (when the user mirrors the real URL into n365's baseUrl). To avoid
+        a double prefix we strip ``target_path`` from the front of the
+        incoming path if it's there. Both of these baseUrl forms work:
+          a) http://localhost:18080            (no path)
+          b) http://localhost:18080/customapi  (mirrors real path)
+
     `proxy_url` (if set) is used for both http and https — the gateway is
     HTTPS but `requests` tunnels via CONNECT through an HTTP proxy.
     """
     target = target_url.rstrip("/")
+    target_path = urllib.parse.urlparse(target).path  # e.g. "/customapi"
     proxies = (
         {"http": proxy_url, "https": proxy_url} if proxy_url else None
     )
@@ -100,12 +110,15 @@ def make_handler(target_url: str, proxy_url: str | None):
             self.end_headers()
 
         def _proxy(self, method: str):
-            # Build the upstream URL by appending the request path verbatim.
-            # n365's openai-corp.ts builds requests as:
-            #   {baseUrl}/{api-version}/openai/deployments/{id}/chat/completions
-            # so when baseUrl is http://localhost:18080, the path here will
-            # already be /{api-version}/openai/deployments/...
-            url = target + self.path
+            # Build the upstream URL. If the incoming path already includes
+            # the target's path prefix (because the user mirrored the real
+            # URL into n365's baseUrl), strip it once so we don't double up.
+            incoming = self.path
+            if target_path and incoming.startswith(target_path):
+                rel = incoming[len(target_path):] or "/"
+            else:
+                rel = incoming
+            url = target + rel
             length = int(self.headers.get("Content-Length") or "0")
             body = self.rfile.read(length) if length > 0 else None
 
@@ -250,19 +263,18 @@ def main() -> int:
     server = ThreadedHTTPServer(("127.0.0.1", args.port), handler)
 
     parsed_target = urllib.parse.urlparse(args.target)
-    base_url_for_n365 = f"http://localhost:{args.port}"
-    full_url_for_n365 = base_url_for_n365 + parsed_target.path
+    base_url_short = f"http://localhost:{args.port}"
+    base_url_mirror = base_url_short + parsed_target.path
 
     print("─" * 64)
     print(f"  listen  : http://127.0.0.1:{args.port}")
     print(f"  target  : {args.target}")
     print(f"  proxy   : {proxy or '(直接接続)'}")
     print("─" * 64)
-    print("n365 の設定モーダルに以下を入力:")
-    print(f"  プロバイダ : 企業AI API")
-    print(f"  ベース URL : {base_url_for_n365}{parsed_target.path}")
-    print("    ※ ベース URL の path は target と同じにしてください")
-    print(f"    ※ 例: {full_url_for_n365}")
+    print("n365 の設定モーダルに「ベース URL」を入力 (どちらでも可):")
+    print(f"  A: {base_url_short}")
+    print(f"  B: {base_url_mirror}    (実 URL のパスを保ったまま localhost に")
+    print( "                            置き換える形 — 視認性◎)")
     print("─" * 64)
     print("Ctrl+C で終了")
 
