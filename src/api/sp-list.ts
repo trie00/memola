@@ -72,25 +72,53 @@ export async function getListFields(listTitle: string): Promise<ListField[]> {
     });
 }
 
-export async function getListItems(listTitle: string): Promise<ListItem[]> {
-  const d = await spGetD<{ results: ListItem[] }>(
-    spListUrl(listTitle, '/items?$orderby=Id&$top=500'),
-  );
-  if (!d) throw new Error('データ取得失敗');
-  // SharePoint REST prefixes internal names that start with `_` (including
-  // encoded non-ASCII like `_x3042_…`) with `OData_` in the response. Mirror
-  // each such property under its non-prefixed name so callers can look up
-  // values by the field's actual InternalName.
-  return d.results.map((item) => {
-    const fixed: ListItem = item;
-    for (const k of Object.keys(item)) {
-      if (k.startsWith('OData_')) {
-        const bare = k.substring(6);
-        if (!(bare in fixed)) fixed[bare] = item[k];
-      }
+/** SharePoint REST prefixes internal names that start with `_` (including
+ *  encoded non-ASCII like `_x3042_…`) with `OData_` in the response. Mirror
+ *  each such property under its non-prefixed name so callers can look up
+ *  values by the field's actual InternalName. */
+function unwrapODataPrefix(item: ListItem): ListItem {
+  const fixed: ListItem = item;
+  for (const k of Object.keys(item)) {
+    if (k.startsWith('OData_')) {
+      const bare = k.substring(6);
+      if (!(bare in fixed)) fixed[bare] = item[k];
     }
-    return fixed;
-  });
+  }
+  return fixed;
+}
+
+export async function getListItems(listTitle: string): Promise<ListItem[]> {
+  // SP /items returns at most 5000 (default ~100/500) per response. Follow
+  // the `__next` link until exhausted so callers always see the full list —
+  // truncating silently would drop pages from the tree and orphan row-body
+  // entries on DB delete.
+  const all: ListItem[] = [];
+  let next: string | undefined = spListUrl(listTitle, '/items?$orderby=Id&$top=500');
+  // Hard cap to prevent runaway loops if the server lies about __next
+  for (let safety = 0; next && safety < 200; safety++) {
+    const r = await fetch(next, {
+      headers: { Accept: 'application/json;odata=verbose' },
+      credentials: 'include',
+    });
+    if (!r.ok) throw new Error('データ取得失敗');
+    const j = (await r.json()) as { d: { results?: ListItem[]; __next?: string } };
+    const batch = j.d?.results || [];
+    for (const item of batch) all.push(unwrapODataPrefix(item));
+    next = j.d?.__next;
+  }
+  return all;
+}
+
+/** Fetch a single list item by its numeric Id from the *target* list. Use
+ *  this in undo/redo / cross-list paths instead of grovelling through the
+ *  active-DB cache `S.dbItems` — Id is per-list, so the cached value can
+ *  belong to a totally different DB. */
+export async function getListItemById(
+  listTitle: string,
+  itemId: number,
+): Promise<ListItem | null> {
+  const d = await spGetD<ListItem>(spListUrl(listTitle, '/items(' + itemId + ')'));
+  return d ? unwrapODataPrefix(d) : null;
 }
 
 export async function createListItem(

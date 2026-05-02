@@ -40,7 +40,19 @@ interface PageRow {
 
 let _ensurePromise: Promise<void> | null = null;
 
-/** Idempotently create the n365-pages list and its columns. */
+/** Required columns for the n365-pages list. Kept in one place so
+ *  ensurePagesList can verify completeness after column-add attempts. */
+const REQUIRED_FIELDS: Array<[string, number]> = [
+  ['ParentId', 2], ['PageType', 2], ['Icon', 2], ['Pinned', 9], ['Trashed', 9],
+  ['ListTitle', 2], ['DbRowId', 9], ['Body', 3],
+  ['Published', 9], ['PublishedUrl', 3], ['PublishedPageId', 9], ['PublishedDirty', 9],
+];
+
+/** Idempotently create the n365-pages list and its columns. Resilient to
+ *  transient field-add failures: if any required column is still missing
+ *  after the first pass, the cached promise is cleared so subsequent calls
+ *  retry, and the current call rejects so the caller can surface the error
+ *  instead of silently running with an incomplete schema. */
 async function ensurePagesList(): Promise<void> {
   if (_ensurePromise) return _ensurePromise;
   _ensurePromise = (async () => {
@@ -50,22 +62,25 @@ async function ensurePagesList(): Promise<void> {
     const need = async (n: string, kind: number): Promise<void> => {
       if (titles.has(n)) return;
       try { await addListField(PAGES_LIST, n, kind); titles.add(n); }
-      catch { /* tolerate failure; subsequent runs retry */ }
+      catch { /* tolerate failure; verified below */ }
     };
     // Run sequentially to avoid digest churn / race
-    await need('ParentId', 2);
-    await need('PageType', 2);
-    await need('Icon', 2);
-    await need('Pinned', 9);
-    await need('Trashed', 9);
-    await need('ListTitle', 2);
-    await need('DbRowId', 9);
-    await need('Body', 3);
-    await need('Published', 9);
-    await need('PublishedUrl', 3);
-    await need('PublishedPageId', 9);
-    await need('PublishedDirty', 9);
-  })();
+    for (const [name, kind] of REQUIRED_FIELDS) {
+      await need(name, kind);
+    }
+    // Verify schema completeness — re-fetch field titles in case `titles`
+    // got out of sync (e.g. another tab added a column concurrently).
+    const finalTitles = await listFieldTitles();
+    const missing = REQUIRED_FIELDS.filter(([n]) => !finalTitles.has(n)).map(([n]) => n);
+    if (missing.length > 0) {
+      throw new Error('n365-pages の必須列が不足しています: ' + missing.join(', '));
+    }
+  })().catch((e) => {
+    // Allow the next caller to retry. Without this, a single transient
+    // failure (e.g. digest expiry, network blip) wedged the whole session.
+    _ensurePromise = null;
+    throw e;
+  });
   return _ensurePromise;
 }
 
@@ -228,13 +243,17 @@ export async function apiSavePage(
   return saveBodyInternal(id, title, htmlToMd(bodyHtml), expectedEtag);
 }
 
-/** Save with raw markdown (used by AI tool path; avoids lossy md↔HTML round-trip). */
+/** Save with raw markdown (used by AI tool path; avoids lossy md↔HTML round-trip).
+ *  Like apiSavePage, accepts an optional `expectedEtag` so the AI path can
+ *  surface conflict-on-save instead of silently overwriting concurrent edits
+ *  by other users. */
 export async function apiSavePageMd(
   id: string,
   title: string,
   bodyMd: string,
+  expectedEtag?: string,
 ): Promise<{ ok: true; etag: string } | { ok: false; reason: 'conflict' }> {
-  return saveBodyInternal(id, title, bodyMd);
+  return saveBodyInternal(id, title, bodyMd, expectedEtag);
 }
 
 async function saveBodyInternal(
@@ -268,7 +287,10 @@ async function saveBodyInternal(
 
 const collectIds = (id: string): string[] => collectDescendantIds(S.pages, id);
 
-/** Hard delete: removes list rows (and the linked DB list, when applicable). */
+/** Hard delete: removes list rows (and the linked DB list, when applicable).
+ *  When a page (or descendant) is currently Web-published, the mirrored
+ *  Site Page is removed first so we don't leave orphaned `.aspx` files
+ *  accessible in SharePoint after the metadata row is gone. */
 export async function apiDeletePage(id: string): Promise<string[]> {
   const ids = collectIds(id);
   for (const pid of ids) {
@@ -277,6 +299,12 @@ export async function apiDeletePage(id: string): Promise<string[]> {
       // Drop every row-as-page entry first, then the backing DB list itself
       await deleteAllRowEntriesForList(meta.list).catch(() => undefined);
       await deleteList(meta.list).catch(() => undefined);
+    }
+    // Cleanup published Site Page mirror BEFORE removing the n365-pages row,
+    // because unpublishPage() reads metadata (publishedSitePageId) from it.
+    if (meta?.published) {
+      const { unpublishPage } = await import('./publish');
+      await unpublishPage(pid).catch(() => undefined);
     }
     const itemId = parseInt(pid, 10);
     if (itemId) {
@@ -346,12 +374,22 @@ export async function apiSetIcon(id: string, emoji: string): Promise<void> {
   if (itemId) await updateListItem(PAGES_LIST, itemId, { Icon: emoji });
 }
 
-/** Persist title-only metadata change (used when title is edited live). */
+/** Persist title-only metadata change (used when title is edited live).
+ *  When the page is currently Web-published, also flag PublishedDirty so the
+ *  「公開中」 tag flips to 「未反映」 — the Site Page mirror's banner now
+ *  shows a stale title until the user explicitly re-syncs. */
 export async function apiSetTitle(id: string, title: string): Promise<void> {
   const meta = S.meta.pages.find((p) => p.id === id);
-  if (meta) meta.title = title;
+  if (meta) {
+    meta.title = title;
+    if (meta.published) meta.publishedDirty = true;
+  }
   const itemId = parseInt(id, 10);
-  if (itemId) await updateListItem(PAGES_LIST, itemId, { Title: title });
+  if (itemId) {
+    const fields: Record<string, unknown> = { Title: title };
+    if (meta?.published) fields.PublishedDirty = 1;
+    await updateListItem(PAGES_LIST, itemId, fields);
+  }
 }
 
 // ── DB row-as-page bodies ─────────────────────────────────
@@ -360,14 +398,25 @@ export async function apiSetTitle(id: string, title: string): Promise<void> {
 // DbRowId=<row item id>. Title is mirrored from the DB row for human readability
 // in SP UI; the canonical title still lives on the DB row itself.
 
-async function findRowEntry(listTitle: string, dbRowId: number): Promise<{ id: number; etag: string } | null> {
+/** Find every n365-pages row matching (PageType='row', listTitle, dbRowId).
+ *  Returns multiple in case a prior race created duplicates; callers can
+ *  pick a canonical winner and clean up the rest. Sorted by Id ascending. */
+async function findRowEntries(
+  listTitle: string,
+  dbRowId: number,
+): Promise<Array<{ id: number; etag: string }>> {
   const filter = "PageType eq 'row' and ListTitle eq '" + listTitle.replace(/'/g, "''") +
     "' and DbRowId eq " + dbRowId;
-  const url = spListUrl(PAGES_LIST, '/items?$select=Id&$filter=' + encodeURIComponent(filter) + '&$top=1');
+  const url = spListUrl(PAGES_LIST,
+    '/items?$select=Id&$filter=' + encodeURIComponent(filter) + '&$orderby=Id&$top=20');
   const d = await spGetD<{ results: Array<{ Id: number; __metadata?: { etag?: string } }> }>(url);
-  const hit = d?.results[0];
-  if (!hit) return null;
-  return { id: hit.Id, etag: hit.__metadata?.etag || '' };
+  if (!d) return [];
+  return d.results.map((r) => ({ id: r.Id, etag: r.__metadata?.etag || '' }));
+}
+
+async function findRowEntry(listTitle: string, dbRowId: number): Promise<{ id: number; etag: string } | null> {
+  const all = await findRowEntries(listTitle, dbRowId);
+  return all[0] || null;
 }
 
 /** Read the markdown body for a DB row from the n365-pages list. */
@@ -379,7 +428,15 @@ export async function getRowBody(listTitle: string, dbRowId: number): Promise<st
   return fetched?.row.Body || '';
 }
 
-/** Upsert (title, body) for a DB row's page entry in n365-pages. */
+/** Upsert (title, body) for a DB row's page entry in n365-pages.
+ *
+ *  Race handling: SP has no unique constraint on (ListTitle, DbRowId), so a
+ *  concurrent caller could create a parallel `PageType='row'` entry between
+ *  our find and create. We mitigate by:
+ *    1. Re-fetching after create and deduplicating to the lowest-Id entry.
+ *    2. Keeping `findRowEntry` deterministic (orderby Id asc) so subsequent
+ *       getters consistently pick the same canonical row.
+ */
 export async function setRowBody(
   listTitle: string,
   dbRowId: number,
@@ -388,25 +445,45 @@ export async function setRowBody(
   body: string,
 ): Promise<void> {
   await ensurePagesList();
-  const hit = await findRowEntry(listTitle, dbRowId);
-  if (hit) {
-    await updateListItem(PAGES_LIST, hit.id, { Title: title, Body: body });
-  } else {
-    await createListItem(PAGES_LIST, {
-      Title: title,
-      ParentId: parentDbId || '',
-      PageType: 'row',
-      ListTitle: listTitle,
-      DbRowId: dbRowId,
-      Body: body,
-    });
+  const hits = await findRowEntries(listTitle, dbRowId);
+  if (hits.length >= 1) {
+    // Update canonical (lowest Id) entry.
+    await updateListItem(PAGES_LIST, hits[0].id, { Title: title, Body: body });
+    // Best-effort cleanup of any duplicates accumulated by past races.
+    for (let i = 1; i < hits.length; i++) {
+      await deleteListItem(PAGES_LIST, hits[i].id).catch(() => undefined);
+    }
+    return;
+  }
+  await createListItem(PAGES_LIST, {
+    Title: title,
+    ParentId: parentDbId || '',
+    PageType: 'row',
+    ListTitle: listTitle,
+    DbRowId: dbRowId,
+    Body: body,
+  });
+  // Post-create reconciliation: if a concurrent caller raced us, multiple
+  // entries now exist. Keep the lowest Id (deterministic across tabs) and
+  // delete the rest.
+  const after = await findRowEntries(listTitle, dbRowId);
+  if (after.length > 1) {
+    // Make sure the surviving canonical entry has our latest body — the
+    // older entry might be stale.
+    await updateListItem(PAGES_LIST, after[0].id, { Title: title, Body: body }).catch(() => undefined);
+    for (let i = 1; i < after.length; i++) {
+      await deleteListItem(PAGES_LIST, after[i].id).catch(() => undefined);
+    }
   }
 }
 
-/** Delete the n365-pages entry for a DB row, if present. */
+/** Delete the n365-pages entry for a DB row, if present. Removes ALL
+ *  matching entries in case duplicates accumulated. */
 export async function deleteRowEntry(listTitle: string, dbRowId: number): Promise<void> {
-  const hit = await findRowEntry(listTitle, dbRowId);
-  if (hit) await deleteListItem(PAGES_LIST, hit.id).catch(() => undefined);
+  const hits = await findRowEntries(listTitle, dbRowId);
+  for (const h of hits) {
+    await deleteListItem(PAGES_LIST, h.id).catch(() => undefined);
+  }
 }
 
 /** Delete every n365-pages entry that points at a given DB list (used when the DB itself is removed). */

@@ -73,6 +73,9 @@ async function doDuplicate(): Promise<void> {
     // ultimately validate). Used only for tracing.
     let created = 0;
     const errors: string[] = [];
+    // Lazy-import to avoid extending the static import graph; getRowBody is
+    // only needed when row-as-page bodies exist for the selected rows.
+    const { getRowBody } = await import('../api/pages');
     for (const id of ids) {
       const item = S.dbItems.find((i) => i.Id === id);
       if (!item) continue;
@@ -88,7 +91,11 @@ async function doDuplicate(): Promise<void> {
       }
       if (!data.Title) data.Title = (item.Title as string) || '無題';
       try {
-        const newItem = await addRowWithUndo(S.dbList, data);
+        // Carry over the row-page markdown body (notes/details stored under
+        // n365-pages with PageType='row'). Without this, duplicates of rows
+        // with rich detail pages would silently lose all that content.
+        const body = await getRowBody(S.dbList, id).catch(() => '');
+        const newItem = await addRowWithUndo(S.dbList, data, body || undefined);
         S.dbItems.push(newItem);
         created++;
       } catch (err) {

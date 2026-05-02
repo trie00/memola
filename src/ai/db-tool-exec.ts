@@ -232,7 +232,10 @@ export async function handleCreateDbRow(input: {
   }
   // Record undo via shared helper (also handles cascade body)
   const created = await addRowWithUndo(db.listTitle, payload, input.body);
-  S.dbItems.push(created);
+  // Don't unconditionally push into S.dbItems — that's the *active* DB cache.
+  // If the AI is mutating a different DB, pushing here pollutes the open
+  // view with foreign rows. refreshDbViewIfActive() re-fetches when the
+  // target *is* active, which is the only case where we should mutate cache.
   await refreshDbViewIfActive(db.listTitle);
   return ok({ db_id: input.db_id, row_id: created.Id, title: payload.Title || '' });
 }

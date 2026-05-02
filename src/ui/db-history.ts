@@ -195,23 +195,39 @@ async function dbIdForList(listTitle: string): Promise<string> {
 /** Delete a DB row + cascade body, with undo/redo. Captures snapshot before delete. */
 export async function deleteRowWithUndo(listTitle: string, rowId: number): Promise<void> {
   const { S } = await import('../state');
-  const item = S.dbItems.find((i) => i.Id === rowId);
-  if (!item) {
-    // Still attempt the SP-level delete in case state is out of sync
-    const { deleteListItem } = await import('../api/sp-list');
-    const { deleteRowEntry } = await import('../api/pages');
-    await deleteListItem(listTitle, rowId);
+  // SharePoint Id is per-list, so `S.dbItems` (active-DB cache) only contains
+  // the right row when we're actually viewing the target list. Otherwise we
+  // would either snapshot a totally different DB's row #N or fail to record
+  // any undo at all. Always source the snapshot from the target list itself.
+  const { deleteListItem, getListItemById } = await import('../api/sp-list');
+  const { getRowBody, deleteRowEntry, setRowBody } = await import('../api/pages');
+
+  let snapshot: Record<string, unknown> | null = null;
+  if (S.dbList === listTitle) {
+    const cached = S.dbItems.find((i) => i.Id === rowId);
+    if (cached) snapshot = { ...cached };
+  }
+  if (!snapshot) {
+    // Either viewing a different DB, or the active-DB cache is stale. Pull
+    // a fresh snapshot from SP for the *target* list.
+    const fetched = await getListItemById(listTitle, rowId).catch(() => null);
+    if (fetched) snapshot = { ...fetched };
+  }
+  if (!snapshot) {
+    // Row really doesn't exist — still attempt the SP-level delete idempotently
+    // and skip undo recording (no data to restore).
+    await deleteListItem(listTitle, rowId).catch(() => undefined);
     await deleteRowEntry(listTitle, rowId).catch(() => undefined);
     return;
   }
-  const snapshot: Record<string, unknown> = { ...item };
-  const { getRowBody, deleteRowEntry, setRowBody } = await import('../api/pages');
+
   const body = await getRowBody(listTitle, rowId).catch(() => '');
-  const { deleteListItem } = await import('../api/sp-list');
   const dbId = await dbIdForList(listTitle);
   await deleteListItem(listTitle, rowId);
   await deleteRowEntry(listTitle, rowId).catch(() => undefined);
-  S.dbItems = S.dbItems.filter((i) => i.Id !== rowId);
+  if (S.dbList === listTitle) {
+    S.dbItems = S.dbItems.filter((i) => i.Id !== rowId);
+  }
 
   // Closure-captured "current Id" — recreate-after-undo gives a new Id.
   let curId = rowId;
@@ -233,17 +249,24 @@ export async function deleteRowWithUndo(listTitle: string, rowId: number): Promi
       await rerenderActiveDbView();
     },
     redo: async () => {
-      // Snapshot current state (may have been edited since) before deleting
-      if (await isViewing(listTitle)) {
-        const sx = (await import('../state')).S;
+      // Snapshot current state (may have been edited since) before deleting.
+      // Always pull from the target list — the active-DB cache may belong to
+      // a different DB at this point.
+      let freshSnap: Record<string, unknown> | null = null;
+      const sx = (await import('../state')).S;
+      if (sx.dbList === listTitle) {
         const cur = sx.dbItems.find((i) => i.Id === curId);
-        if (cur) curSnap = { ...cur };
+        if (cur) freshSnap = { ...cur };
       }
+      if (!freshSnap) {
+        const fetched = await getListItemById(listTitle, curId).catch(() => null);
+        if (fetched) freshSnap = { ...fetched };
+      }
+      if (freshSnap) curSnap = freshSnap;
       curBody = await getRowBody(listTitle, curId).catch(() => curBody);
       await deleteListItem(listTitle, curId).catch(() => undefined);
       await deleteRowEntry(listTitle, curId).catch(() => undefined);
-      if (!(await isViewing(listTitle))) return;
-      const sx = (await import('../state')).S;
+      if (sx.dbList !== listTitle) return;
       sx.dbItems = sx.dbItems.filter((i) => i.Id !== curId);
       await rerenderActiveDbView();
     },

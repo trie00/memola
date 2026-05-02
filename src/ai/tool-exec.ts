@@ -11,6 +11,7 @@ import {
   apiSavePageMd,
   apiTrashPage,
   apiLoadRawBody,
+  apiLoadFileMeta,
   apiSetTitle,
 } from '../api/pages';
 import { mdToHtml } from '../lib/markdown';
@@ -99,9 +100,15 @@ async function handleUpdatePage(input: { id: string; title?: string; body?: stri
   const newTitle = input.title != null ? input.title : oldTitle;
   let oldBody: string | undefined;
   let newBody: string | undefined;
+  // Capture the ETag we read this version against so the save can detect
+  // concurrent edits. Without this the AI path silently overwrites whatever
+  // another user (or this user in another tab) wrote between read & save.
+  let expectedEtag: string | undefined;
   if (input.body != null) {
     oldBody = await apiLoadRawBody(id);
     newBody = input.body;
+    const fm = await apiLoadFileMeta(id);
+    expectedEtag = fm?.etag || undefined;
   }
 
   // Diff preview + confirmation
@@ -121,7 +128,10 @@ async function handleUpdatePage(input: { id: string; title?: string; body?: stri
   }
 
   if (input.body != null) {
-    await apiSavePageMd(id, newTitle, newBody || '');
+    const result = await apiSavePageMd(id, newTitle, newBody || '', expectedEtag);
+    if (!result.ok) {
+      return err('conflict_other_user_updated_page');
+    }
   } else if (newTitle !== oldTitle) {
     await apiSetTitle(id, newTitle);
   }

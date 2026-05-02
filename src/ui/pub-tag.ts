@@ -88,6 +88,13 @@ async function runSync(): Promise<void> {
   if (!id) return;
   const meta = S.meta.pages.find((p) => p.id === id);
   if (!meta?.published) return;
+  // Persist any in-flight edits to n365-pages first. Without this we'd push
+  // the editor buffer to the Site Page while the source row still has the
+  // pre-edit body — a subsequent reload would lose the synced content.
+  if (S.dirty) {
+    const { doSave } = await import('./actions');
+    await doSave();
+  }
   const tag = document.getElementById('n365-pub-tag');
   const titleEl = g('ttl') as HTMLTextAreaElement | null;
   const ed = getEd();

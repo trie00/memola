@@ -458,6 +458,15 @@ export function attachAll(): void {
       } catch (e) { toast('解除失敗: ' + (e as Error).message, 'err'); }
       syncPubTag();
     } else {
+      // Flush any pending in-editor changes to n365-pages first, so the
+      // Site Page mirror can't diverge from the source row. Otherwise, if
+      // the user clicks 公開 before the 2s autosave fires, the publish path
+      // sends *new* text to SP while n365-pages keeps the *old* body — a
+      // reload would drop the published changes silently.
+      if (S.dirty) {
+        const { doSave } = await import('./actions');
+        await doSave();
+      }
       const titleEl = g('ttl') as HTMLTextAreaElement | null;
       const ed = getEd();
       const title = (titleEl?.value || '').trim() || '無題';
