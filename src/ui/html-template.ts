@@ -160,6 +160,7 @@ export function buildHtml(): string {
       '<aside id="n365-ai-panel">' +
         '<div id="n365-ai-hd">' +
           '<span class="n365-ai-title">' + ICONS.sparkle + '<span>AIチャット</span></span>' +
+          '<span id="n365-ai-provider-badge" class="n365-ai-provider-badge" title="プロバイダ・モデル (設定で変更)">Claude</span>' +
           '<button id="n365-ai-new" title="新しい会話">' + ICONS.plus + '</button>' +
           '<button id="n365-ai-clear" title="現在の会話を削除">' + ICONS.trash + '</button>' +
           '<button id="n365-ai-key" title="APIキー設定">⚙</button>' +
@@ -238,9 +239,31 @@ export function buildHtml(): string {
       '<div id="n365-trash-list"></div>' +
       '<div class="n365-ma"><button class="n365-btn s" id="n365-trash-close">閉じる</button></div>' +
     '</div></div>' +
-    '<div id="n365-settings-md"><div class="n365-mb" style="max-width:480px">' +
+    '<div id="n365-settings-md"><div class="n365-mb" style="max-width:520px">' +
       '<h2>⚙ 設定</h2>' +
-      '<div class="n365-set-row"><label>AI APIキー</label><input id="n365-set-aikey" type="password" placeholder="sk-ant-..."></div>' +
+      '<div class="n365-set-section">AI プロバイダ</div>' +
+      '<div class="n365-set-row"><label>使用するサービス</label>' +
+        '<select id="n365-set-provider">' +
+          '<option value="claude">Anthropic Claude</option>' +
+          '<option value="corpai">企業AI (社内 / Azure OpenAI)</option>' +
+        '</select>' +
+      '</div>' +
+      '<div class="n365-set-row" data-prov="claude"><label>Claude モデル</label>' +
+        '<select id="n365-set-claude-model"></select>' +
+      '</div>' +
+      '<div class="n365-set-row" data-prov="claude"><label>Claude API キー</label>' +
+        '<input id="n365-set-aikey" type="password" placeholder="sk-ant-...">' +
+      '</div>' +
+      '<div class="n365-set-row" data-prov="corpai"><label>企業AI モデル</label>' +
+        '<select id="n365-set-corpai-model"></select>' +
+      '</div>' +
+      '<div class="n365-set-row" data-prov="corpai"><label>企業AI API キー</label>' +
+        '<input id="n365-set-corpai-key" type="password" placeholder="サブスクリプションキー">' +
+      '</div>' +
+      '<div class="n365-set-row" data-prov="corpai"><label></label>' +
+        '<div class="n365-set-hint">⚠️ 企業AI ではツール機能 (ページ操作 AI) は無効になります (チャットのみ)</div>' +
+      '</div>' +
+      '<div class="n365-set-section">表示</div>' +
       '<div class="n365-set-row"><label>表示密度</label><select id="n365-set-density"><option value="compact">コンパクト</option><option value="regular" selected>標準</option><option value="comfy">ゆったり</option></select></div>' +
       '<div class="n365-set-row"><label>テーマ</label><select id="n365-set-theme"><option value="light" selected>ライト</option><option value="dark">ダーク</option></select></div>' +
       '<div class="n365-ma">' +

@@ -51,10 +51,14 @@ export async function runAgent(
 
   for (let step = 0; step < MAX_STEPS; step++) {
     if (signal?.aborted) throw new Error('aborted');
+    // Honor the user's model selection from settings; falls back to the
+    // anthropic.ts DEFAULT_MODEL when nothing is stored.
+    const { getClaudeModel } = await import('../api/ai-settings');
     const res = await callClaudeRaw({
       messages: working,
       system: systemPrompt,
       tools: TOOL_DEFS,
+      model: getClaudeModel(),
       signal,
       stream: onTextDelta ? { onText: onTextDelta } : undefined,
     });

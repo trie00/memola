@@ -875,6 +875,48 @@
 #n365-overlay .n365-set-row select:focus {
   border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft);
 }
+#n365-overlay .n365-set-section {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 14px 0 6px;
+  border-top: 1px solid var(--paper-3);
+  padding-top: 10px;
+}
+#n365-overlay .n365-set-section:first-of-type {
+  border-top: none; padding-top: 0; margin-top: 0;
+}
+#n365-overlay .n365-set-hint {
+  font-size: var(--fs-xs);
+  color: var(--ink-3);
+  background: rgba(196, 127, 28, 0.08);
+  border-left: 2px solid rgba(196, 127, 28, 0.5);
+  padding: 6px 8px;
+  border-radius: 3px;
+  line-height: 1.5;
+}
+
+/* ── AI provider/model badge in panel header ─────────────── */
+#n365-overlay .n365-ai-provider-badge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  margin-left: 6px;
+  border: 1px solid rgba(55, 53, 47, 0.16);
+  border-radius: 10px;
+  background: rgba(55, 53, 47, 0.04);
+  color: var(--ink-2);
+  white-space: nowrap;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+#n365-overlay .n365-ai-provider-badge[data-provider="corpai"] {
+  background: rgba(47, 111, 158, 0.10);
+  border-color: rgba(47, 111, 158, 0.28);
+  color: #2f6f9e;
+}
 
 /* ── Trash modal ──────────────────────────────────────── */
 #n365-overlay #n365-trash-md {

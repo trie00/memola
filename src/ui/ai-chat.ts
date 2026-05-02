@@ -84,21 +84,32 @@ async function maybeGenerateTitle(): Promise<void> {
   const userMsg = firstUserText(sess.messages).slice(0, 240);
   if (!userMsg) return;
   try {
-    const { callClaudeRaw } = await import('../api/anthropic');
-    const res = await callClaudeRaw({
-      messages: [{
-        role: 'user',
-        content:
-          'ユーザーの会話の最初の発話から、20文字以内の簡潔な日本語タイトルを 1 つだけ返してください。' +
-          '記号・引用符・「」は不要、タイトル本体のみ。語尾の句点も不要。\n\n' +
-          '発話: ' + userMsg,
-      }],
-      maxTokens: 60,
-    });
-    const text = res.content
-      .filter((b) => b.type === 'text')
-      .map((b) => (b as { text: string }).text)
-      .join('')
+    const ai = await import('../api/ai-settings');
+    const prompt = 'ユーザーの会話の最初の発話から、20文字以内の簡潔な日本語タイトルを 1 つだけ返してください。' +
+      '記号・引用符・「」は不要、タイトル本体のみ。語尾の句点も不要。\n\n' +
+      '発話: ' + userMsg;
+    let raw = '';
+    if (ai.getProvider() === 'corpai') {
+      // Skip silently if no key — title generation is non-critical.
+      if (!ai.getCorpAiKey()) return;
+      const px = await import('../api/openai-px');
+      raw = await px.corpaiChatText({
+        messages: [{ role: 'user', content: prompt }],
+        maxTokens: 60,
+      }).catch(() => '');
+    } else {
+      const { callClaudeRaw } = await import('../api/anthropic');
+      const res = await callClaudeRaw({
+        messages: [{ role: 'user', content: prompt }],
+        model: ai.getClaudeModel(),
+        maxTokens: 60,
+      });
+      raw = res.content
+        .filter((b) => b.type === 'text')
+        .map((b) => (b as { text: string }).text)
+        .join('');
+    }
+    const text = raw
       .trim()
       .replace(/^["'「『]|["'」』]$/g, '')
       .slice(0, 30);
@@ -245,7 +256,8 @@ export function openAiPanel(): void {
   g('ai-panel').classList.add('on');
   document.getElementById('n365-ai-btn')?.classList.add('on');
   try { localStorage.setItem(AI_PANEL_KEY, '1'); } catch { /* ignore */ }
-  ensureApiKey();
+  syncProviderBadge();
+  void ensureApiKey();
   renderAiMessages();
   setTimeout(() => (g('ai-input') as HTMLTextAreaElement).focus(), 50);
 }
@@ -268,7 +280,19 @@ export function toggleAiPanel(): void {
   else openAiPanel();
 }
 
-function ensureApiKey(): boolean {
+async function ensureApiKey(): Promise<boolean> {
+  const ai = await import('../api/ai-settings');
+  if (ai.getProvider() === 'corpai') {
+    if (ai.getCorpAiKey()) return true;
+    const k = prompt('企業AI のサブスクリプションキーを入力してください\n(設定からも変更できます)');
+    if (k && k.trim()) {
+      ai.setCorpAiKey(k.trim());
+      toast('企業AI キーを保存しました');
+      return true;
+    }
+    return false;
+  }
+  // Claude
   if (getApiKey()) return true;
   const key = prompt(
     'Anthropic APIキーを入力してください\n(sk-ant-... で始まる文字列。https://console.anthropic.com/settings/keys から取得)',
@@ -283,6 +307,38 @@ function ensureApiKey(): boolean {
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Flatten Claude-style ApiMessage[] (which can contain tool_use /
+ *  tool_result blocks) into OpenAI's plain role+content message list.
+ *  Tool-related blocks are dropped — 企業AI mode is chat-only. */
+function toOpenAIMessages(msgs: ApiMessage[]): Array<{ role: 'user' | 'assistant'; content: string }> {
+  const out: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  for (const m of msgs) {
+    if (typeof m.content === 'string') {
+      out.push({ role: m.role, content: m.content });
+      continue;
+    }
+    const text = (m.content as ContentBlock[])
+      .filter((b) => b.type === 'text')
+      .map((b) => (b as TextBlock).text)
+      .join('');
+    if (text) out.push({ role: m.role, content: text });
+  }
+  return out;
+}
+
+/** Refresh the provider/model badge in the AI panel header. Exposed for
+ *  the settings modal to call after the user changes provider. */
+export function syncProviderBadge(): void {
+  const el = document.getElementById('n365-ai-provider-badge');
+  if (!el) return;
+  void import('../api/ai-settings').then((ai) => {
+    const p = ai.getProvider();
+    const label = p === 'corpai' ? '企業AI · ' + ai.getCorpAiModel() : 'Claude · ' + ai.getClaudeModel();
+    el.textContent = label;
+    el.dataset.provider = p;
+  });
 }
 
 function mdLineToHtml(line: string): string {
@@ -382,7 +438,7 @@ export async function sendAiMessage(text: string): Promise<void> {
 
   const trimmed = text.trim();
   if (!trimmed) return;
-  if (!ensureApiKey()) return;
+  if (!(await ensureApiKey())) return;
 
   S.ai.messages.push({ role: 'user', content: trimmed });
   S.ai.loading = true;
@@ -405,8 +461,28 @@ export async function sendAiMessage(text: string): Promise<void> {
   const ctrl = new AbortController();
   _activeAbort = ctrl;
   try {
-    const result = await runAgent(S.ai.messages, systemPromptBlocks(), onTextDelta, ctrl.signal);
-    S.ai.messages.push(...result.newMessages);
+    const ai = await import('../api/ai-settings');
+    if (ai.getProvider() === 'corpai') {
+      // 企業AI path — chat-completions only, no tool use. Translate Claude's
+      // structured ApiMessage history to OpenAI's flat role/content shape,
+      // dropping tool_use / tool_result blocks (they don't apply here).
+      const oaMsgs: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> =
+        toOpenAIMessages(S.ai.messages);
+      const px = await import('../api/openai-px');
+      const sysBlock = systemPromptBlocks()[0];
+      const sys = sysBlock?.text || '';
+      if (sys) oaMsgs.unshift({ role: 'system', content: sys });
+      const reply = await px.corpaiChatText({
+        messages: oaMsgs,
+        signal: ctrl.signal,
+        stream: { onText: onTextDelta },
+        maxTokens: 4096,
+      });
+      S.ai.messages.push({ role: 'assistant', content: reply || streamText });
+    } else {
+      const result = await runAgent(S.ai.messages, systemPromptBlocks(), onTextDelta, ctrl.signal);
+      S.ai.messages.push(...result.newMessages);
+    }
   } catch (err) {
     const e = err as Error;
     if (e.name === 'AbortError' || e.message === 'aborted') {
