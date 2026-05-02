@@ -260,6 +260,17 @@ export function onKey(e: KeyboardEvent): void {
     document.getElementById('n365-sb-toggle')?.click();
     return;
   }
+  // ⌘+[ / ⌘+] 戻る・進む (browser convention)。
+  if (mod && (e.key === '[' || e.code === 'BracketLeft')) {
+    e.preventDefault();
+    void import('./nav-history').then((m) => m.goBack());
+    return;
+  }
+  if (mod && (e.key === ']' || e.code === 'BracketRight')) {
+    e.preventDefault();
+    void import('./nav-history').then((m) => m.goForward());
+    return;
+  }
   // ⌘+Shift+L 目次 / R プロパティ / F 集中 / A AI / N 新規ページ / N+Shift 新規DB
   if (mod && e.shiftKey) {
     const k = e.key.toLowerCase();

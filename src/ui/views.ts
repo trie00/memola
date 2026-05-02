@@ -9,6 +9,7 @@ import { startWatching, stopWatching } from './sync-watch';
 import { applyOutlineState } from './outline';
 import { applyPropertiesState } from './properties-panel';
 import { syncPubTag } from './pub-tag';
+import { pushHistory, refreshButtons as refreshNavButtons } from './nav-history';
 import { apiUpdateDbRow } from '../api/db';
 import { getListFields, getListItems } from '../api/sp-list';
 import { formatDateJST, parseFlexibleDate } from '../lib/date-utils';
@@ -81,6 +82,9 @@ export async function doSelect(id: string): Promise<void> {
   S.currentId = id;
   const page = S.pages.find((p) => p.Id === id);
   if (!page) return;
+  // Push into the back/forward history stack — pushHistory() ignores the
+  // call when we're navigating *through* history (skip flag).
+  pushHistory(id);
   ancs(id).forEach((p) => { S.expanded.add(p.Id); });
   renderTree(); renderBc(id);
   if (page.Type === 'database') {
@@ -126,6 +130,7 @@ export async function doSelect(id: string): Promise<void> {
     } finally { setLoad(false); }
     S.dirty = false;
     syncPubTag();
+    refreshNavButtons();
   }
 }
 

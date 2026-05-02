@@ -96,6 +96,14 @@ export function attachAll(): void {
     g('sb').classList.toggle('collapsed');
     persistSidebarState();
   });
+
+  // Browser-style back/forward navigation through page-open history
+  document.getElementById('n365-nav-back')?.addEventListener('click', () => {
+    void import('./nav-history').then((m) => m.goBack());
+  });
+  document.getElementById('n365-nav-fwd')?.addEventListener('click', () => {
+    void import('./nav-history').then((m) => m.goForward());
+  });
   document.getElementById('n365-sb-collapse')?.addEventListener('click', () => {
     g('sb').classList.add('collapsed');
     persistSidebarState();

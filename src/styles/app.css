@@ -253,6 +253,25 @@
 }
 #n365-sb-toggle:hover { background: rgba(55, 53, 47, 0.08); opacity: 1; }
 #n365-sb-toggle svg { width: 16px; height: 16px; }
+
+/* ── Browser-style back/forward navigation ─────────────── */
+#n365-overlay .n365-nav-btn {
+  border: none; background: transparent; cursor: pointer;
+  color: var(--ink); padding: 6px; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  line-height: 0; flex-shrink: 0; opacity: 0.5;
+  transition: background 0.12s, opacity 0.12s, color 0.12s;
+  margin-left: -2px;
+}
+#n365-overlay .n365-nav-btn:not(.disabled):hover {
+  background: rgba(55, 53, 47, 0.08);
+  opacity: 1;
+}
+#n365-overlay .n365-nav-btn.disabled {
+  opacity: 0.22;
+  cursor: not-allowed;
+}
+#n365-overlay .n365-nav-btn svg { width: 16px; height: 16px; }
 #n365-bc {
   flex: 1; font-size: 13px; color: var(--ink-3);
   display: flex; align-items: center; gap: 2px; overflow: hidden;
@@ -1544,8 +1563,26 @@
   font-size: 11px; color: var(--ink); flex-shrink: 0;
   font-family: var(--font-mono);
 }
+#n365-overlay .n365-slash-body { flex: 1; min-width: 0; }
 #n365-overlay .n365-slash-name { font-size: var(--fs-md); color: var(--ink); }
 #n365-overlay .n365-slash-desc { font-size: 10px; color: var(--ink-3); margin-top: 1px; }
+#n365-overlay .n365-slash-kbd {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--ink-3);
+  background: rgba(55, 53, 47, 0.06);
+  border: 1px solid rgba(55, 53, 47, 0.10);
+  border-radius: 3px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+#n365-overlay .n365-slash-item.sel .n365-slash-kbd,
+#n365-overlay .n365-slash-item:hover .n365-slash-kbd {
+  background: rgba(55, 53, 47, 0.10);
+  color: var(--ink-2);
+}
 
 /* ── Internal page-link chip ──────────────────────────── */
 #n365-overlay .n365-page-link {

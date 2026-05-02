@@ -9,9 +9,23 @@ import {
   pagePickerActive, pagePickerCount, pagePickerMove, pagePickerCommit,
 } from './page-picker';
 
-interface SlashItem { cmd: string; icon: string; name: string; desc: string; cat: string }
+interface SlashItem {
+  cmd: string;
+  icon: string;
+  name: string;
+  desc: string;
+  cat: string;
+  /** Optional keyboard shortcut hint (rendered as a kbd badge in the menu). */
+  kbd?: string;
+}
+
+// Platform-specific modifier label for kbd badges.
+const MOD = (typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)) ? '⌘' : 'Ctrl';
 
 const SLASH_ITEMS: SlashItem[] = [
+  // ナビゲーション
+  { cat: 'ナビゲーション', cmd: 'nav-back',    icon: '←', name: '戻る',            desc: '前に開いていたページへ', kbd: MOD + ' [' },
+  { cat: 'ナビゲーション', cmd: 'nav-forward', icon: '→', name: '進む',            desc: '次のページへ',            kbd: MOD + ' ]' },
   // 基本
   { cat: '基本', cmd: 'p',       icon: 'T',    name: 'テキスト',        desc: 'プレーンテキスト' },
   { cat: '基本', cmd: 'h1',      icon: 'H1',   name: '見出し1',         desc: '大きな見出し' },
@@ -142,9 +156,11 @@ function showSlashMenu(rect: { bottom: number; left: number }): void {
     }
     const div = document.createElement('div');
     div.className = 'n365-slash-item' + (idx === _slashSel ? ' sel' : '');
+    const kbdHtml = item.kbd ? '<div class="n365-slash-kbd">' + item.kbd + '</div>' : '';
     div.innerHTML =
       '<div class="n365-slash-icon">' + item.icon + '</div>' +
-      '<div><div class="n365-slash-name">' + item.name + '</div><div class="n365-slash-desc">' + item.desc + '</div></div>';
+      '<div class="n365-slash-body"><div class="n365-slash-name">' + item.name + '</div><div class="n365-slash-desc">' + item.desc + '</div></div>' +
+      kbdHtml;
     div.addEventListener('mousedown', (e) => { e.preventDefault(); applySlashCmd(item.cmd); });
     el.appendChild(div);
     if (idx === _slashSel) selEl = div;
@@ -285,6 +301,12 @@ function applySlashCmd(cmd: string): void {
         _ed.focus();
       });
     }
+  } else if (cmd === 'nav-back') {
+    void import('./nav-history').then((m) => m.goBack());
+    return;
+  } else if (cmd === 'nav-forward') {
+    void import('./nav-history').then((m) => m.goForward());
+    return;
   } else if (cmd === 'ai') {
     void import('./ai-block').then((m) => m.insertAiBlock());
     return;

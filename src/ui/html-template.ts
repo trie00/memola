@@ -36,6 +36,8 @@ export function buildHtml(): string {
     '<main id="n365-main">' +
       '<div id="n365-top">' +
         '<button id="n365-sb-toggle" title="サイドバー (Ctrl+\\)">' + ICONS.sidebar + '</button>' +
+        '<button id="n365-nav-back" class="n365-nav-btn disabled" title="戻る (Ctrl+[)" disabled>' + ICONS.chevronLeft + '</button>' +
+        '<button id="n365-nav-fwd" class="n365-nav-btn disabled" title="進む (Ctrl+])" disabled>' + ICONS.chevronRight + '</button>' +
         '<div id="n365-bc"></div>' +
         '<button id="n365-pub-tag" class="n365-pub-tag" style="display:none" title="公開状態">' +
           '<span class="n365-pub-tag-dot"></span><span class="n365-pub-tag-label">公開中</span>' +
