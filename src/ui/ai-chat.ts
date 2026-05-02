@@ -309,25 +309,6 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-/** Flatten Claude-style ApiMessage[] (which can contain tool_use /
- *  tool_result blocks) into OpenAI's plain role+content message list.
- *  Tool-related blocks are dropped — 企業AI mode is chat-only. */
-function toOpenAIMessages(msgs: ApiMessage[]): Array<{ role: 'user' | 'assistant'; content: string }> {
-  const out: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-  for (const m of msgs) {
-    if (typeof m.content === 'string') {
-      out.push({ role: m.role, content: m.content });
-      continue;
-    }
-    const text = (m.content as ContentBlock[])
-      .filter((b) => b.type === 'text')
-      .map((b) => (b as TextBlock).text)
-      .join('');
-    if (text) out.push({ role: m.role, content: text });
-  }
-  return out;
-}
-
 /** Refresh the provider/model badge in the AI panel header. Exposed for
  *  the settings modal to call after the user changes provider. */
 export function syncProviderBadge(): void {
@@ -461,28 +442,11 @@ export async function sendAiMessage(text: string): Promise<void> {
   const ctrl = new AbortController();
   _activeAbort = ctrl;
   try {
-    const ai = await import('../api/ai-settings');
-    if (ai.getProvider() === 'corpai') {
-      // 企業AI path — chat-completions only, no tool use. Translate Claude's
-      // structured ApiMessage history to OpenAI's flat role/content shape,
-      // dropping tool_use / tool_result blocks (they don't apply here).
-      const oaMsgs: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> =
-        toOpenAIMessages(S.ai.messages);
-      const px = await import('../api/openai-px');
-      const sysBlock = systemPromptBlocks()[0];
-      const sys = sysBlock?.text || '';
-      if (sys) oaMsgs.unshift({ role: 'system', content: sys });
-      const reply = await px.corpaiChatText({
-        messages: oaMsgs,
-        signal: ctrl.signal,
-        stream: { onText: onTextDelta },
-        maxTokens: 4096,
-      });
-      S.ai.messages.push({ role: 'assistant', content: reply || streamText });
-    } else {
-      const result = await runAgent(S.ai.messages, systemPromptBlocks(), onTextDelta, ctrl.signal);
-      S.ai.messages.push(...result.newMessages);
-    }
+    // Provider routing happens inside runAgent → callClaudeRaw / corpaiChatRaw.
+    // Both speak the same ClaudeResponse shape so tool execution, history,
+    // and streaming all work uniformly here.
+    const result = await runAgent(S.ai.messages, systemPromptBlocks(), onTextDelta, ctrl.signal);
+    S.ai.messages.push(...result.newMessages);
   } catch (err) {
     const e = err as Error;
     if (e.name === 'AbortError' || e.message === 'aborted') {
