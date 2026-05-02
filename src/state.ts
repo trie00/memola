@@ -15,6 +15,10 @@ export interface PageMeta {
   publishedUrl?: string;      // absolute URL of the Site Page when published
   publishedSitePageId?: number; // SP.Publishing.SitePage Id (used to update / delete)
   publishedDirty?: boolean;   // true → page edited since the last sync to the Site Page
+  /** Set on a *regular* page that was originally a daily-note row. The value
+   *  is the YYYY-MM-DD it represented before conversion. Used to expose
+   *  「デイリーノートに戻す」 in the page menu. */
+  originDailyDate?: string;
 }
 
 export interface Meta {

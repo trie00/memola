@@ -178,12 +178,27 @@ export function pagePickerCommit(): void {
 
 /** Walk the rendered DOM and visually mark page-links whose target page no
  *  longer exists. Idempotent — call after every editor re-render. Runs in
- *  O(N) over the page-links of the given root. */
+ *  O(N) over the page-links of the given root.
+ *
+ *  Daily-note deferred links (`data-daily-date`) are also classified here:
+ *  links whose target row exists render normally; links to dates with no
+ *  row yet get the `.ghosted` class so the user can tell at a glance. The
+ *  SP lookup is fired async so the call stays non-blocking — the link is
+ *  always immediately clickable (find-or-create on click handles both). */
 export function markBrokenPageLinks(root: Element): void {
   const links = root.querySelectorAll<HTMLElement>('a.n365-page-link');
+  const dailyDates = new Set<string>();
   links.forEach((a) => {
     const id = a.getAttribute('data-page-id') || '';
     const pending = a.getAttribute('data-pending') === '1';
+    const dailyDate = a.getAttribute('data-daily-date') || '';
+    if (dailyDate) {
+      // Default to ghosted until the SP lookup confirms otherwise. Avoids
+      // a flash of "exists" for stale renders.
+      a.classList.add('ghosted');
+      dailyDates.add(dailyDate);
+      return;
+    }
     if (id) {
       const exists = S.pages.some((p) => p.Id === id);
       a.classList.toggle('broken', !exists);
@@ -200,6 +215,22 @@ export function markBrokenPageLinks(root: Element): void {
       }
     }
   });
+  if (dailyDates.size === 0) return;
+  // Async confirmation of daily-link existence. Errors are silent — the
+  // link still works (find-or-create on click).
+  void (async () => {
+    try {
+      const daily = await import('../api/daily');
+      for (const date of dailyDates) {
+        const hit = await daily.findNoteForDate(date).catch(() => null);
+        if (!hit) continue;
+        // Remove ghosted from any link in `root` that points at this date.
+        root.querySelectorAll<HTMLElement>(
+          'a.n365-page-link[data-daily-date="' + date + '"]',
+        ).forEach((a) => a.classList.remove('ghosted'));
+      }
+    } catch { /* ignore */ }
+  })();
 }
 
 export function hide(): void {

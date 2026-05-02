@@ -158,6 +158,26 @@ describe('markdown', () => {
       expect(html).toContain('<a href="https://example.com">label</a>');
       expect(html).not.toContain('n365-page-link');
     });
+
+    it('round-trips a [[daily:YYYY-MM-DD]] deferred link', () => {
+      // The daily-note prev/next-day links must survive round-trip even if
+      // the target row doesn't exist yet — the date is the canonical key.
+      expect(rt('see [[daily:2026-05-03]] for tomorrow')).toContain('[[daily:2026-05-03]]');
+    });
+
+    it('renders a daily link with daily-link class and date attribute', () => {
+      const html = mdToHtml('[[daily:2026-05-02]]');
+      expect(html).toContain('class="n365-page-link daily-link"');
+      expect(html).toContain('data-daily-date="2026-05-02"');
+      expect(html).toContain('>2026-05-02<');
+    });
+
+    it('does not match daily prefix in bare [[title]]', () => {
+      // `daily:` must be parsed as the deferred-link prefix, not as a free
+      // form title. No data-pending output expected here.
+      const html = mdToHtml('[[daily:2026-05-02]]');
+      expect(html).not.toContain('data-pending=');
+    });
   });
 
   describe('edge cases', () => {

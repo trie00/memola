@@ -1092,6 +1092,29 @@ export function attachEditor(): void {
     const linkEl = target.closest<HTMLElement>('a.n365-page-link');
     if (linkEl) {
       e.preventDefault();
+      // Daily-note deferred link: find-or-create the row for that date and
+      // open it as a row-page. This is what lets prev/next links work even
+      // when the target hasn't been written yet.
+      const dailyDate = linkEl.getAttribute('data-daily-date') || '';
+      if (dailyDate) {
+        void (async () => {
+          try {
+            const daily = await import('../api/daily');
+            const ref = await daily.getOrCreateNoteForDate(dailyDate);
+            const dbPage = S.pages.find((p) => p.Id === ref.dbPageId);
+            if (!dbPage) return;
+            const v = await import('./views');
+            await v.doSelectDb(ref.dbPageId, dbPage);
+            const r = await import('./row-page');
+            const item = S.dbItems.find((i) => i.Id === ref.rowId);
+            if (item) await r.openRowAsPage(ref.dbPageId, item);
+          } catch (err) {
+            const ui = await import('./ui-helpers');
+            ui.toast('デイリーノートを開けませんでした: ' + (err as Error).message, 'err');
+          }
+        })();
+        return;
+      }
       const pageId = linkEl.getAttribute('data-page-id') || '';
       const pendingTitle = linkEl.getAttribute('data-pending') === '1'
         ? (linkEl.textContent || '').trim()

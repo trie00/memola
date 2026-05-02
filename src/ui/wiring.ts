@@ -146,6 +146,9 @@ export function attachAll(): void {
       if (!item) return;
       createMenu.classList.remove('on');
       switch (item.dataset.cm) {
+        case 'daily-today':
+          void openTodayDailyNote();
+          break;
         case 'new-page':
         case 'tpl-weekly':
         case 'tpl-minutes':
@@ -428,6 +431,7 @@ export function attachAll(): void {
       case 'copy-link':   await copyPageLink(); break;
       case 'publish':     await togglePublish(); break;
       case 'copy-pub-url': await copyPublishedUrl(); break;
+      case 'restore-daily': await restoreToDailyNote(); break;
       case 'print':       printCurrent(); break;
       case 'info':        showPageInfo(); break;
       case 'focus':       toggleFocusMode(); break;
@@ -440,8 +444,17 @@ export function attachAll(): void {
     const lbl = document.querySelector('.n365-pgm-publish-label');
     const copyItem = document.querySelector<HTMLElement>('[data-action="copy-pub-url"]');
     const publishItem = document.querySelector<HTMLElement>('[data-action="publish"]');
+    const restoreItem = document.querySelector<HTMLElement>('[data-action="restore-daily"]');
     // Only real pages (not DB views, not row-as-page) can be published.
     const isRealPage = !!S.currentId && S.currentType === 'page' && !S.currentRow;
+    // Restore-to-daily is only meaningful for pages that came from a
+    // daily-note conversion (OriginDailyDate metadata is set).
+    if (restoreItem) {
+      const meta = isRealPage && S.currentId
+        ? S.meta.pages.find((p) => p.id === S.currentId)
+        : null;
+      restoreItem.style.display = meta?.originDailyDate ? '' : 'none';
+    }
     if (!isRealPage) {
       if (publishItem) publishItem.style.display = 'none';
       if (copyItem) copyItem.style.display = 'none';
@@ -495,6 +508,69 @@ export function attachAll(): void {
     const url = m.publishedUrlFor(id);
     try { await navigator.clipboard.writeText(url); toast('URL をコピーしました'); }
     catch { toast('コピー失敗', 'err'); }
+  }
+
+  /** Restore a converted-from-daily page back to a daily-note row. */
+  async function restoreToDailyNote(): Promise<void> {
+    const id = S.currentId;
+    if (!id) return;
+    const meta = S.meta.pages.find((p) => p.id === id);
+    if (!meta?.originDailyDate) return;
+    if (!confirm(`このページをデイリーノート (${meta.originDailyDate}) に戻しますか？\n\n通常ページとしての本ページは削除され、本文がデイリー側に統合されます。`)) return;
+    try {
+      setLoad(true, 'デイリーノートに復元しています...');
+      const daily = await import('../api/daily');
+      const { rowId, date } = await daily.restoreToDaily(id);
+      // Refresh page tree (the converted page was deleted, daily DB row added)
+      const { apiGetPages } = await import('../api/pages');
+      S.pages = await apiGetPages();
+      renderTree();
+      // Open the daily note we just restored to
+      const dailyDb = await daily.ensureDailyDb();
+      const dbPage = S.pages.find((p) => p.Id === dailyDb.dbPageId);
+      if (dbPage) {
+        const v = await import('./views');
+        await v.doSelectDb(dailyDb.dbPageId, dbPage);
+        const item = S.dbItems.find((i) => i.Id === rowId);
+        if (item) {
+          const r = await import('./row-page');
+          await r.openRowAsPage(dailyDb.dbPageId, item);
+        }
+      }
+      toast('デイリーノート (' + date + ') に戻しました');
+    } catch (e) {
+      toast('復元失敗: ' + (e as Error).message, 'err');
+    } finally { setLoad(false); }
+  }
+
+  /** Open (or first-time create) the daily note for today. Initializes the
+   *  reserved daily DB on first invocation. Pinned to the sidebar so the
+   *  user can also reach it via the page tree afterwards. */
+  async function openTodayDailyNote(): Promise<void> {
+    try {
+      setLoad(true, 'デイリーノートを開いています...');
+      const daily = await import('../api/daily');
+      const date = daily.todayYMD();
+      const ref = await daily.getOrCreateNoteForDate(date);
+      // Make sure the new daily DB shows up in the sidebar (S.pages may be
+      // stale if this is the very first call in the session).
+      if (!S.pages.some((p) => p.Id === ref.dbPageId)) {
+        const { apiGetPages } = await import('../api/pages');
+        S.pages = await apiGetPages();
+      }
+      const dbPage = S.pages.find((p) => p.Id === ref.dbPageId);
+      if (!dbPage) { toast('デイリー DB が見つかりません', 'err'); return; }
+      const v = await import('./views');
+      await v.doSelectDb(ref.dbPageId, dbPage);
+      const item = S.dbItems.find((i) => i.Id === ref.rowId);
+      if (item) {
+        const r = await import('./row-page');
+        await r.openRowAsPage(ref.dbPageId, item);
+      }
+      renderTree();
+    } catch (e) {
+      toast('デイリーノートを開けませんでした: ' + (e as Error).message, 'err');
+    } finally { setLoad(false); }
   }
 
   // Apply persisted focus mode + viewport-based auto collapse

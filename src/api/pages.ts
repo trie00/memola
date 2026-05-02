@@ -36,6 +36,7 @@ interface PageRow {
   PublishedUrl?: string;    // absolute URL of the mirrored Site Page
   PublishedPageId?: number; // SP.Publishing.SitePage Id
   PublishedDirty?: number;  // 0 / 1 — page edited since the last sync to the Site Page
+  OriginDailyDate?: string; // for converted pages: the original YYYY-MM-DD
 }
 
 let _ensurePromise: Promise<void> | null = null;
@@ -46,6 +47,7 @@ const REQUIRED_FIELDS: Array<[string, number]> = [
   ['ParentId', 2], ['PageType', 2], ['Icon', 2], ['Pinned', 9], ['Trashed', 9],
   ['ListTitle', 2], ['DbRowId', 9], ['Body', 3],
   ['Published', 9], ['PublishedUrl', 3], ['PublishedPageId', 9], ['PublishedDirty', 9],
+  ['OriginDailyDate', 2],
 ];
 
 /** Idempotently create the n365-pages list and its columns. Resilient to
@@ -108,6 +110,7 @@ function rowToMeta(row: PageRow): PageMeta {
   if (row.PublishedUrl) m.publishedUrl = row.PublishedUrl;
   if (row.PublishedPageId && row.PublishedPageId > 0) m.publishedSitePageId = row.PublishedPageId;
   if (row.PublishedDirty && row.PublishedDirty > 0) m.publishedDirty = true;
+  if (row.OriginDailyDate) m.originDailyDate = row.OriginDailyDate;
   return m;
 }
 
@@ -119,7 +122,7 @@ interface FetchedRow {
 }
 
 async function fetchOneRow(itemId: number, select?: string): Promise<FetchedRow | null> {
-  const sel = select || 'Id,Title,ParentId,PageType,Icon,Pinned,Trashed,ListTitle,DbRowId,Body,Published,PublishedUrl,PublishedPageId,PublishedDirty,Modified,Editor/Title';
+  const sel = select || 'Id,Title,ParentId,PageType,Icon,Pinned,Trashed,ListTitle,DbRowId,Body,Published,PublishedUrl,PublishedPageId,PublishedDirty,OriginDailyDate,Modified,Editor/Title';
   // Only $expand=Editor when an Editor sub-field is in $select; otherwise SP
   // returns 400 (expand without matching select).
   const expandPart = /\bEditor\//.test(sel) ? '&$expand=Editor' : '';

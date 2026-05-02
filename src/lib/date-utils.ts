@@ -51,3 +51,42 @@ export function formatDateJST(value: string | null | undefined): string {
   const day = String(jst.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
+
+/** Today's date in canonical YYYY-MM-DD form (local time). */
+export function todayYMD(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Add `delta` days to a YYYY-MM-DD string. Returns canonical YYYY-MM-DD. */
+export function addDaysYMD(ymd: string, delta: number): string {
+  const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return ymd;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  d.setUTCDate(d.getUTCDate() + delta);
+  const y = d.getUTCFullYear();
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+
+const _DOW_JA = ['日', '月', '火', '水', '木', '金', '土'];
+
+/** "2026-05-02 (Sat)" style readable label for a YYYY-MM-DD. */
+export function formatDailyTitle(ymd: string): string {
+  const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return ymd;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  const dow = _DOW_JA[d.getUTCDay()];
+  return `${ymd} (${dow})`;
+}
+
+/** True if a string looks like an auto-generated daily-note title:
+ *  YYYY-MM-DD or YYYY-MM-DD (曜) — used to detect "user renamed to a custom
+ *  title" for the convert-to-page prompt. */
+export function isDailyTitleFormat(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}(\s*\([^)]+\))?\s*$/.test(s);
+}

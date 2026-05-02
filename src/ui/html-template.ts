@@ -24,6 +24,7 @@ export function buildHtml(): string {
       '</div>' +
       '<div id="n365-create-menu">' +
         '<div class="n365-cm-section">作成</div>' +
+        '<div class="n365-cm-item" data-cm="daily-today"><span class="n365-cm-ic">📅</span><div class="n365-cm-body"><span class="n365-cm-name">今日のノート</span><span class="n365-cm-sub">デイリーノートを開く / 作成</span></div></div>' +
         '<div class="n365-cm-item" data-cm="new-page"><span class="n365-cm-ic">📄</span><div class="n365-cm-body"><span class="n365-cm-name">空のページ</span><span class="n365-cm-sub">L1〜L3に追加</span></div></div>' +
         '<div class="n365-cm-item" data-cm="new-db"><span class="n365-cm-ic">🗂</span><div class="n365-cm-body"><span class="n365-cm-name">空のDB</span><span class="n365-cm-sub">リスト＋mdフォルダを作成</span></div></div>' +
         '<div class="n365-cm-sep"></div>' +
@@ -255,6 +256,7 @@ export function buildHtml(): string {
       '<div class="n365-pgm-item" data-action="copy-link">' + ICONS.link + '<span>リンクをコピー</span></div>' +
       '<div class="n365-pgm-item" data-action="publish">' + ICONS.link + '<span class="n365-pgm-publish-label">Web 公開</span></div>' +
       '<div class="n365-pgm-item" data-action="copy-pub-url" style="display:none">' + ICONS.copy + '<span>公開 URL をコピー</span></div>' +
+      '<div class="n365-pgm-item" data-action="restore-daily" style="display:none">📅<span>デイリーノートに戻す</span></div>' +
       '<div class="n365-pgm-sep"></div>' +
       '<div class="n365-pgm-item" data-action="print">' + ICONS.print + '<span>印刷</span></div>' +
       '<div class="n365-pgm-item" data-action="info">' + ICONS.info + '<span>ページ情報</span></div>' +

@@ -121,6 +121,11 @@ export function domWalk(node: Node): string {
     // round-trip is stable across renames (id is canonical, title is just
     // a snapshot for human-readable Markdown).
     if (el.classList.contains('n365-page-link')) {
+      // Daily-note "deferred" link → `[[daily:YYYY-MM-DD]]`. The link target
+      // is the *date*, not a page id, because the row may not exist yet
+      // (clicking it find-or-creates).
+      const dailyDate = el.getAttribute('data-daily-date') || '';
+      if (dailyDate) return '[[daily:' + dailyDate + ']]';
       const pid = el.getAttribute('data-page-id') || '';
       const text = (el.textContent || '').trim();
       if (pid) return '[[' + pid + '|' + text + ']]';
@@ -148,6 +153,12 @@ export function mdToHtml(md: string): string {
   }
   function inline(t: string): string {
     return esc(t)
+      // Daily-note deferred link: [[daily:YYYY-MM-DD]] → atomic chip whose
+      // click handler find-or-creates the daily-note row for that date.
+      // Must come BEFORE the bare [[title]] regex (which would otherwise
+      // match `daily:2026-05-02` as a free-form title).
+      .replace(/\[\[daily:(\d{4}-\d{2}-\d{2})\]\]/g,
+        '<a class="n365-page-link daily-link" data-daily-date="$1" contenteditable="false">$1</a>')
       // Internal page-link with id: [[<id>|<title>]] → atomic anchor chip.
       // Match before standard [text](url) so the inner [..] aren't parsed as
       // image/link syntax. contenteditable=false makes the chip behave as a
