@@ -55,6 +55,7 @@ const KEY_CORP_MODEL       = 'n365.ai.corpModel';
 const KEY_CORP_APIKEY      = 'n365.ai.corpKey';
 const KEY_CORP_BASE_URL    = 'n365.ai.corpBaseUrl';
 const KEY_CORP_DEPLOY_PREF = 'n365.ai.corpDeployPrefix';
+const KEY_CORP_OVERRIDES   = 'n365.ai.corpOverrides';
 
 const DEFAULT_PROVIDER: Provider = 'claude';
 const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-5';
@@ -132,6 +133,66 @@ export function deploymentIdFor(modelId: string): string {
   const prefix = getCorpAiDeploymentPrefix();
   const tail = modelId.replace(/\./g, '');
   return prefix + tail;
+}
+
+// ─── Per-model overrides ──────────────────────────────────────────────────
+//
+// Some gateways host different model families on different endpoints (e.g.
+// GPT-5 系 may be served by a separate host or require a different
+// api-version than gpt-4.1 系). Users can paste a small JSON map into the
+// settings to override `baseUrl` / `apiVersion` / `deploymentId` per model.
+//
+//   {
+//     "gpt-5": {
+//       "baseUrl": "https://other-gateway.example.com/customapi",
+//       "apiVersion": "2025-01-01-preview"
+//     },
+//     "gpt-5-mini": { "apiVersion": "2025-01-01-preview" }
+//   }
+//
+// Any field omitted falls back to the corresponding global setting.
+
+export interface CorpAiOverride {
+  baseUrl?: string;
+  apiVersion?: string;
+  deploymentId?: string;
+}
+
+export function getCorpAiOverridesRaw(): string {
+  return readLS(KEY_CORP_OVERRIDES);
+}
+
+export function setCorpAiOverridesRaw(json: string): void {
+  writeLS(KEY_CORP_OVERRIDES, json.trim());
+}
+
+/** Parse the JSON overrides safely. Invalid JSON returns an empty map so
+ *  the rest of the app keeps working with the global defaults. */
+export function getCorpAiOverrides(): Record<string, CorpAiOverride> {
+  const raw = getCorpAiOverridesRaw();
+  if (!raw) return {};
+  try {
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === 'object') return obj as Record<string, CorpAiOverride>;
+  } catch { /* ignore */ }
+  return {};
+}
+
+/** Resolve the effective endpoint config for a model — applies any
+ *  user-supplied override on top of the global defaults. */
+export function resolveCorpAiEndpoint(modelId: string): {
+  baseUrl: string;
+  apiVersion: string;
+  deploymentId: string;
+} {
+  const m = findCorpAiModel(modelId);
+  const defaultApiVersion = m?.reasoning ? '2024-12-01-preview' : '2024-06-01';
+  const ov = getCorpAiOverrides()[modelId] || {};
+  return {
+    baseUrl: (ov.baseUrl || getCorpAiBaseUrl() || '').replace(/\/$/, ''),
+    apiVersion: ov.apiVersion || defaultApiVersion,
+    deploymentId: ov.deploymentId || deploymentIdFor(modelId),
+  };
 }
 
 /** The model id currently in effect for the active provider. */

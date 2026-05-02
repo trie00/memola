@@ -13,7 +13,7 @@
 
 import {
   findCorpAiModel, getCorpAiKey, getCorpAiModel,
-  getCorpAiBaseUrl, deploymentIdFor,
+  resolveCorpAiEndpoint,
 } from './ai-settings';
 import type {
   ApiMessage, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock,
@@ -44,24 +44,17 @@ export interface CorpChatOpts {
   stream?: CorpChatHandlers;
 }
 
-/** Choose the api-version a given model requires. Reasoning models (GPT-5
- *  series, o3, o4-mini) need the preview version. */
-function apiVersionFor(modelId: string): string {
-  const m = findCorpAiModel(modelId);
-  return m?.reasoning ? '2024-12-01-preview' : '2024-06-01';
-}
-
-/** Construct the chat completions endpoint URL. */
+/** Construct the chat completions endpoint URL. Honors per-model overrides
+ *  (model-specific baseUrl / api-version / deployment-id from settings). */
 function chatUrlFor(modelId: string): string {
   const m = findCorpAiModel(modelId);
   if (!m) throw new Error('未知のモデル: ' + modelId);
-  const baseUrl = getCorpAiBaseUrl();
-  if (!baseUrl) throw new Error('企業AI API ベース URL が未設定です (設定で構成)');
-  const deploymentId = deploymentIdFor(modelId);
-  if (!deploymentId) throw new Error('企業AI API デプロイ名が未設定です (設定でプレフィックスを構成)');
-  const apiVersion = apiVersionFor(modelId);
-  return baseUrl + '/' + apiVersion +
-    '/openai/deployments/' + deploymentId + '/chat/completions?api-version=' + apiVersion;
+  const ep = resolveCorpAiEndpoint(modelId);
+  if (!ep.baseUrl) throw new Error('企業AI API ベース URL が未設定です (設定で構成)');
+  if (!ep.deploymentId) throw new Error('企業AI API デプロイ名が未設定です (設定でプレフィックスを構成)');
+  return ep.baseUrl + '/' + ep.apiVersion +
+    '/openai/deployments/' + ep.deploymentId +
+    '/chat/completions?api-version=' + ep.apiVersion;
 }
 
 /** Plain (non-streaming) chat completion. Returns the assistant's reply. */

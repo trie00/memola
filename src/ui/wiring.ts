@@ -593,9 +593,10 @@ export function attachAll(): void {
   const setCorpKey = document.getElementById('n365-set-corpai-key') as HTMLInputElement | null;
   const setCorpBaseUrl = document.getElementById('n365-set-corpai-baseurl') as HTMLInputElement | null;
   const setCorpPrefix = document.getElementById('n365-set-corpai-prefix') as HTMLInputElement | null;
+  const setCorpOverrides = document.getElementById('n365-set-corpai-overrides') as HTMLTextAreaElement | null;
   const setDensity = document.getElementById('n365-set-density') as HTMLSelectElement | null;
   const setTheme = document.getElementById('n365-set-theme') as HTMLSelectElement | null;
-  if (setBtn && setMd && setKey && setProv && setClaudeModel && setCorpModel && setCorpKey && setCorpBaseUrl && setCorpPrefix && setDensity && setTheme) {
+  if (setBtn && setMd && setKey && setProv && setClaudeModel && setCorpModel && setCorpKey && setCorpBaseUrl && setCorpPrefix && setCorpOverrides && setDensity && setTheme) {
     // Populate model dropdowns once.
     void import('../api/ai-settings').then((ai) => {
       ai.CLAUDE_MODELS.forEach((m) => {
@@ -631,6 +632,7 @@ export function attachAll(): void {
           setCorpKey.value = ai.getCorpAiKey();
           setCorpBaseUrl.value = ai.getCorpAiBaseUrl();
           setCorpPrefix.value = ai.getCorpAiDeploymentPrefix();
+          setCorpOverrides.value = ai.getCorpAiOverridesRaw();
           setDensity.value = localStorage.getItem('n365.density') || 'regular';
           setTheme.value = localStorage.getItem('n365.theme') || 'light';
         } catch { /* ignore */ }
@@ -641,6 +643,21 @@ export function attachAll(): void {
     setMd.addEventListener('click', (e) => { if (e.target === setMd) setMd.classList.remove('on'); });
     document.getElementById('n365-set-cancel')?.addEventListener('click', () => setMd.classList.remove('on'));
     document.getElementById('n365-set-save')?.addEventListener('click', () => {
+      // Pre-validate the overrides JSON so the user gets immediate feedback
+      // rather than silent fallback at request time.
+      const ovRaw = setCorpOverrides.value.trim();
+      if (ovRaw) {
+        try {
+          const parsed = JSON.parse(ovRaw);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            toast('オーバーライド JSON はオブジェクト形式で書いてください', 'err');
+            return;
+          }
+        } catch (e) {
+          toast('オーバーライド JSON が不正です: ' + (e as Error).message, 'err');
+          return;
+        }
+      }
       void import('../api/ai-settings').then((ai) => {
         try {
           ai.setProvider(setProv.value as 'claude' | 'corp');
@@ -651,6 +668,7 @@ export function attachAll(): void {
           ai.setCorpAiKey(setCorpKey.value);
           ai.setCorpAiBaseUrl(setCorpBaseUrl.value);
           ai.setCorpAiDeploymentPrefix(setCorpPrefix.value);
+          ai.setCorpAiOverridesRaw(setCorpOverrides.value);
           localStorage.setItem('n365.density', setDensity.value);
           localStorage.setItem('n365.theme', setTheme.value);
         } catch { /* ignore */ }

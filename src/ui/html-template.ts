@@ -266,8 +266,11 @@ export function buildHtml(): string {
       '<div class="n365-set-row" data-prov="corp"><label>デプロイ ID プレフィックス</label>' +
         '<input id="n365-set-corpai-prefix" type="text" placeholder="myco-openai-uat-">' +
       '</div>' +
+      '<div class="n365-set-row" data-prov="corp"><label>モデル別オーバーライド (任意 / JSON)</label>' +
+        '<textarea id="n365-set-corpai-overrides" rows="6" placeholder=\'{"gpt-5":{"baseUrl":"https://...","apiVersion":"2025-01-01-preview","deploymentId":"..."}}\' style="font-family:var(--font-mono);font-size:11px"></textarea>' +
+      '</div>' +
       '<div class="n365-set-row" data-prov="corp"><label></label>' +
-        '<div class="n365-set-hint">企業AI でもページ/DB 操作のツール機能を利用できます (Function Calling 経由)。<br>注: 推論モデル (GPT-5系・o3・o4-mini) で挙動が安定しない場合は gpt-4.1 系をお試しください。<br>デプロイ ID は <code>{プレフィックス}{モデル名(.は削除)}</code> の形式で組み立てられます。</div>' +
+        '<div class="n365-set-hint">企業AI でもページ/DB 操作のツール機能を利用できます (Function Calling 経由)。<br>デプロイ ID は <code>{プレフィックス}{モデル名(.は削除)}</code> の形式で組み立てられます。<br>モデルごとにエンドポイントや api-version が違う場合は、上のオーバーライドに <code>{"モデル名":{"baseUrl":"...","apiVersion":"...","deploymentId":"..."}}</code> を入れてください (各フィールドは任意・未指定で全体設定にフォールバック)。</div>' +
       '</div>' +
       '<div class="n365-set-section">表示</div>' +
       '<div class="n365-set-row"><label>表示密度</label><select id="n365-set-density"><option value="compact">コンパクト</option><option value="regular" selected>標準</option><option value="comfy">ゆったり</option></select></div>' +
