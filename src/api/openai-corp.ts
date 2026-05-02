@@ -1,25 +1,24 @@
-// 企業AI client — Panasonic 委託先で利用可能な Azure OpenAI ゲートウェイ。
+// Corporate AI gateway client (Azure OpenAI 互換 / Function Calling 対応)。
 //
-// ベース URL は /corpapi/{api-version}/openai/deployments/{deployment-id}/...
-// 認証は `api-key: <key>` ヘッダ。
+// ベース URL とデプロイ ID 命名規則は組織ごとに違うため、コードに固有値を
+// 持たず ai-settings.ts からユーザー設定値を取得して動的に組み立てる。
 //
-// 2 種類の API を提供:
-//  - corpaiChatText  ... プレーンチャット (text only)
-//  - corpaiChatRaw   ... Claude 互換 (Tool Use / Function Calling 対応)
-//                      run-agent.ts の agent loop を Claude / 企業AI 両対応にする
-//                      ための統一インターフェース。
+// 提供:
+//  - corpAiChatText  ... プレーンチャット (text only)
+//  - corpAiChatRaw   ... Claude 互換 (Tool Use / Function Calling 対応)
+//                        run-agent.ts の agent loop を Claude / 企業AI 両対応
+//                        にするための統一インターフェース。
 //
 // ストリーミングは SSE (data: {...}\n\n) で OpenAI 互換。
 
 import {
   findCorpAiModel, getCorpAiKey, getCorpAiModel,
+  getCorpAiBaseUrl, deploymentIdFor,
 } from './ai-settings';
 import type {
   ApiMessage, ContentBlock, TextBlock, ToolUseBlock, ToolResultBlock,
   ToolDef, SystemBlock, ClaudeResponse, StreamHandlers,
 } from './anthropic';
-
-const BASE_HOST = 'https://pisc-newsol-openai-uat-mgd.azure-api.net/corpapi';
 
 /** OpenAI message shape — superset of what we send. Only role + content for
  *  the basic chat path. The SDK uses `image_url` parts for vision but n365's
@@ -29,12 +28,12 @@ export interface OAMessage {
   content: string;
 }
 
-export interface PxChatHandlers {
+export interface CorpChatHandlers {
   /** Cumulative-text delta — fired per text chunk during streaming. */
   onText?: (delta: string) => void;
 }
 
-export interface PxChatOpts {
+export interface CorpChatOpts {
   messages: OAMessage[];
   /** Falls back to current setting when omitted. */
   model?: string;
@@ -42,11 +41,11 @@ export interface PxChatOpts {
    *  reasoning models (GPT-5系 / o3 / o4-mini). */
   maxTokens?: number;
   signal?: AbortSignal;
-  stream?: PxChatHandlers;
+  stream?: CorpChatHandlers;
 }
 
 /** Choose the api-version a given model requires. Reasoning models (GPT-5
- *  series, o3, o4-mini) need the preview version per the spec deck. */
+ *  series, o3, o4-mini) need the preview version. */
 function apiVersionFor(modelId: string): string {
   const m = findCorpAiModel(modelId);
   return m?.reasoning ? '2024-12-01-preview' : '2024-06-01';
@@ -56,13 +55,17 @@ function apiVersionFor(modelId: string): string {
 function chatUrlFor(modelId: string): string {
   const m = findCorpAiModel(modelId);
   if (!m) throw new Error('未知のモデル: ' + modelId);
+  const baseUrl = getCorpAiBaseUrl();
+  if (!baseUrl) throw new Error('企業AI API ベース URL が未設定です (設定で構成)');
+  const deploymentId = deploymentIdFor(modelId);
+  if (!deploymentId) throw new Error('企業AI API デプロイ名が未設定です (設定でプレフィックスを構成)');
   const apiVersion = apiVersionFor(modelId);
-  return BASE_HOST + '/' + apiVersion +
-    '/openai/deployments/' + m.deploymentId + '/chat/completions?api-version=' + apiVersion;
+  return baseUrl + '/' + apiVersion +
+    '/openai/deployments/' + deploymentId + '/chat/completions?api-version=' + apiVersion;
 }
 
 /** Plain (non-streaming) chat completion. Returns the assistant's reply. */
-export async function corpaiChatText(opts: PxChatOpts): Promise<string> {
+export async function corpAiChatText(opts: CorpChatOpts): Promise<string> {
   const apiKey = getCorpAiKey();
   if (!apiKey) throw new Error('企業AI API キーが未設定です');
   const modelId = opts.model || getCorpAiModel();
@@ -95,7 +98,7 @@ export async function corpaiChatText(opts: PxChatOpts): Promise<string> {
   });
   if (!r.ok) {
     const txt = await r.text().catch(() => '');
-    throw new Error(formatPxError(r.status, txt));
+    throw new Error(formatCorpError(r.status, txt));
   }
   const j = await r.json() as {
     choices?: Array<{ message?: { content?: string } }>;
@@ -119,7 +122,7 @@ async function streamChat(
   });
   if (!r.ok) {
     const txt = await r.text().catch(() => '');
-    throw new Error(formatPxError(r.status, txt));
+    throw new Error(formatCorpError(r.status, txt));
   }
   if (!r.body) throw new Error('ストリーミング応答を取得できませんでした');
 
@@ -155,12 +158,12 @@ async function streamChat(
   return full;
 }
 
-/** Map the SP-side status codes to friendlier Japanese messages — the spec
- *  deck enumerates these. Falls through to the raw response text otherwise. */
-function formatPxError(status: number, body: string): string {
+/** Map gateway status codes to friendlier Japanese messages. Falls through
+ *  to the raw response text otherwise. */
+function formatCorpError(status: number, body: string): string {
   const sliced = body ? ' — ' + body.slice(0, 240) : '';
   if (status === 401) return '企業AI 失敗: 401 サブスクリプションキーが無効/未指定' + sliced;
-  if (status === 403) return '企業AI 失敗: 403 接続元 IP が許可されていません (WARP 未接続?)' + sliced;
+  if (status === 403) return '企業AI 失敗: 403 接続元 IP が許可されていません (社内ネットワーク接続を確認)' + sliced;
   if (status === 429) return '企業AI 失敗: 429 トークン上限超過 (1分後に再試行)' + sliced;
   if (status === 400) return '企業AI 失敗: 400 リクエスト不正 (モデル/JSON を確認)' + sliced;
   return '企業AI 失敗: ' + status + sliced;
@@ -231,7 +234,7 @@ interface OAToolDef {
 }
 
 /** Convert Claude ToolDef[] to OpenAI's `tools` request param. Claude's
- *  `cache_control` is not transferable; 企業AI / Azure OpenAI doesn't expose
+ *  `cache_control` is not transferable; the corporate gateway doesn't expose
  *  prompt-caching here, so we drop it. */
 function toOATools(tools: ToolDef[]): OAToolDef[] {
   return tools.map((t) => ({
@@ -245,7 +248,7 @@ function toOATools(tools: ToolDef[]): OAToolDef[] {
 }
 
 /** Flatten a SystemBlock[] (with cache_control hints) to a single string —
- *  企業AI accepts a `role: 'system'` message body without the structured
+ *  OpenAI accepts a `role: 'system'` message body without the structured
  *  per-block format. */
 function flattenSystem(s: string | SystemBlock[] | undefined): string {
   if (!s) return '';
@@ -253,7 +256,7 @@ function flattenSystem(s: string | SystemBlock[] | undefined): string {
   return s.map((b) => b.text).join('\n\n');
 }
 
-interface PxRawOpts {
+interface CorpRawOpts {
   messages: ApiMessage[];
   system?: string | SystemBlock[];
   tools?: ToolDef[];
@@ -263,10 +266,10 @@ interface PxRawOpts {
   stream?: StreamHandlers;
 }
 
-/** Claude-shaped agent-loop entry point implemented against the 企業AI
- *  endpoint. Returns the same `ClaudeResponse` envelope so run-agent.ts
+/** Claude-shaped agent-loop entry point implemented against the corporate AI
+ *  gateway. Returns the same `ClaudeResponse` envelope so run-agent.ts
  *  can dispatch on provider without conditional branching downstream. */
-export async function corpaiChatRaw(opts: PxRawOpts): Promise<ClaudeResponse> {
+export async function corpAiChatRaw(opts: CorpRawOpts): Promise<ClaudeResponse> {
   const apiKey = getCorpAiKey();
   if (!apiKey) throw new Error('企業AI API キーが未設定です');
   const modelId = opts.model || getCorpAiModel();
@@ -300,7 +303,7 @@ export async function corpaiChatRaw(opts: PxRawOpts): Promise<ClaudeResponse> {
     body: JSON.stringify(body),
     signal: opts.signal,
   });
-  if (!r.ok) throw new Error(formatPxError(r.status, await r.text().catch(() => '')));
+  if (!r.ok) throw new Error(formatCorpError(r.status, await r.text().catch(() => '')));
   const j = await r.json() as {
     choices?: Array<{
       message?: OAFullMessage;
@@ -354,7 +357,7 @@ async function streamChatRaw(
     body: JSON.stringify(body),
     signal,
   });
-  if (!r.ok) throw new Error(formatPxError(r.status, await r.text().catch(() => '')));
+  if (!r.ok) throw new Error(formatCorpError(r.status, await r.text().catch(() => '')));
   if (!r.body) throw new Error('ストリーミング応答を取得できませんでした');
 
   const reader = r.body.getReader();

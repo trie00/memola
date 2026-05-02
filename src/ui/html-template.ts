@@ -245,7 +245,7 @@ export function buildHtml(): string {
       '<div class="n365-set-row"><label>使用するサービス</label>' +
         '<select id="n365-set-provider">' +
           '<option value="claude">Anthropic Claude</option>' +
-          '<option value="corpai">企業AI (社内 / Azure OpenAI)</option>' +
+          '<option value="corp">企業AI API (Azure OpenAI 互換)</option>' +
         '</select>' +
       '</div>' +
       '<div class="n365-set-row" data-prov="claude"><label>Claude モデル</label>' +
@@ -254,14 +254,20 @@ export function buildHtml(): string {
       '<div class="n365-set-row" data-prov="claude"><label>Claude API キー</label>' +
         '<input id="n365-set-aikey" type="password" placeholder="sk-ant-...">' +
       '</div>' +
-      '<div class="n365-set-row" data-prov="corpai"><label>企業AI モデル</label>' +
+      '<div class="n365-set-row" data-prov="corp"><label>企業AI モデル</label>' +
         '<select id="n365-set-corpai-model"></select>' +
       '</div>' +
-      '<div class="n365-set-row" data-prov="corpai"><label>企業AI API キー</label>' +
+      '<div class="n365-set-row" data-prov="corp"><label>企業AI API キー</label>' +
         '<input id="n365-set-corpai-key" type="password" placeholder="サブスクリプションキー">' +
       '</div>' +
-      '<div class="n365-set-row" data-prov="corpai"><label></label>' +
-        '<div class="n365-set-hint">企業AI でもページ/DB 操作のツール機能を利用できます (Function Calling 経由)。<br>注: 推論モデル (GPT-5系・o3・o4-mini) で挙動が安定しない場合は gpt-4.1 系をお試しください。</div>' +
+      '<div class="n365-set-row" data-prov="corp"><label>ベース URL</label>' +
+        '<input id="n365-set-corpai-baseurl" type="text" placeholder="https://gateway.example.com/myapi">' +
+      '</div>' +
+      '<div class="n365-set-row" data-prov="corp"><label>デプロイ ID プレフィックス</label>' +
+        '<input id="n365-set-corpai-prefix" type="text" placeholder="myco-openai-uat-">' +
+      '</div>' +
+      '<div class="n365-set-row" data-prov="corp"><label></label>' +
+        '<div class="n365-set-hint">企業AI でもページ/DB 操作のツール機能を利用できます (Function Calling 経由)。<br>注: 推論モデル (GPT-5系・o3・o4-mini) で挙動が安定しない場合は gpt-4.1 系をお試しください。<br>デプロイ ID は <code>{プレフィックス}{モデル名(.は削除)}</code> の形式で組み立てられます。</div>' +
       '</div>' +
       '<div class="n365-set-section">表示</div>' +
       '<div class="n365-set-row"><label>表示密度</label><select id="n365-set-density"><option value="compact">コンパクト</option><option value="regular" selected>標準</option><option value="comfy">ゆったり</option></select></div>' +

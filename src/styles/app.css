@@ -912,7 +912,7 @@
   flex-shrink: 0;
   letter-spacing: 0.02em;
 }
-#n365-overlay .n365-ai-provider-badge[data-provider="corpai"] {
+#n365-overlay .n365-ai-provider-badge[data-provider="corp"] {
   background: rgba(47, 111, 158, 0.10);
   border-color: rgba(47, 111, 158, 0.28);
   color: #2f6f9e;

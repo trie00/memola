@@ -2,20 +2,22 @@
 //
 // n365 supports two AI back-ends:
 //   - Anthropic Claude API (default; full Tool Use agent)
-//   - 企業AI (企業向け Azure OpenAI ゲートウェイ; chat-completions only)
+//   - 企業AI API (Azure OpenAI 互換ゲートウェイ。Function Calling 経由で
+//     Tool Use もサポート)
 //
 // User picks the provider + model from the settings modal. Choices persist
 // in localStorage; everything is keyed off `getProvider()` / `getModel()`.
 // Each provider stores its own API key separately so switching back and
 // forth doesn't lose either.
+//
+// 企業AI API は組織ごとに base URL や deployment ID 命名規則が異なるため、
+// すべて localStorage の設定で可変化している（コードに固有名詞は持たない）。
 
-export type Provider = 'claude' | 'corpai';
+export type Provider = 'claude' | 'corp';
 
 export interface CorpAiModel {
-  /** Model name as the user sees it (also OpenAI's canonical name). */
+  /** Canonical OpenAI model id (e.g. 'gpt-4.1-mini'). */
   id: string;
-  /** SP-side deployment id used in the URL path. */
-  deploymentId: string;
   /** True when this is a "reasoning" model that requires
    *  `max_completion_tokens` in place of `max_tokens` and the
    *  `2024-12-01-preview` (or newer) api-version. */
@@ -24,19 +26,19 @@ export interface CorpAiModel {
   vision: boolean;
 }
 
-/** Catalog of 企業AI deployments, mirrored from the spec deck. Update this
- *  when new models are added on the SP side. */
-export const 企業AI_MODELS: CorpAiModel[] = [
-  { id: 'gpt-5',           deploymentId: 'pisc-newsol-openai-uat-gpt-5',           reasoning: true,  vision: true },
-  { id: 'gpt-5-mini',      deploymentId: 'pisc-newsol-openai-uat-gpt-5-mini',      reasoning: true,  vision: true },
-  { id: 'gpt-5-nano',      deploymentId: 'pisc-newsol-openai-uat-gpt-5-nano',      reasoning: true,  vision: true },
-  { id: 'o3',              deploymentId: 'pisc-newsol-openai-uat-o3',              reasoning: true,  vision: true },
-  { id: 'o4-mini',         deploymentId: 'pisc-newsol-openai-uat-o4-mini',         reasoning: true,  vision: true },
-  { id: 'gpt-4.1',         deploymentId: 'pisc-newsol-openai-uat-gpt-41',          reasoning: false, vision: true },
-  { id: 'gpt-4.1-mini',    deploymentId: 'pisc-newsol-openai-uat-gpt-41-mini',     reasoning: false, vision: true },
-  { id: 'gpt-4.1-nano',    deploymentId: 'pisc-newsol-openai-uat-gpt-41-nano',     reasoning: false, vision: true },
-  { id: 'gpt-4o',          deploymentId: 'pisc-newsol-openai-uat-gpt-4o',          reasoning: false, vision: true },
-  { id: 'gpt-4o-mini',     deploymentId: 'pisc-newsol-openai-uat-gpt-4o-mini',     reasoning: false, vision: true },
+/** Catalog of widely-deployed OpenAI model ids. The deployment-side name
+ *  is computed at request time from the user-configurable prefix. */
+export const CORP_AI_MODELS: CorpAiModel[] = [
+  { id: 'gpt-5',           reasoning: true,  vision: true },
+  { id: 'gpt-5-mini',      reasoning: true,  vision: true },
+  { id: 'gpt-5-nano',      reasoning: true,  vision: true },
+  { id: 'o3',              reasoning: true,  vision: true },
+  { id: 'o4-mini',         reasoning: true,  vision: true },
+  { id: 'gpt-4.1',         reasoning: false, vision: true },
+  { id: 'gpt-4.1-mini',    reasoning: false, vision: true },
+  { id: 'gpt-4.1-nano',    reasoning: false, vision: true },
+  { id: 'gpt-4o',          reasoning: false, vision: true },
+  { id: 'gpt-4o-mini',     reasoning: false, vision: true },
 ];
 
 /** Catalog of Claude models the AI panel exposes. Kept in sync with the
@@ -47,14 +49,16 @@ export const CLAUDE_MODELS: Array<{ id: string; label: string }> = [
   { id: 'claude-haiku-4-5',         label: 'Claude Haiku 4.5' },
 ];
 
-const KEY_PROVIDER     = 'n365.ai.provider';
-const KEY_CLAUDE_MODEL = 'n365.ai.claudeModel';
-const KEY_企業AI_MODEL   = 'n365.ai.corpaiModel';
-const KEY_企業AI_APIKEY  = 'n365.ai.corpaiKey';
+const KEY_PROVIDER         = 'n365.ai.provider';
+const KEY_CLAUDE_MODEL     = 'n365.ai.claudeModel';
+const KEY_CORP_MODEL       = 'n365.ai.corpModel';
+const KEY_CORP_APIKEY      = 'n365.ai.corpKey';
+const KEY_CORP_BASE_URL    = 'n365.ai.corpBaseUrl';
+const KEY_CORP_DEPLOY_PREF = 'n365.ai.corpDeployPrefix';
 
 const DEFAULT_PROVIDER: Provider = 'claude';
 const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-5';
-const DEFAULT_企業AI_MODEL = 'gpt-4.1-mini';
+const DEFAULT_CORP_MODEL = 'gpt-4.1-mini';
 
 function readLS(key: string): string {
   try { return localStorage.getItem(key) || ''; } catch { return ''; }
@@ -68,7 +72,7 @@ function writeLS(key: string, value: string): void {
 
 export function getProvider(): Provider {
   const v = readLS(KEY_PROVIDER);
-  return v === 'corpai' ? 'corpai' : DEFAULT_PROVIDER;
+  return v === 'corp' ? 'corp' : DEFAULT_PROVIDER;
 }
 export function setProvider(p: Provider): void {
   writeLS(KEY_PROVIDER, p);
@@ -82,27 +86,60 @@ export function setClaudeModel(model: string): void {
 }
 
 export function getCorpAiModel(): string {
-  const stored = readLS(KEY_企業AI_MODEL);
-  if (stored && 企業AI_MODELS.some((m) => m.id === stored)) return stored;
-  return DEFAULT_企業AI_MODEL;
+  const stored = readLS(KEY_CORP_MODEL);
+  if (stored && CORP_AI_MODELS.some((m) => m.id === stored)) return stored;
+  return DEFAULT_CORP_MODEL;
 }
 export function setCorpAiModel(model: string): void {
-  writeLS(KEY_企業AI_MODEL, model);
+  writeLS(KEY_CORP_MODEL, model);
 }
 
 export function getCorpAiKey(): string {
-  return readLS(KEY_企業AI_APIKEY);
+  return readLS(KEY_CORP_APIKEY);
 }
 export function setCorpAiKey(key: string): void {
-  writeLS(KEY_企業AI_APIKEY, key);
+  writeLS(KEY_CORP_APIKEY, key);
+}
+
+/** Base URL of the corporate AI gateway, up to (and including) the path
+ *  prefix that precedes the api-version segment. Example shape:
+ *      https://gateway.example.com/myapi
+ *  The full chat-completions URL is built as:
+ *      {baseUrl}/{api-version}/openai/deployments/{deployment-id}
+ *        /chat/completions?api-version={api-version}
+ *  Empty when not yet configured — request helpers throw a clear error. */
+export function getCorpAiBaseUrl(): string {
+  return readLS(KEY_CORP_BASE_URL).replace(/\/$/, '');
+}
+export function setCorpAiBaseUrl(url: string): void {
+  writeLS(KEY_CORP_BASE_URL, url.trim());
+}
+
+/** Prefix used to build the deployment id for each model. Many gateways
+ *  follow a `<prefix><modelname>` pattern (with `.` removed from the model
+ *  name, e.g. `gpt-4.1` → `gpt-41`). */
+export function getCorpAiDeploymentPrefix(): string {
+  return readLS(KEY_CORP_DEPLOY_PREF);
+}
+export function setCorpAiDeploymentPrefix(prefix: string): void {
+  writeLS(KEY_CORP_DEPLOY_PREF, prefix.trim());
+}
+
+/** Compute the deployment id for a given model id by combining the
+ *  user-configured prefix with the model name (dots stripped to match the
+ *  conventional naming rule used by Azure OpenAI deployments). */
+export function deploymentIdFor(modelId: string): string {
+  const prefix = getCorpAiDeploymentPrefix();
+  const tail = modelId.replace(/\./g, '');
+  return prefix + tail;
 }
 
 /** The model id currently in effect for the active provider. */
 export function getActiveModel(): string {
-  return getProvider() === 'corpai' ? getCorpAiModel() : getClaudeModel();
+  return getProvider() === 'corp' ? getCorpAiModel() : getClaudeModel();
 }
 
-/** Look up the deployment metadata for a 企業AI model id. */
+/** Look up the deployment metadata for a corporate-AI model id. */
 export function findCorpAiModel(modelId: string): CorpAiModel | null {
-  return 企業AI_MODELS.find((m) => m.id === modelId) || null;
+  return CORP_AI_MODELS.find((m) => m.id === modelId) || null;
 }

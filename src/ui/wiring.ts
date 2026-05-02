@@ -589,11 +589,13 @@ export function attachAll(): void {
   const setKey = document.getElementById('n365-set-aikey') as HTMLInputElement | null;
   const setProv = document.getElementById('n365-set-provider') as HTMLSelectElement | null;
   const setClaudeModel = document.getElementById('n365-set-claude-model') as HTMLSelectElement | null;
-  const setCorpaiModel = document.getElementById('n365-set-corpai-model') as HTMLSelectElement | null;
-  const setCorpaiKey = document.getElementById('n365-set-corpai-key') as HTMLInputElement | null;
+  const setCorpModel = document.getElementById('n365-set-corpai-model') as HTMLSelectElement | null;
+  const setCorpKey = document.getElementById('n365-set-corpai-key') as HTMLInputElement | null;
+  const setCorpBaseUrl = document.getElementById('n365-set-corpai-baseurl') as HTMLInputElement | null;
+  const setCorpPrefix = document.getElementById('n365-set-corpai-prefix') as HTMLInputElement | null;
   const setDensity = document.getElementById('n365-set-density') as HTMLSelectElement | null;
   const setTheme = document.getElementById('n365-set-theme') as HTMLSelectElement | null;
-  if (setBtn && setMd && setKey && setProv && setClaudeModel && setCorpaiModel && setCorpaiKey && setDensity && setTheme) {
+  if (setBtn && setMd && setKey && setProv && setClaudeModel && setCorpModel && setCorpKey && setCorpBaseUrl && setCorpPrefix && setDensity && setTheme) {
     // Populate model dropdowns once.
     void import('../api/ai-settings').then((ai) => {
       ai.CLAUDE_MODELS.forEach((m) => {
@@ -601,11 +603,11 @@ export function attachAll(): void {
         o.value = m.id; o.textContent = m.label;
         setClaudeModel.appendChild(o);
       });
-      ai.企業AI_MODELS.forEach((m) => {
+      ai.CORP_AI_MODELS.forEach((m) => {
         const o = document.createElement('option');
         o.value = m.id;
         o.textContent = m.id + (m.reasoning ? ' (推論)' : '') + (m.vision ? ' 🖼' : '');
-        setCorpaiModel.appendChild(o);
+        setCorpModel.appendChild(o);
       });
     });
 
@@ -624,9 +626,11 @@ export function attachAll(): void {
         try {
           setProv.value = ai.getProvider();
           setClaudeModel.value = ai.getClaudeModel();
-          setCorpaiModel.value = ai.getCorpAiModel();
+          setCorpModel.value = ai.getCorpAiModel();
           setKey.value = localStorage.getItem('n365.aiKey') || '';
-          setCorpaiKey.value = ai.getCorpAiKey();
+          setCorpKey.value = ai.getCorpAiKey();
+          setCorpBaseUrl.value = ai.getCorpAiBaseUrl();
+          setCorpPrefix.value = ai.getCorpAiDeploymentPrefix();
           setDensity.value = localStorage.getItem('n365.density') || 'regular';
           setTheme.value = localStorage.getItem('n365.theme') || 'light';
         } catch { /* ignore */ }
@@ -639,12 +643,14 @@ export function attachAll(): void {
     document.getElementById('n365-set-save')?.addEventListener('click', () => {
       void import('../api/ai-settings').then((ai) => {
         try {
-          ai.setProvider(setProv.value as 'claude' | 'corpai');
+          ai.setProvider(setProv.value as 'claude' | 'corp');
           if (setClaudeModel.value) ai.setClaudeModel(setClaudeModel.value);
-          if (setCorpaiModel.value) ai.setCorpAiModel(setCorpaiModel.value);
+          if (setCorpModel.value) ai.setCorpAiModel(setCorpModel.value);
           if (setKey.value) localStorage.setItem('n365.aiKey', setKey.value);
           else localStorage.removeItem('n365.aiKey');
-          ai.setCorpAiKey(setCorpaiKey.value);
+          ai.setCorpAiKey(setCorpKey.value);
+          ai.setCorpAiBaseUrl(setCorpBaseUrl.value);
+          ai.setCorpAiDeploymentPrefix(setCorpPrefix.value);
           localStorage.setItem('n365.density', setDensity.value);
           localStorage.setItem('n365.theme', setTheme.value);
         } catch { /* ignore */ }

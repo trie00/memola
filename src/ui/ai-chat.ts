@@ -89,11 +89,11 @@ async function maybeGenerateTitle(): Promise<void> {
       '記号・引用符・「」は不要、タイトル本体のみ。語尾の句点も不要。\n\n' +
       '発話: ' + userMsg;
     let raw = '';
-    if (ai.getProvider() === 'corpai') {
+    if (ai.getProvider() === 'corp') {
       // Skip silently if no key — title generation is non-critical.
       if (!ai.getCorpAiKey()) return;
-      const px = await import('../api/openai-px');
-      raw = await px.corpaiChatText({
+      const corp = await import('../api/openai-corp');
+      raw = await corp.corpAiChatText({
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 60,
       }).catch(() => '');
@@ -282,12 +282,12 @@ export function toggleAiPanel(): void {
 
 async function ensureApiKey(): Promise<boolean> {
   const ai = await import('../api/ai-settings');
-  if (ai.getProvider() === 'corpai') {
+  if (ai.getProvider() === 'corp') {
     if (ai.getCorpAiKey()) return true;
-    const k = prompt('企業AI のサブスクリプションキーを入力してください\n(設定からも変更できます)');
+    const k = prompt('企業AI API のサブスクリプションキーを入力してください\n(設定からも変更できます)');
     if (k && k.trim()) {
       ai.setCorpAiKey(k.trim());
-      toast('企業AI キーを保存しました');
+      toast('企業AI API キーを保存しました');
       return true;
     }
     return false;
@@ -316,7 +316,7 @@ export function syncProviderBadge(): void {
   if (!el) return;
   void import('../api/ai-settings').then((ai) => {
     const p = ai.getProvider();
-    const label = p === 'corpai' ? '企業AI · ' + ai.getCorpAiModel() : 'Claude · ' + ai.getClaudeModel();
+    const label = p === 'corp' ? '企業AI · ' + ai.getCorpAiModel() : 'Claude · ' + ai.getClaudeModel();
     el.textContent = label;
     el.dataset.provider = p;
   });
@@ -442,7 +442,7 @@ export async function sendAiMessage(text: string): Promise<void> {
   const ctrl = new AbortController();
   _activeAbort = ctrl;
   try {
-    // Provider routing happens inside runAgent → callClaudeRaw / corpaiChatRaw.
+    // Provider routing happens inside runAgent → callClaudeRaw / corpAiChatRaw.
     // Both speak the same ClaudeResponse shape so tool execution, history,
     // and streaming all work uniformly here.
     const result = await runAgent(S.ai.messages, systemPromptBlocks(), onTextDelta, ctrl.signal);
