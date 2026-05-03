@@ -39,6 +39,9 @@ function candidatePool(opts: PickerOptions): Page[] | undefined {
 }
 
 let _active: ActivePicker | null = null;
+/** Document-level mousedown listener that closes the picker when the user
+ *  clicks outside it. Wired on show, removed on hide. */
+let _outsideClickHandler: ((e: MouseEvent) => void) | null = null;
 
 function ensureContainer(): HTMLElement {
   let el = document.getElementById('n365-page-picker');
@@ -149,7 +152,8 @@ function commit(idx: number): void {
   const page = _active.filtered[idx];
   if (!page) return;
   const handler = _active.opts.onSelect;
-  hide();
+  // Suppress onCancel — the user picked something, not cancelled.
+  hide(true);
   handler(page);
 }
 
@@ -166,6 +170,22 @@ export function showPagePicker(opts: PickerOptions): void {
     selIdx: 0,
   };
   render();
+  // Wire a document-level outside-click handler so a stray click anywhere
+  // outside the picker dismisses it (and fires onCancel for callers that
+  // need to clean up trigger state — e.g. the wiki `[[` autocomplete).
+  if (_outsideClickHandler) {
+    document.removeEventListener('mousedown', _outsideClickHandler, true);
+  }
+  _outsideClickHandler = (e: MouseEvent) => {
+    if (!_active) return;
+    const target = e.target as Node | null;
+    if (!target) return;
+    if (_active.el.contains(target)) return;     // click inside picker — ignore
+    hide();
+  };
+  // Capture-phase so we beat any handler that would otherwise consume the
+  // event (e.g. an editor mousedown stealing focus before we close).
+  document.addEventListener('mousedown', _outsideClickHandler, true);
 }
 
 export function updatePagePickerQuery(query: string): void {
@@ -248,14 +268,21 @@ export function markBrokenPageLinks(root: Element): void {
   })();
 }
 
-export function hide(): void {
+/** Close the picker.
+ *  @param suppressCancel true → don't fire onCancel (used by the
+ *    successful-pick path inside commit()). Otherwise onCancel fires so
+ *    callers can clean up their trigger state (e.g. wiki `[[` autocomplete). */
+export function hide(suppressCancel = false): void {
   if (_active) {
     _active.el.style.display = 'none';
-    if (_active.opts.onCancel) {
-      // Don't call onCancel here on commit path; only when caller dismisses
-      // explicitly via hidePagePicker(). Differentiate by setting onCancel
-      // to undefined before hide() in commit. We just hide visually here.
-    }
+    const cb = _active.opts.onCancel;
+    _active = null;
+    if (!suppressCancel && cb) cb();
+  } else {
+    _active = null;
   }
-  _active = null;
+  if (_outsideClickHandler) {
+    document.removeEventListener('mousedown', _outsideClickHandler, true);
+    _outsideClickHandler = null;
+  }
 }

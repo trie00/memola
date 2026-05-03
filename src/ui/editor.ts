@@ -833,17 +833,25 @@ export function attachEditor(): void {
     const ke = e as KeyboardEvent;
     if (ke.isComposing || ke.keyCode === 229) return;
 
-    // Wiki-style `[[` autocomplete takes precedence over slash menu when
-    // active, but both keybindings overlap so we handle them carefully.
-    if (_wikiActive && pagePickerActive()) {
+    // Page picker keybindings — fired whenever the picker is open, whether
+    // it was triggered by `[[` autocomplete (_wikiActive) or by a slash
+    // command (/page-link, /inlinedb). Wiki-specific cleanup runs only
+    // when the wiki state is set.
+    if (pagePickerActive()) {
       if (ke.key === 'ArrowDown') { e.preventDefault(); pagePickerMove(1); return; }
       if (ke.key === 'ArrowUp')   { e.preventDefault(); pagePickerMove(-1); return; }
       if (ke.key === 'Enter') {
         if (pagePickerCount() > 0) { e.preventDefault(); pagePickerCommit(); return; }
-        // No matches → just close picker, let Enter through as a newline
-        closeWikiPicker();
+        // No matches → close picker, let Enter through as a newline
+        hidePagePicker();
+        if (_wikiActive) closeWikiPicker();
       }
-      if (ke.key === 'Escape') { e.preventDefault(); closeWikiPicker(); return; }
+      if (ke.key === 'Escape') {
+        e.preventDefault();
+        hidePagePicker();
+        if (_wikiActive) closeWikiPicker();
+        return;
+      }
       // Spaces are allowed in queries (page titles often have spaces) — don't dismiss on space
     }
 
