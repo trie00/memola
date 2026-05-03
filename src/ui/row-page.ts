@@ -1,7 +1,7 @@
 // Open a DB row as a full page.
-//   - Loads body markdown from n365-pages (PageType='row', keyed by DbRowId)
+//   - Loads body markdown from memola-pages (PageType='row', keyed by DbRowId)
 //   - Renders title + body in the standard editor view
-//   - Saves Title back to the DB row, body back to n365-pages
+//   - Saves Title back to the DB row, body back to memola-pages
 
 import { S, type ListItem } from '../state';
 import { g, getEd } from './dom';
@@ -31,6 +31,10 @@ export async function openRowAsPage(dbId: string, item: ListItem): Promise<void>
   S.currentRow = { listTitle, itemId: item.Id, dbId };
   S.currentType = 'page';
 
+  // Push the row open as its own history entry so the back button returns
+  // to the DB list view (not whatever page was open before the DB).
+  void import('./nav-history').then((m) => m.pushHistory(dbId, { rowList: listTitle, rowId: item.Id }));
+
   // Show editor area, hide DB view
   showView('page');
 
@@ -39,7 +43,7 @@ export async function openRowAsPage(dbId: string, item: ListItem): Promise<void>
   titleEl.value = (item.Title as string) || '';
   autoR(titleEl);
 
-  // Body — pulled from n365-pages (single source of truth for documents).
+  // Body — pulled from memola-pages (single source of truth for documents).
   const bodyMd = await getRowBody(listTitle, item.Id);
   const html = bodyMd ? mdToHtml(bodyMd) : '';
   const ed = getEd();
@@ -47,12 +51,12 @@ export async function openRowAsPage(dbId: string, item: ListItem): Promise<void>
   reattachInlineTables(ed);
 
   // Properties (Notion-style: Title 以外の各列を編集可能なリストで表示)
-  const propsEl = document.getElementById('n365-row-props');
+  const propsEl = document.getElementById('memola-row-props');
   if (propsEl) renderRowProperties(propsEl, S.dbFields, item, listTitle);
 
   // Hide page-icon section (DB rows don't have icons in this MVP)
   const pgIcon = g('pg-icon');
-  const addIcon = document.getElementById('n365-add-icon');
+  const addIcon = document.getElementById('memola-add-icon');
   if (pgIcon) pgIcon.style.display = 'none';
   if (addIcon) addIcon.style.display = '';
 
@@ -71,7 +75,7 @@ export async function openRowAsPage(dbId: string, item: ListItem): Promise<void>
   S.dirty = false;
 }
 
-/** Save the row's title (DB list) + body (n365-pages). */
+/** Save the row's title (DB list) + body (memola-pages). */
 export async function saveCurrentRow(): Promise<void> {
   if (!S.currentRow) return;
   const ed = getEd();
@@ -83,7 +87,7 @@ export async function saveCurrentRow(): Promise<void> {
   try {
     // Title goes on the DB row itself (canonical source for title).
     await apiUpdateDbRow(rowRef.listTitle, rowRef.itemId, { Title: newTitle });
-    // Body goes into n365-pages, keyed by (listTitle, itemId).
+    // Body goes into memola-pages, keyed by (listTitle, itemId).
     await setRowBody(rowRef.listTitle, rowRef.itemId, rowRef.dbId, newTitle, newBody);
     // Mirror updated values into local cache
     const it = S.dbItems.find((i) => i.Id === rowRef.itemId);

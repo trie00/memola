@@ -1,5 +1,5 @@
 @echo off
-rem n365 corp-AI relay launcher (Windows)
+rem Memola corp-AI relay launcher (Windows)
 rem
 rem 環境変数を編集して使ってください。タスクスケジューラに登録すれば
 rem ログオン時に自動で起動できます。

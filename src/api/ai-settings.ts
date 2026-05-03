@@ -1,19 +1,22 @@
 // AI provider / model selection state.
 //
-// n365 supports two AI back-ends:
+// Memola supports three AI back-ends:
 //   - Anthropic Claude API (default; full Tool Use agent)
-//   - 企業AI API (Azure OpenAI 互換ゲートウェイ。Function Calling 経由で
-//     Tool Use もサポート)
+//   - Azure OpenAI 互換 API (Azure OpenAI Service / 社内 API ゲートウェイ
+//     等。Function Calling 経由で Tool Use もサポート)
+//   - ローカル AI (OpenAI ネイティブ形式: Ollama / LM Studio / llama.cpp
+//     server / vLLM / その他 OpenAI Chat Completions 互換のもの)
 //
 // User picks the provider + model from the settings modal. Choices persist
 // in localStorage; everything is keyed off `getProvider()` / `getModel()`.
 // Each provider stores its own API key separately so switching back and
 // forth doesn't lose either.
 //
-// 企業AI API は組織ごとに base URL や deployment ID 命名規則が異なるため、
-// すべて localStorage の設定で可変化している（コードに固有名詞は持たない）。
+// Azure OpenAI 互換 API はインスタンスごとに base URL や deployment ID
+// 命名規則が異なるため、全て localStorage の設定で可変化している (コード
+// に固有名詞・固有ホストは持たない)。
 
-export type Provider = 'claude' | 'corp';
+export type Provider = 'claude' | 'corp' | 'local';
 
 export interface CorpAiModel {
   /** Canonical OpenAI model id (e.g. 'gpt-4.1-mini'). */
@@ -49,57 +52,60 @@ export const CLAUDE_MODELS: Array<{ id: string; label: string }> = [
   { id: 'claude-haiku-4-5',         label: 'Claude Haiku 4.5' },
 ];
 
-const KEY_PROVIDER         = 'n365.ai.provider';
-const KEY_CLAUDE_MODEL     = 'n365.ai.claudeModel';
-const KEY_CORP_MODEL       = 'n365.ai.corpModel';
-const KEY_CORP_APIKEY      = 'n365.ai.corpKey';
-const KEY_CORP_BASE_URL    = 'n365.ai.corpBaseUrl';
-const KEY_CORP_DEPLOY_PREF = 'n365.ai.corpDeployPrefix';
-const KEY_CORP_OVERRIDES   = 'n365.ai.corpOverrides';
+// All AI prefs live in lib/prefs.ts — this file adds the per-pref
+// validation / defaults that the raw accessors don't enforce.
+
+import {
+  prefAiProvider, prefAiClaudeModel, prefAiClaudeKey,
+  prefAiCorpModel, prefAiCorpKey, prefAiCorpBaseUrl,
+  prefAiCorpDeployPrefix, prefAiCorpOverrides,
+  prefAiLocalBaseUrl, prefAiLocalKey, prefAiLocalModel, prefAiLocalModels,
+  prefAiLocalReasoningModels,
+} from '../lib/prefs';
 
 const DEFAULT_PROVIDER: Provider = 'claude';
 const DEFAULT_CLAUDE_MODEL = 'claude-sonnet-4-5';
 const DEFAULT_CORP_MODEL = 'gpt-4.1-mini';
 
-function readLS(key: string): string {
-  try { return localStorage.getItem(key) || ''; } catch { return ''; }
-}
-function writeLS(key: string, value: string): void {
-  try {
-    if (value) localStorage.setItem(key, value);
-    else localStorage.removeItem(key);
-  } catch { /* ignore */ }
-}
-
 export function getProvider(): Provider {
-  const v = readLS(KEY_PROVIDER);
-  return v === 'corp' ? 'corp' : DEFAULT_PROVIDER;
+  const v = prefAiProvider.get();
+  if (v === 'corp' || v === 'local') return v;
+  return DEFAULT_PROVIDER;
 }
 export function setProvider(p: Provider): void {
-  writeLS(KEY_PROVIDER, p);
+  prefAiProvider.set(p);
 }
 
 export function getClaudeModel(): string {
-  return readLS(KEY_CLAUDE_MODEL) || DEFAULT_CLAUDE_MODEL;
+  return prefAiClaudeModel.get() || DEFAULT_CLAUDE_MODEL;
 }
 export function setClaudeModel(model: string): void {
-  writeLS(KEY_CLAUDE_MODEL, model);
+  prefAiClaudeModel.set(model);
+}
+
+/** Anthropic API key. Single source of truth — `api/anthropic.ts`'s
+ *  `getApiKey` / `setApiKey` are thin re-exports. */
+export function getClaudeApiKey(): string {
+  return prefAiClaudeKey.get();
+}
+export function setClaudeApiKey(key: string): void {
+  prefAiClaudeKey.set(key.trim());
 }
 
 export function getCorpAiModel(): string {
-  const stored = readLS(KEY_CORP_MODEL);
+  const stored = prefAiCorpModel.get();
   if (stored && CORP_AI_MODELS.some((m) => m.id === stored)) return stored;
   return DEFAULT_CORP_MODEL;
 }
 export function setCorpAiModel(model: string): void {
-  writeLS(KEY_CORP_MODEL, model);
+  prefAiCorpModel.set(model);
 }
 
 export function getCorpAiKey(): string {
-  return readLS(KEY_CORP_APIKEY);
+  return prefAiCorpKey.get();
 }
 export function setCorpAiKey(key: string): void {
-  writeLS(KEY_CORP_APIKEY, key);
+  prefAiCorpKey.set(key);
 }
 
 /** Base URL of the corporate AI gateway, up to (and including) the path
@@ -110,20 +116,20 @@ export function setCorpAiKey(key: string): void {
  *        /chat/completions?api-version={api-version}
  *  Empty when not yet configured — request helpers throw a clear error. */
 export function getCorpAiBaseUrl(): string {
-  return readLS(KEY_CORP_BASE_URL).replace(/\/$/, '');
+  return prefAiCorpBaseUrl.get().replace(/\/$/, '');
 }
 export function setCorpAiBaseUrl(url: string): void {
-  writeLS(KEY_CORP_BASE_URL, url.trim());
+  prefAiCorpBaseUrl.set(url.trim());
 }
 
 /** Prefix used to build the deployment id for each model. Many gateways
  *  follow a `<prefix><modelname>` pattern (with `.` removed from the model
  *  name, e.g. `gpt-4.1` → `gpt-41`). */
 export function getCorpAiDeploymentPrefix(): string {
-  return readLS(KEY_CORP_DEPLOY_PREF);
+  return prefAiCorpDeployPrefix.get();
 }
 export function setCorpAiDeploymentPrefix(prefix: string): void {
-  writeLS(KEY_CORP_DEPLOY_PREF, prefix.trim());
+  prefAiCorpDeployPrefix.set(prefix.trim());
 }
 
 /** Compute the deployment id for a given model id by combining the
@@ -159,11 +165,11 @@ export interface CorpAiOverride {
 }
 
 export function getCorpAiOverridesRaw(): string {
-  return readLS(KEY_CORP_OVERRIDES);
+  return prefAiCorpOverrides.get();
 }
 
 export function setCorpAiOverridesRaw(json: string): void {
-  writeLS(KEY_CORP_OVERRIDES, json.trim());
+  prefAiCorpOverrides.set(json.trim());
 }
 
 /** Parse the JSON overrides safely. Invalid JSON returns an empty map so
@@ -197,10 +203,78 @@ export function resolveCorpAiEndpoint(modelId: string): {
 
 /** The model id currently in effect for the active provider. */
 export function getActiveModel(): string {
-  return getProvider() === 'corp' ? getCorpAiModel() : getClaudeModel();
+  const p = getProvider();
+  if (p === 'corp') return getCorpAiModel();
+  if (p === 'local') return getLocalAiModel();
+  return getClaudeModel();
 }
 
 /** Look up the deployment metadata for a corporate-AI model id. */
 export function findCorpAiModel(modelId: string): CorpAiModel | null {
   return CORP_AI_MODELS.find((m) => m.id === modelId) || null;
+}
+
+// ─── Local AI (OpenAI ネイティブ形式 — Ollama / LM Studio / llama.cpp …) ─
+
+/** Base URL of the local OpenAI-compatible server.
+ *  Examples:
+ *    - Ollama:    http://localhost:11434/v1
+ *    - LM Studio: http://localhost:1234/v1
+ *    - llama.cpp: http://localhost:8080/v1
+ *  The full chat URL is built as `{baseUrl}/chat/completions`. */
+export function getLocalAiBaseUrl(): string {
+  return prefAiLocalBaseUrl.get().replace(/\/$/, '');
+}
+export function setLocalAiBaseUrl(url: string): void {
+  prefAiLocalBaseUrl.set(url.trim());
+}
+
+/** API key for the local server. Most local LLMs accept any string (or
+ *  none); kept here for OpenAI-proxy setups that DO require a key. */
+export function getLocalAiKey(): string {
+  return prefAiLocalKey.get();
+}
+export function setLocalAiKey(key: string): void {
+  prefAiLocalKey.set(key.trim());
+}
+
+/** Currently-selected local model name (free text). */
+export function getLocalAiModel(): string {
+  return prefAiLocalModel.get();
+}
+export function setLocalAiModel(model: string): void {
+  prefAiLocalModel.set(model.trim());
+}
+
+/** User-defined list of local model names that should appear in the
+ *  picker. One per line in the settings UI; persisted as JSON. */
+export function getLocalAiModels(): string[] {
+  const raw = prefAiLocalModels.get();
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) return arr.filter((s) => typeof s === 'string' && s.trim());
+  } catch { /* ignore */ }
+  return [];
+}
+export function setLocalAiModels(models: string[]): void {
+  prefAiLocalModels.set(JSON.stringify(models.filter((s) => s.trim())));
+}
+
+/** Names (lowercased) of local models that should be treated as
+ *  reasoning models — they need `max_completion_tokens` instead of
+ *  `max_tokens`. Most local models DON'T need this; opt-in via settings. */
+export function getLocalAiReasoningModels(): string[] {
+  const raw = prefAiLocalReasoningModels.get();
+  if (!raw) return [];
+  return raw.split(/[\s,]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+}
+export function setLocalAiReasoningModels(csv: string): void {
+  prefAiLocalReasoningModels.set(csv.trim());
+}
+
+/** Heuristic: does the named local model want `max_completion_tokens`? */
+export function isLocalReasoningModel(modelId: string): boolean {
+  const lc = modelId.toLowerCase();
+  return getLocalAiReasoningModels().some((r) => lc.includes(r));
 }

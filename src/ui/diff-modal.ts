@@ -6,6 +6,7 @@
 // Both resolve Promise<boolean> based on the user's OK / Cancel choice.
 
 import { getOverlay } from './dom';
+import { escapeHtml } from '../lib/html-escape';
 
 interface DiffOpts {
   pageId: string;
@@ -22,47 +23,47 @@ export function confirmPageUpdate(opts: DiffOpts): Promise<boolean> {
     if (!overlay) { resolve(false); return; }
 
     // Strip any previous instance
-    document.getElementById('n365-diff-modal')?.remove();
+    document.getElementById('memola-diff-modal')?.remove();
 
     const root = document.createElement('div');
-    root.id = 'n365-diff-modal';
-    root.className = 'n365-diff-modal on';
+    root.id = 'memola-diff-modal';
+    root.className = 'memola-diff-modal on';
 
     const card = document.createElement('div');
-    card.className = 'n365-diff-card';
+    card.className = 'memola-diff-card';
 
     const titleChanged = opts.newTitle != null && opts.newTitle !== (opts.oldTitle || '');
     const bodyChanged = opts.newBody != null && opts.newBody !== (opts.oldBody || '');
 
     const head = document.createElement('div');
-    head.className = 'n365-diff-head';
+    head.className = 'memola-diff-head';
     head.innerHTML =
       '<h2>ページ更新の確認</h2>' +
-      '<div class="n365-diff-sub">' +
+      '<div class="memola-diff-sub">' +
         escapeHtml(opts.pageTitle || '無題') + ' (id=' + escapeHtml(opts.pageId) + ')' +
       '</div>';
     card.appendChild(head);
 
     if (titleChanged) {
       const tRow = document.createElement('div');
-      tRow.className = 'n365-diff-title-row';
+      tRow.className = 'memola-diff-title-row';
       tRow.innerHTML =
-        '<div class="n365-diff-label">タイトル</div>' +
-        '<div class="n365-diff-title-old">' + escapeHtml(opts.oldTitle || '') + '</div>' +
-        '<div class="n365-diff-arrow">→</div>' +
-        '<div class="n365-diff-title-new">' + escapeHtml(opts.newTitle || '') + '</div>';
+        '<div class="memola-diff-label">タイトル</div>' +
+        '<div class="memola-diff-title-old">' + escapeHtml(opts.oldTitle || '') + '</div>' +
+        '<div class="memola-diff-arrow">→</div>' +
+        '<div class="memola-diff-title-new">' + escapeHtml(opts.newTitle || '') + '</div>';
       card.appendChild(tRow);
     }
 
     if (bodyChanged) {
       const bWrap = document.createElement('div');
-      bWrap.className = 'n365-diff-body';
+      bWrap.className = 'memola-diff-body';
       const bLabel = document.createElement('div');
-      bLabel.className = 'n365-diff-label';
+      bLabel.className = 'memola-diff-label';
       bLabel.textContent = '本文の差分';
       bWrap.appendChild(bLabel);
       const pre = document.createElement('pre');
-      pre.className = 'n365-diff-pre';
+      pre.className = 'memola-diff-pre';
       pre.appendChild(renderDiff(opts.oldBody || '', opts.newBody || ''));
       bWrap.appendChild(pre);
       card.appendChild(bWrap);
@@ -70,18 +71,18 @@ export function confirmPageUpdate(opts: DiffOpts): Promise<boolean> {
 
     if (!titleChanged && !bodyChanged) {
       const note = document.createElement('div');
-      note.className = 'n365-diff-empty';
+      note.className = 'memola-diff-empty';
       note.textContent = '変更がありません';
       card.appendChild(note);
     }
 
     const actions = document.createElement('div');
-    actions.className = 'n365-diff-actions';
+    actions.className = 'memola-diff-actions';
     const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'n365-btn s';
+    cancelBtn.className = 'memola-btn s';
     cancelBtn.textContent = 'キャンセル';
     const okBtn = document.createElement('button');
-    okBtn.className = 'n365-btn p';
+    okBtn.className = 'memola-btn p';
     okBtn.textContent = '更新する';
     actions.append(cancelBtn, okBtn);
     card.appendChild(actions);
@@ -91,17 +92,23 @@ export function confirmPageUpdate(opts: DiffOpts): Promise<boolean> {
 
     function close(result: boolean): void {
       root.remove();
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
       resolve(result);
     }
     function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape') close(false);
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) close(true);
+      if (e.key === 'Escape') {
+        e.preventDefault(); e.stopPropagation(); close(false);
+      }
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault(); e.stopPropagation(); close(true);
+      }
     }
     cancelBtn.addEventListener('click', () => close(false));
     okBtn.addEventListener('click', () => close(true));
     root.addEventListener('click', (e) => { if (e.target === root) close(false); });
-    document.addEventListener('keydown', onKey);
+    // Capture phase so we beat the global onKey (which would otherwise show
+    // the close-app confirm dialog after we close this modal).
+    document.addEventListener('keydown', onKey, true);
 
     setTimeout(() => okBtn.focus(), 30);
   });
@@ -122,20 +129,20 @@ export function confirmDbRowUpdate(opts: DbRowDiffOpts): Promise<boolean> {
   return new Promise((resolve) => {
     const overlay = getOverlay();
     if (!overlay) { resolve(false); return; }
-    document.getElementById('n365-diff-modal')?.remove();
+    document.getElementById('memola-diff-modal')?.remove();
 
     const root = document.createElement('div');
-    root.id = 'n365-diff-modal';
-    root.className = 'n365-diff-modal on';
+    root.id = 'memola-diff-modal';
+    root.className = 'memola-diff-modal on';
 
     const card = document.createElement('div');
-    card.className = 'n365-diff-card';
+    card.className = 'memola-diff-card';
 
     const head = document.createElement('div');
-    head.className = 'n365-diff-head';
+    head.className = 'memola-diff-head';
     head.innerHTML =
       '<h2>行更新の確認</h2>' +
-      '<div class="n365-diff-sub">' +
+      '<div class="memola-diff-sub">' +
         escapeHtml(opts.dbTitle) + ' #' + opts.rowId +
         (opts.rowTitle ? ' — ' + escapeHtml(opts.rowTitle) : '') +
       '</div>';
@@ -146,20 +153,20 @@ export function confirmDbRowUpdate(opts: DbRowDiffOpts): Promise<boolean> {
 
     if (hasFieldChanges) {
       const wrap = document.createElement('div');
-      wrap.className = 'n365-diff-fields';
+      wrap.className = 'memola-diff-fields';
       const lbl = document.createElement('div');
-      lbl.className = 'n365-diff-label';
+      lbl.className = 'memola-diff-label';
       lbl.textContent = '列の変更';
       wrap.appendChild(lbl);
       const tbl = document.createElement('table');
-      tbl.className = 'n365-diff-fields-tbl';
+      tbl.className = 'memola-diff-fields-tbl';
       for (const ch of opts.fieldChanges) {
         const tr = document.createElement('tr');
         tr.innerHTML =
-          '<td class="n365-diff-fname">' + escapeHtml(ch.name) + '</td>' +
-          '<td class="n365-diff-title-old">' + escapeHtml(ch.oldValue || '(空)') + '</td>' +
-          '<td class="n365-diff-arrow">→</td>' +
-          '<td class="n365-diff-title-new">' + escapeHtml(ch.newValue || '(空)') + '</td>';
+          '<td class="memola-diff-fname">' + escapeHtml(ch.name) + '</td>' +
+          '<td class="memola-diff-title-old">' + escapeHtml(ch.oldValue || '(空)') + '</td>' +
+          '<td class="memola-diff-arrow">→</td>' +
+          '<td class="memola-diff-title-new">' + escapeHtml(ch.newValue || '(空)') + '</td>';
         tbl.appendChild(tr);
       }
       wrap.appendChild(tbl);
@@ -168,13 +175,13 @@ export function confirmDbRowUpdate(opts: DbRowDiffOpts): Promise<boolean> {
 
     if (bodyChanged) {
       const bWrap = document.createElement('div');
-      bWrap.className = 'n365-diff-body';
+      bWrap.className = 'memola-diff-body';
       const bLabel = document.createElement('div');
-      bLabel.className = 'n365-diff-label';
+      bLabel.className = 'memola-diff-label';
       bLabel.textContent = '本文の差分';
       bWrap.appendChild(bLabel);
       const pre = document.createElement('pre');
-      pre.className = 'n365-diff-pre';
+      pre.className = 'memola-diff-pre';
       pre.appendChild(renderDiff(opts.oldBody || '', opts.newBody || ''));
       bWrap.appendChild(pre);
       card.appendChild(bWrap);
@@ -182,18 +189,18 @@ export function confirmDbRowUpdate(opts: DbRowDiffOpts): Promise<boolean> {
 
     if (!hasFieldChanges && !bodyChanged) {
       const note = document.createElement('div');
-      note.className = 'n365-diff-empty';
+      note.className = 'memola-diff-empty';
       note.textContent = '変更がありません';
       card.appendChild(note);
     }
 
     const actions = document.createElement('div');
-    actions.className = 'n365-diff-actions';
+    actions.className = 'memola-diff-actions';
     const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'n365-btn s';
+    cancelBtn.className = 'memola-btn s';
     cancelBtn.textContent = 'キャンセル';
     const okBtn = document.createElement('button');
-    okBtn.className = 'n365-btn p';
+    okBtn.className = 'memola-btn p';
     okBtn.textContent = '更新する';
     actions.append(cancelBtn, okBtn);
     card.appendChild(actions);
@@ -203,27 +210,28 @@ export function confirmDbRowUpdate(opts: DbRowDiffOpts): Promise<boolean> {
 
     function close(result: boolean): void {
       root.remove();
-      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('keydown', onKey, true);
       resolve(result);
     }
     function onKey(e: KeyboardEvent): void {
-      if (e.key === 'Escape') close(false);
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) close(true);
+      if (e.key === 'Escape') {
+        e.preventDefault(); e.stopPropagation(); close(false);
+      }
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault(); e.stopPropagation(); close(true);
+      }
     }
     cancelBtn.addEventListener('click', () => close(false));
     okBtn.addEventListener('click', () => close(true));
     root.addEventListener('click', (e) => { if (e.target === root) close(false); });
-    document.addEventListener('keydown', onKey);
+    // Capture phase to keep the global ESC handler from running after us.
+    document.addEventListener('keydown', onKey, true);
 
     setTimeout(() => okBtn.focus(), 30);
   });
 }
 
 // ── pure diff helpers ──────────────────────────────────────────
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
 
 interface DiffOp { type: 'eq' | 'del' | 'add'; line: string }
 
@@ -233,7 +241,7 @@ function renderDiff(oldText: string, newText: string): DocumentFragment {
   const frag = document.createDocumentFragment();
   for (const op of ops) {
     const line = document.createElement('span');
-    line.className = 'n365-diff-line n365-diff-' + op.type;
+    line.className = 'memola-diff-line memola-diff-' + op.type;
     const sigil = op.type === 'add' ? '+ ' : op.type === 'del' ? '- ' : '  ';
     line.textContent = sigil + op.line + '\n';
     frag.appendChild(line);
@@ -241,7 +249,7 @@ function renderDiff(oldText: string, newText: string): DocumentFragment {
   return frag;
 }
 
-/** Line diff via LCS. O(n*m) memory; fine for n365 page sizes. */
+/** Line diff via LCS. O(n*m) memory; fine for Memola page sizes. */
 function diffLines(a: string[], b: string[]): DiffOp[] {
   const n = a.length;
   const m = b.length;

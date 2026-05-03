@@ -3,7 +3,7 @@
 // to) prior states.
 //
 // SP keeps versions automatically when the list has versioning enabled
-// (n365-pages doesn't explicitly enable it; default tends to be on for
+// (memola-pages doesn't explicitly enable it; default tends to be on for
 // custom lists in modern SP). Each version contains all column values at
 // the time of that save. Rollback is implemented by writing the old Body
 // + Title back via updateListItem.

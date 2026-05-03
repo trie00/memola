@@ -135,7 +135,7 @@ describe('markdown', () => {
 
     it('renders the link as an atomic anchor with data-page-id', () => {
       const html = mdToHtml('[[42|Foo]]');
-      expect(html).toContain('class="n365-page-link"');
+      expect(html).toContain('class="memola-page-link"');
       expect(html).toContain('data-page-id="42"');
       expect(html).toContain('contenteditable="false"');
       expect(html).toContain('>Foo<');
@@ -156,7 +156,7 @@ describe('markdown', () => {
     it('does not mistake a markdown link for a page link', () => {
       const html = mdToHtml('[label](https://example.com)');
       expect(html).toContain('<a href="https://example.com">label</a>');
-      expect(html).not.toContain('n365-page-link');
+      expect(html).not.toContain('memola-page-link');
     });
 
     it('round-trips a [[daily:YYYY-MM-DD]] deferred link', () => {
@@ -167,7 +167,7 @@ describe('markdown', () => {
 
     it('renders a daily link with daily-link class and date attribute', () => {
       const html = mdToHtml('[[daily:2026-05-02]]');
-      expect(html).toContain('class="n365-page-link daily-link"');
+      expect(html).toContain('class="memola-page-link daily-link"');
       expect(html).toContain('data-daily-date="2026-05-02"');
       expect(html).toContain('>2026-05-02<');
     });
@@ -182,17 +182,17 @@ describe('markdown', () => {
 
   describe('linked-db embed', () => {
     it('round-trips a linked-db comment with dbId + view', () => {
-      const md = '<!-- n365-linkdb dbId="123" view="table" -->';
+      const md = '<!-- memola-linkdb dbId="123" view="table" -->';
       // mdToHtml emits a placeholder div, htmlToMd emits back the comment.
       // Compare the resulting markdown to ensure shape is stable.
-      expect(rt(md)).toContain('n365-linkdb');
+      expect(rt(md)).toContain('memola-linkdb');
       expect(rt(md)).toContain('dbId="123"');
       expect(rt(md)).toContain('view="table"');
     });
 
     it('renders the linked-db marker as an empty atomic div', () => {
-      const html = mdToHtml('<!-- n365-linkdb dbId="42" view="table" -->');
-      expect(html).toContain('class="n365-linkdb"');
+      const html = mdToHtml('<!-- memola-linkdb dbId="42" view="table" -->');
+      expect(html).toContain('class="memola-linkdb"');
       expect(html).toContain('contenteditable="false"');
       expect(html).toContain('data-db-id="42"');
       expect(html).toContain('data-view="table"');
@@ -201,14 +201,14 @@ describe('markdown', () => {
     });
 
     it('preserves filter / sort attributes when present', () => {
-      const md = '<!-- n365-linkdb dbId="9" view="table" filter="status=open" sort="title" -->';
+      const md = '<!-- memola-linkdb dbId="9" view="table" filter="status=open" sort="title" -->';
       const out = rt(md);
       expect(out).toContain('filter="status=open"');
       expect(out).toContain('sort="title"');
     });
 
     it('omits filter / sort attrs when not set', () => {
-      const md = '<!-- n365-linkdb dbId="9" view="table" -->';
+      const md = '<!-- memola-linkdb dbId="9" view="table" -->';
       const out = rt(md);
       expect(out).not.toContain('filter=');
       expect(out).not.toContain('sort=');

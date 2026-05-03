@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-n365 social-AI relay
+Memola social-AI relay
 ====================
 
-ブラウザ (n365 bookmarklet) から社用 AI ゲートウェイをオンプレプロキシ経由
+ブラウザ (Memola bookmarklet) から社用 AI ゲートウェイをオンプレプロキシ経由
 で呼び出すための、ローカルで動く小さな HTTP リレー。
 
 なぜ必要か
@@ -15,7 +15,7 @@ Fetch API の仕様にプロキシを per-request 指定する手段がないた
 
 この問題を回避するため、PC 上にこのリレーを起動する:
 
-    n365 (browser)  --HTTP-->  localhost:18080  --HTTPS via proxy-->  gateway
+    Memola (browser)  --HTTP-->  localhost:18080  --HTTPS via proxy-->  gateway
 
 ブラウザは常時 localhost には到達できる (プロキシ判定はループバックを除外)。
 リレー側は Python の requests ライブラリで自由にプロキシ指定できる。
@@ -27,7 +27,7 @@ Fetch API の仕様にプロキシを per-request 指定する手段がないた
     export CORP_AI_PROXY="http://onprem-proxy.example.com:8080"
     python3 scripts/corp-ai-relay.py
 
-n365 の設定モーダルで:
+Memola の設定モーダルで:
     プロバイダ              : 企業AI API
     ベース URL              : http://localhost:18080
     デプロイ ID プレフィックス : (組織の規約に合わせて)
@@ -66,7 +66,7 @@ def make_handler(target_url: str, proxy_url: str | None):
       - `target_url` is the full gateway prefix incl. its path component
         (e.g. ``https://gateway.example.com/customapi``).
       - The incoming request path may optionally repeat the same prefix
-        (when the user mirrors the real URL into n365's baseUrl). To avoid
+        (when the user mirrors the real URL into Memola's baseUrl). To avoid
         a double prefix we strip ``target_path`` from the front of the
         incoming path if it's there. Both of these baseUrl forms work:
           a) http://localhost:18080            (no path)
@@ -112,7 +112,7 @@ def make_handler(target_url: str, proxy_url: str | None):
         def _proxy(self, method: str):
             # Build the upstream URL. If the incoming path already includes
             # the target's path prefix (because the user mirrored the real
-            # URL into n365's baseUrl), strip it once so we don't double up.
+            # URL into Memola's baseUrl), strip it once so we don't double up.
             incoming = self.path
             if target_path and incoming.startswith(target_path):
                 rel = incoming[len(target_path):] or "/"
@@ -207,7 +207,7 @@ def make_handler(target_url: str, proxy_url: str | None):
 
 
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
-    """Allow multiple in-flight requests (n365 may pipeline tool calls)."""
+    """Allow multiple in-flight requests (Memola may pipeline tool calls)."""
     daemon_threads = True
     allow_reuse_address = True
 
@@ -217,7 +217,7 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="n365 → 社用 AI ゲートウェイ用ローカル中継",
+        description="Memola → 社用 AI ゲートウェイ用ローカル中継",
     )
     ap.add_argument(
         "--port", type=int,
@@ -271,7 +271,7 @@ def main() -> int:
     print(f"  target  : {args.target}")
     print(f"  proxy   : {proxy or '(直接接続)'}")
     print("─" * 64)
-    print("n365 の設定モーダルに「ベース URL」を入力 (どちらでも可):")
+    print("Memola の設定モーダルに「ベース URL」を入力 (どちらでも可):")
     print(f"  A: {base_url_short}")
     print(f"  B: {base_url_mirror}    (実 URL のパスを保ったまま localhost に")
     print( "                            置き換える形 — 視認性◎)")

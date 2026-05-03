@@ -7,36 +7,18 @@
 // Used as the user's safety net: when the conflict dialog 「相手の版を
 // 表示」 silently snapshots the current edit, the snapshot lives here.
 
-import { S } from '../state';
+import { S, type Page } from '../state';
 import { g } from './dom';
 import { toast } from './ui-helpers';
 import { mdToHtml } from '../lib/markdown';
 import {
   listAll, deleteDraft, type Draft,
 } from './draft-store';
+import { escapeHtml } from '../lib/html-escape';
+import { formatRelativeTime } from '../lib/date-utils';
 
-const MODAL_ID = 'n365-drafts-md';
-const SIDEBAR_BTN_ID = 'n365-drafts-btn';
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function formatTime(ts: number): string {
-  const d = new Date(ts);
-  const now = new Date();
-  const same = d.toDateString() === now.toDateString();
-  const yest = new Date(now); yest.setDate(now.getDate() - 1);
-  const isYest = d.toDateString() === yest.toDateString();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  if (same) return hh + ':' + mm;
-  if (isYest) return '昨日 ' + hh + ':' + mm;
-  if (d.getFullYear() === now.getFullYear()) {
-    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hh + ':' + mm;
-  }
-  return d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate();
-}
+const MODAL_ID = 'memola-drafts-md';
+const SIDEBAR_BTN_ID = 'memola-drafts-btn';
 
 interface Group {
   pageId: string;
@@ -73,28 +55,38 @@ function groupDrafts(): Group[] {
   return groups;
 }
 
+/** SP-stored drafts ("下書きとして複製" results, owned by current user). */
+function spDrafts(): Page[] {
+  return S.pages.filter((p) => p.IsDraft);
+}
+
+/** Total user-visible drafts: SP + localStorage. */
+function totalDraftCount(): number {
+  return spDrafts().length + listAll().length;
+}
+
 function ensureModal(): HTMLElement {
   let el = document.getElementById(MODAL_ID);
   if (el) return el;
   el = document.createElement('div');
   el.id = MODAL_ID;
-  el.className = 'n365-drafts-md';
+  el.className = 'memola-drafts-md';
   el.style.display = 'none';
   el.innerHTML =
-    '<div class="n365-drafts-box">' +
-      '<div class="n365-drafts-hd">' +
-        '<span class="n365-drafts-title">📝 下書き</span>' +
-        '<span class="n365-drafts-count"></span>' +
-        '<button class="n365-drafts-close" title="閉じる">×</button>' +
+    '<div class="memola-drafts-box">' +
+      '<div class="memola-drafts-hd">' +
+        '<span class="memola-drafts-title">📝 下書き</span>' +
+        '<span class="memola-drafts-count"></span>' +
+        '<button class="memola-drafts-close" title="閉じる">×</button>' +
       '</div>' +
-      '<div class="n365-drafts-body"></div>' +
+      '<div class="memola-drafts-body"></div>' +
     '</div>';
-  (document.getElementById('n365-overlay') || document.body).appendChild(el);
+  (document.getElementById('memola-overlay') || document.body).appendChild(el);
 
   el.addEventListener('click', (e) => {
     if (e.target === el) closeDraftsModal();
   });
-  el.querySelector<HTMLElement>('.n365-drafts-close')?.addEventListener('click', closeDraftsModal);
+  el.querySelector<HTMLElement>('.memola-drafts-close')?.addEventListener('click', closeDraftsModal);
   return el;
 }
 
@@ -105,7 +97,7 @@ export function openDraftsModal(focusPageId?: string): void {
   document.addEventListener('keydown', escClose, true);
   if (focusPageId) {
     setTimeout(() => {
-      const grpEl = el.querySelector<HTMLElement>('.n365-drafts-group[data-page-id="' + focusPageId + '"]');
+      const grpEl = el.querySelector<HTMLElement>('.memola-drafts-group[data-page-id="' + focusPageId + '"]');
       grpEl?.scrollIntoView({ block: 'start' });
     }, 0);
   }
@@ -118,51 +110,150 @@ export function closeDraftsModal(): void {
 }
 
 function escClose(e: KeyboardEvent): void {
-  if (e.key === 'Escape') closeDraftsModal();
+  if (e.key === 'Escape') {
+    // Stop the event so the global ESC handler doesn't proceed to
+    // close the app (or show the close-confirm dialog) after we close.
+    e.preventDefault();
+    e.stopPropagation();
+    closeDraftsModal();
+  }
 }
 
 function renderModalBody(el: HTMLElement): void {
+  const sp = spDrafts();
   const groups = groupDrafts();
-  const total = groups.reduce((n, g) => n + g.drafts.length, 0);
-  const countEl = el.querySelector<HTMLElement>('.n365-drafts-count');
+  const total = sp.length + groups.reduce((n, g) => n + g.drafts.length, 0);
+  const countEl = el.querySelector<HTMLElement>('.memola-drafts-count');
   if (countEl) countEl.textContent = '(' + total + '件)';
 
-  const body = el.querySelector<HTMLElement>('.n365-drafts-body');
+  const body = el.querySelector<HTMLElement>('.memola-drafts-body');
   if (!body) return;
-  if (groups.length === 0) {
-    body.innerHTML = '<div class="n365-drafts-empty">下書きはありません。<br><span style="font-size:11px;color:var(--ink-3)">編集中に保存衝突した時、「相手の版を表示」を選ぶとここに自動保存されます。</span></div>';
+  if (total === 0) {
+    body.innerHTML = '<div class="memola-drafts-empty">下書きはありません。<br><span style="font-size:11px;color:var(--ink-3)">ページメニューの「✏️ 下書きとして複製」、または保存衝突時の「相手の版を表示」で下書きが作成されます。</span></div>';
     return;
   }
 
-  body.innerHTML = groups.map((g) => {
-    const head = '<div class="n365-drafts-grouphead">' +
-      (g.exists ? '📄 ' : '🗑 ') +
-      '<span class="n365-drafts-grouptitle">' + escapeHtml(g.pageTitle) +
-      (!g.exists ? ' <span class="n365-drafts-orphan">(削除されたページ)</span>' : '') +
-      '</span>' +
-      '<span class="n365-drafts-groupcount">' + g.drafts.length + '件</span>' +
+  // ── SP drafts (full-page drafts created via 「下書きとして複製」) ──
+  let spHtml = '';
+  if (sp.length > 0) {
+    spHtml = '<div class="memola-drafts-section">' +
+      '<div class="memola-drafts-section-hd">' +
+        '<span>📝 ページ下書き</span>' +
+        '<span class="memola-drafts-section-sub">(編集中の複製ページ)</span>' +
       '</div>';
-    const items = g.drafts.map((d) => {
-      const preview = (d.body || '').replace(/\s+/g, ' ').slice(0, 80);
-      return '<div class="n365-drafts-item" data-key="' + escapeHtml(d.key) + '">' +
-        '<div class="n365-drafts-itemhd">' +
-          '<span class="n365-drafts-itemtime">' + formatTime(d.savedAt) + '</span>' +
-          '<span class="n365-drafts-itemtitle">' + escapeHtml(d.title || '無題') + '</span>' +
+    spHtml += sp.map((p) => {
+      const meta = S.meta.pages.find((m) => m.id === p.Id);
+      const originId = meta?.originPageId || '';
+      const origin = originId ? S.meta.pages.find((m) => m.id === originId) : null;
+      const originTitle = origin?.title || '(原本ページ不明)';
+      const exists = !!origin && !origin.trashed;
+      return '<div class="memola-drafts-item memola-drafts-spitem" data-page-id="' + escapeHtml(p.Id) + '">' +
+        '<div class="memola-drafts-itemhd">' +
+          '<span class="memola-drafts-itemtitle">' + escapeHtml(p.Title || '無題') + '</span>' +
         '</div>' +
-        '<div class="n365-drafts-itemprev">' + escapeHtml(preview || '(本文なし)') + '</div>' +
-        '<div class="n365-drafts-itemactions">' +
-          (g.exists ? '<button class="n365-btn p" data-act="restore">復元</button>' : '') +
-          '<button class="n365-btn s" data-act="preview">プレビュー</button>' +
-          '<button class="n365-btn ghost" data-act="delete">削除</button>' +
+        '<div class="memola-drafts-itemprev">原本: ' +
+          (exists
+            ? escapeHtml(originTitle)
+            : '<span class="memola-drafts-orphan">' + escapeHtml(originTitle) + ' (削除済み)</span>'
+          ) +
+        '</div>' +
+        '<div class="memola-drafts-itemactions">' +
+          '<button class="memola-btn p" data-act="open">開く</button>' +
+          (exists ? '<button class="memola-btn s" data-act="apply">原本に適用</button>' : '') +
+          '<button class="memola-btn ghost" data-act="discard">破棄</button>' +
         '</div>' +
       '</div>';
     }).join('');
-    return '<div class="n365-drafts-group" data-page-id="' + g.pageId + '">' +
-      head + items + '</div>';
-  }).join('');
+    spHtml += '</div>';
+  }
 
-  // Wire item actions
-  body.querySelectorAll<HTMLElement>('.n365-drafts-item').forEach((itemEl) => {
+  // ── Local drafts (auto-saved from save conflicts) ──
+  let localHtml = '';
+  if (groups.length > 0) {
+    localHtml = '<div class="memola-drafts-section">' +
+      '<div class="memola-drafts-section-hd">' +
+        '<span>💾 退避された編集</span>' +
+        '<span class="memola-drafts-section-sub">(保存衝突時に退避)</span>' +
+      '</div>';
+    localHtml += groups.map((grp) => {
+      const head = '<div class="memola-drafts-grouphead">' +
+        (grp.exists ? '📄 ' : '🗑 ') +
+        '<span class="memola-drafts-grouptitle">' + escapeHtml(grp.pageTitle) +
+        (!grp.exists ? ' <span class="memola-drafts-orphan">(削除されたページ)</span>' : '') +
+        '</span>' +
+        '<span class="memola-drafts-groupcount">' + grp.drafts.length + '件</span>' +
+        '</div>';
+      const items = grp.drafts.map((d) => {
+        const preview = (d.body || '').replace(/\s+/g, ' ').slice(0, 80);
+        return '<div class="memola-drafts-item" data-key="' + escapeHtml(d.key) + '">' +
+          '<div class="memola-drafts-itemhd">' +
+            '<span class="memola-drafts-itemtime">' + formatRelativeTime(d.savedAt) + '</span>' +
+            '<span class="memola-drafts-itemtitle">' + escapeHtml(d.title || '無題') + '</span>' +
+          '</div>' +
+          '<div class="memola-drafts-itemprev">' + escapeHtml(preview || '(本文なし)') + '</div>' +
+          '<div class="memola-drafts-itemactions">' +
+            (grp.exists ? '<button class="memola-btn p" data-act="restore">復元</button>' : '') +
+            '<button class="memola-btn s" data-act="preview">プレビュー</button>' +
+            '<button class="memola-btn ghost" data-act="delete">削除</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+      return '<div class="memola-drafts-group" data-page-id="' + grp.pageId + '">' +
+        head + items + '</div>';
+    }).join('');
+    localHtml += '</div>';
+  }
+
+  body.innerHTML = spHtml + localHtml;
+
+  // Wire SP-draft actions
+  body.querySelectorAll<HTMLElement>('.memola-drafts-spitem').forEach((itemEl) => {
+    const draftId = itemEl.dataset.pageId || '';
+    itemEl.addEventListener('click', async (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('button[data-act]');
+      if (!btn) return;
+      const act = btn.dataset.act;
+      if (act === 'open') {
+        closeDraftsModal();
+        const { doSelect } = await import('./views');
+        await doSelect(draftId);
+      } else if (act === 'apply') {
+        if (!confirm('下書きを原本に適用します (原本の現在の本文は SP のバージョン履歴に残ります)。続行しますか?')) return;
+        try {
+          const { apiApplyDraftToOrigin, apiGetPages } = await import('../api/pages');
+          const originId = await apiApplyDraftToOrigin(draftId);
+          S.pages = await apiGetPages();
+          const { renderTree } = await import('./tree');
+          renderTree();
+          renderModalBody(el);
+          refreshDraftsBadge();
+          closeDraftsModal();
+          const { doSelect } = await import('./views');
+          await doSelect(originId);
+          toast('原本に適用しました');
+        } catch (err) {
+          toast('適用失敗: ' + (err as Error).message, 'err');
+        }
+      } else if (act === 'discard') {
+        if (!confirm('この下書きを完全に削除します。元に戻せません。よろしいですか?')) return;
+        try {
+          const { apiDeletePage, apiGetPages } = await import('../api/pages');
+          await apiDeletePage(draftId);
+          S.pages = await apiGetPages();
+          const { renderTree } = await import('./tree');
+          renderTree();
+          renderModalBody(el);
+          refreshDraftsBadge();
+          toast('下書きを破棄しました');
+        } catch (err) {
+          toast('破棄失敗: ' + (err as Error).message, 'err');
+        }
+      }
+    });
+  });
+
+  // Wire local-draft actions
+  body.querySelectorAll<HTMLElement>('.memola-drafts-item:not(.memola-drafts-spitem)').forEach((itemEl) => {
     const key = itemEl.dataset.key || '';
     itemEl.addEventListener('click', async (e) => {
       const btn = (e.target as HTMLElement).closest<HTMLElement>('button[data-act]');
@@ -187,20 +278,20 @@ function renderModalBody(el: HTMLElement): void {
 
 function showPreview(draft: Draft): void {
   const w = document.createElement('div');
-  w.className = 'n365-drafts-md on';
+  w.className = 'memola-drafts-md on';
   w.style.zIndex = '2147483649';
   w.innerHTML =
-    '<div class="n365-drafts-box" style="max-width:720px">' +
-      '<div class="n365-drafts-hd">' +
-        '<span class="n365-drafts-title">プレビュー: ' + escapeHtml(draft.title || '無題') + '</span>' +
-        '<button class="n365-drafts-close">×</button>' +
+    '<div class="memola-drafts-box" style="max-width:720px">' +
+      '<div class="memola-drafts-hd">' +
+        '<span class="memola-drafts-title">プレビュー: ' + escapeHtml(draft.title || '無題') + '</span>' +
+        '<button class="memola-drafts-close">×</button>' +
       '</div>' +
-      '<div class="n365-drafts-preview">' + mdToHtml(draft.body) + '</div>' +
+      '<div class="memola-drafts-preview">' + mdToHtml(draft.body) + '</div>' +
     '</div>';
-  (document.getElementById('n365-overlay') || document.body).appendChild(w);
+  (document.getElementById('memola-overlay') || document.body).appendChild(w);
   const close = (): void => { w.remove(); };
   w.addEventListener('click', (e) => { if (e.target === w) close(); });
-  w.querySelector<HTMLElement>('.n365-drafts-close')?.addEventListener('click', close);
+  w.querySelector<HTMLElement>('.memola-drafts-close')?.addEventListener('click', close);
 }
 
 async function restoreDraft(draft: Draft): Promise<void> {
@@ -256,13 +347,13 @@ async function restoreDraft(draft: Draft): Promise<void> {
 export function refreshDraftsBadge(): void {
   const btn = document.getElementById(SIDEBAR_BTN_ID);
   if (!btn) return;
-  const n = listAll().length;
+  const n = totalDraftCount();
   if (n === 0) {
     btn.style.display = 'none';
     return;
   }
   btn.style.display = '';
-  const cnt = btn.querySelector<HTMLElement>('.n365-drafts-badge-count');
+  const cnt = btn.querySelector<HTMLElement>('.memola-drafts-badge-count');
   if (cnt) cnt.textContent = String(n);
 }
 

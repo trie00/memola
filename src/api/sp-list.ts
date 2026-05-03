@@ -1,4 +1,4 @@
-// SharePoint list / field / item REST helpers backing the n365-pages list and
+// SharePoint list / field / item REST helpers backing the memola-pages list and
 // every per-DB list. Higher-level page semantics live in api/pages.ts; this
 // module only deals with raw list mechanics.
 
@@ -16,6 +16,12 @@ interface SPField {
 
 const _etCache: Record<string, string> = {};
 
+/** Drop all cached entity-type lookups. Called when switching workspaces
+ *  (lists in the new site have different entity types). */
+export function clearListCaches(): void {
+  for (const k of Object.keys(_etCache)) delete _etCache[k];
+}
+
 export async function createList(listTitle: string): Promise<void> {
   const d = await getDigest();
   const r = await fetch(SITE + '/_api/web/lists', {
@@ -26,7 +32,7 @@ export async function createList(listTitle: string): Promise<void> {
       __metadata: { type: 'SP.List' },
       BaseTemplate: 100,
       Title: listTitle,
-      Description: 'n365',
+      Description: 'Memola',
     }),
   });
   if (!r.ok) throw new Error('リスト作成失敗: ' + r.status);

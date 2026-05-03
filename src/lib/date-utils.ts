@@ -52,6 +52,8 @@ export function formatDateJST(value: string | null | undefined): string {
   return `${y}-${m}-${day}`;
 }
 
+const _DOW_JA = ['日', '月', '火', '水', '木', '金', '土'];
+
 /** Today's date in canonical YYYY-MM-DD form (local time). */
 export function todayYMD(): string {
   const d = new Date();
@@ -59,6 +61,45 @@ export function todayYMD(): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+/** Current JST date/time as a human-readable line. Used by the AI prompt
+ *  context so the model can resolve "今日" / "明日" / etc. against a
+ *  concrete date even when the browser is in a different timezone. */
+export function nowJSTContext(): string {
+  const now = new Date();
+  const jst = new Date(now.getTime() + 9 * 3600 * 1000);
+  const y = jst.getUTCFullYear();
+  const mo = String(jst.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(jst.getUTCDate()).padStart(2, '0');
+  const hh = String(jst.getUTCHours()).padStart(2, '0');
+  const mm = String(jst.getUTCMinutes()).padStart(2, '0');
+  const dow = _DOW_JA[jst.getUTCDay()];
+  return `現在の日時 (JST): ${y}-${mo}-${d} ${hh}:${mm} (${dow}曜日)`;
+}
+
+/** Human-friendly relative timestamp for past Date / unix-ms values.
+ *    same day  → "HH:MM"
+ *    yesterday → "昨日 HH:MM"
+ *    same year → "M/D HH:MM"
+ *    other     → "YYYY/M/D"
+ *  Used by saved-time labels, draft listings, etc. — keep one version so
+ *  drift between callers doesn't surface as inconsistent UI. */
+export function formatRelativeTime(input: number | Date | string): string {
+  const d = input instanceof Date ? input : new Date(input);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const same = d.toDateString() === now.toDateString();
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  const isYest = d.toDateString() === yest.toDateString();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  if (same) return `${hh}:${mm}`;
+  if (isYest) return `昨日 ${hh}:${mm}`;
+  if (d.getFullYear() === now.getFullYear()) {
+    return `${d.getMonth() + 1}/${d.getDate()} ${hh}:${mm}`;
+  }
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
 /** Add `delta` days to a YYYY-MM-DD string. Returns canonical YYYY-MM-DD. */
@@ -72,8 +113,6 @@ export function addDaysYMD(ymd: string, delta: number): string {
   const day = String(d.getUTCDate()).padStart(2, '0');
   return `${y}-${mo}-${day}`;
 }
-
-const _DOW_JA = ['日', '月', '火', '水', '木', '金', '土'];
 
 /** "2026-05-02 (Sat)" style readable label for a YYYY-MM-DD. */
 export function formatDailyTitle(ymd: string): string {

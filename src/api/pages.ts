@@ -1,4 +1,4 @@
-// Pages stored as rows in a single SharePoint list `n365-pages`.
+// Pages stored as rows in a single SharePoint list `memola-pages`.
 // Title + meta (parent, type, icon, pin/trash flags, listTitle for DBs) live as
 // columns; the page body markdown is stored in the `Body` Note column.
 //
@@ -18,14 +18,16 @@ import {
 import { spListUrl, spGetD } from './sp-rest';
 import { mdToHtml, htmlToMd } from '../lib/markdown';
 import { collectDescendantIds } from '../lib/page-tree';
+import { getCurrentUserId } from './sync';
+import { invalidateBacklinkCache } from './backlinks';
 
-export const PAGES_LIST = 'n365-pages';
+export const PAGES_LIST = 'memola-pages';
 
 interface PageRow {
   Id: number;
   Title?: string;
   ParentId?: string;
-  PageType?: string;        // 'page' | 'database' | 'row'
+  PageType?: string;        // 'page' | 'database' | 'row' | 'draft'
   Icon?: string;
   Pinned?: number;
   Trashed?: number;
@@ -38,11 +40,18 @@ interface PageRow {
   PublishedDirty?: number;  // 0 / 1 — page edited since the last sync to the Site Page
   OriginDailyDate?: string; // for converted pages: the original YYYY-MM-DD
   OriginPageId?: string;    // for "draft of …" duplicates: id of the origin page
+  AuthorId?: number;        // SP user id of the row creator (auto-populated)
 }
 
 let _ensurePromise: Promise<void> | null = null;
 
-/** Required columns for the n365-pages list. Kept in one place so
+/** Drop the cached "we've already provisioned memola-pages" promise. Called
+ *  when switching workspaces — the new site may not yet have the list. */
+export function clearPagesCache(): void {
+  _ensurePromise = null;
+}
+
+/** Required columns for the memola-pages list. Kept in one place so
  *  ensurePagesList can verify completeness after column-add attempts. */
 const REQUIRED_FIELDS: Array<[string, number]> = [
   ['ParentId', 2], ['PageType', 2], ['Icon', 2], ['Pinned', 9], ['Trashed', 9],
@@ -52,7 +61,7 @@ const REQUIRED_FIELDS: Array<[string, number]> = [
   ['OriginPageId', 2],
 ];
 
-/** Idempotently create the n365-pages list and its columns. Resilient to
+/** Idempotently create the memola-pages list and its columns. Resilient to
  *  transient field-add failures: if any required column is still missing
  *  after the first pass, the cached promise is cleared so subsequent calls
  *  retry, and the current call rejects so the caller can surface the error
@@ -77,7 +86,7 @@ async function ensurePagesList(): Promise<void> {
     const finalTitles = await listFieldTitles();
     const missing = REQUIRED_FIELDS.filter(([n]) => !finalTitles.has(n)).map(([n]) => n);
     if (missing.length > 0) {
-      throw new Error('n365-pages の必須列が不足しています: ' + missing.join(', '));
+      throw new Error('memola-pages の必須列が不足しています: ' + missing.join(', '));
     }
   })().catch((e) => {
     // Allow the next caller to retry. Without this, a single transient
@@ -149,10 +158,25 @@ export function getPageParent(id: string): string {
 export async function apiGetPages(): Promise<Page[]> {
   await ensurePagesList();
   const items = (await getListItems(PAGES_LIST)) as unknown as PageRow[];
-  // Keep only top-level entries (page / database) in S.meta and the page tree.
-  // Row-as-page entries (PageType='row') are an internal join with DB rows and
-  // are looked up on demand via getRowBody / setRowBody.
-  const topLevel = items.filter((it) => it.PageType !== 'row');
+  // Drafts (PageType='draft') are private to their creator. Hide other
+  // users' drafts from this user's view entirely — they shouldn't appear
+  // in the tree, search, or even metadata lookups.
+  const myId = await getCurrentUserId().catch(() => 0);
+  // Keep only top-level entries. Row-as-page (PageType='row') is an internal
+  // join with DB rows and is looked up on demand via getRowBody / setRowBody.
+  // Other users' drafts are filtered here so they never enter S.meta.pages.
+  const topLevel = items.filter((it) => {
+    if (it.PageType === 'row') return false;
+    // Anything with OriginPageId is a draft (PageType='draft' for new ones,
+    // PageType='page' for ones created before the type was introduced).
+    // Show only the current user's drafts.
+    const isDraft = it.PageType === 'draft' || !!it.OriginPageId;
+    if (isDraft) {
+      if (myId === 0) return true;     // can't resolve self → leak rather than lose
+      return it.AuthorId === myId;
+    }
+    return true;
+  });
   S.meta.pages = topLevel.map(rowToMeta);
   return S.meta.pages
     .filter((p) => !p.trashed)
@@ -161,6 +185,9 @@ export async function apiGetPages(): Promise<Page[]> {
       Title: p.title,
       ParentId: p.parent || '',
       Type: (p.type || 'page') as 'page' | 'database',
+      // Drafts get IsDraft=true so the tree / search / picker can hide them
+      // and the drafts modal can find them.
+      IsDraft: !!p.originPageId,
     }));
 }
 
@@ -208,8 +235,52 @@ export async function refreshSyncWatermark(pageId: string): Promise<void> {
     if (fm) {
       S.sync.loadedEtag = fm.etag;
       S.sync.loadedModified = fm.modified;
+      rememberOurEtag(fm.etag);
     }
   } catch { /* ignore */ }
+}
+
+/** Push an etag we just produced into the "ours" ring buffer. The poll
+ *  loop checks this set before surfacing a stale-data banner — anything
+ *  in here is a write we made, even if our watermark wasn't updated in
+ *  the same code path that did the save. */
+export function rememberOurEtag(etag: string): void {
+  if (!etag) return;
+  const arr = S.sync.ourSavedEtags;
+  if (arr.indexOf(etag) >= 0) return;
+  arr.push(etag);
+  // Bound the list — old etags can be forgotten safely (their SP versions
+  // are well in the past).
+  if (arr.length > 32) arr.shift();
+}
+
+/** Single funnel for ALL writes against the memola-pages list.
+ *
+ *  Every memola-pages mutation (body, title, icon, pinned, parent, trashed,
+ *  published flags, …) MUST go through this helper. After the SP write
+ *  succeeds, we read back the new ETag/Modified and remember the ETag in
+ *  `ourSavedEtags`. This guarantees the foreground poller never mistakes
+ *  one of our own writes for "別のタブで更新".
+ *
+ *  It also updates `S.sync.loadedEtag` / `loadedModified` when the row
+ *  being written is the currently-watched page — keeps the watermark
+ *  fresh without each caller needing to remember `refreshSyncWatermark`. */
+export async function updatePageRow(
+  itemId: number,
+  fields: Record<string, unknown>,
+): Promise<void> {
+  if (!itemId) return;
+  await updateListItem(PAGES_LIST, itemId, fields);
+  try {
+    const fresh = await fetchOneRow(itemId, 'Modified');
+    if (fresh) {
+      rememberOurEtag(fresh.etag);
+      if (S.sync.pageId === String(itemId)) {
+        S.sync.loadedEtag = fresh.etag;
+        S.sync.loadedModified = fresh.modified;
+      }
+    }
+  } catch { /* fetch failures are non-fatal — just one phantom risk */ }
 }
 
 /** Create a normal page row. */
@@ -304,15 +375,13 @@ async function saveBodyInternal(
   }
   const fields: Record<string, unknown> = { Title: title, Body: bodyMd };
   if (p?.published) fields.PublishedDirty = 1;
-  await updateListItem(PAGES_LIST, itemId, fields);
+  // Body save is also an memola-pages row update — the funnel handles
+  // ETag tracking + watermark refresh in one place.
+  await updatePageRow(itemId, fields);
   const fresh = await fetchOneRow(itemId, 'Modified');
-  // Refresh the watermark so the foreground poller knows this tab made
-  // the most-recent write. Skips if the saved page is no longer the
-  // active one (refreshSyncWatermark gates on S.sync.pageId).
-  if (fresh && S.sync.pageId === id) {
-    S.sync.loadedEtag = fresh.etag;
-    S.sync.loadedModified = fresh.modified;
-  }
+  // Body changed — drop the backlinks cache so the next "リンク元" panel
+  // render reflects newly-added / removed `[[..]]` references.
+  invalidateBacklinkCache();
   return { ok: true, etag: fresh?.etag || '' };
 }
 
@@ -331,7 +400,7 @@ export async function apiDeletePage(id: string): Promise<string[]> {
       await deleteAllRowEntriesForList(meta.list).catch(() => undefined);
       await deleteList(meta.list).catch(() => undefined);
     }
-    // Cleanup published Site Page mirror BEFORE removing the n365-pages row,
+    // Cleanup published Site Page mirror BEFORE removing the memola-pages row,
     // because unpublishPage() reads metadata (publishedSitePageId) from it.
     if (meta?.published) {
       const { unpublishPage } = await import('./publish');
@@ -359,10 +428,9 @@ export async function apiMovePage(id: string, newParentId: string): Promise<void
   if (!m) return;
   m.parent = newParentId || '';
   const itemId = parseInt(id, 10);
-  if (itemId) await updateListItem(PAGES_LIST, itemId, { ParentId: newParentId || '' });
+  if (itemId) await updatePageRow(itemId, { ParentId: newParentId || '' });
   const pg = S.pages.find((x) => x.Id === id);
   if (pg) pg.ParentId = newParentId || '';
-  await refreshSyncWatermark(id);
 }
 
 export async function apiTrashPage(id: string): Promise<void> {
@@ -372,8 +440,7 @@ export async function apiTrashPage(id: string): Promise<void> {
     const meta = S.meta.pages.find((p) => p.id === pid);
     if (meta) meta.trashed = ts;
     const itemId = parseInt(pid, 10);
-    if (itemId) await updateListItem(PAGES_LIST, itemId, { Trashed: ts }).catch(() => undefined);
-    await refreshSyncWatermark(pid);
+    if (itemId) await updatePageRow(itemId, { Trashed: ts }).catch(() => undefined);
   }
 }
 
@@ -383,8 +450,7 @@ export async function apiRestorePage(id: string): Promise<void> {
     const meta = S.meta.pages.find((p) => p.id === pid);
     if (meta) delete meta.trashed;
     const itemId = parseInt(pid, 10);
-    if (itemId) await updateListItem(PAGES_LIST, itemId, { Trashed: 0 }).catch(() => undefined);
-    await refreshSyncWatermark(pid);
+    if (itemId) await updatePageRow(itemId, { Trashed: 0 }).catch(() => undefined);
   }
 }
 
@@ -398,16 +464,14 @@ export async function apiSetPin(id: string, pinned: boolean): Promise<void> {
   if (pinned) meta.pinned = true;
   else delete meta.pinned;
   const itemId = parseInt(id, 10);
-  if (itemId) await updateListItem(PAGES_LIST, itemId, { Pinned: pinned ? 1 : 0 });
-  await refreshSyncWatermark(id);
+  if (itemId) await updatePageRow(itemId, { Pinned: pinned ? 1 : 0 });
 }
 
 export async function apiSetIcon(id: string, emoji: string): Promise<void> {
   const meta = S.meta.pages.find((p) => p.id === id);
   if (meta) meta.icon = emoji;
   const itemId = parseInt(id, 10);
-  if (itemId) await updateListItem(PAGES_LIST, itemId, { Icon: emoji });
-  await refreshSyncWatermark(id);
+  if (itemId) await updatePageRow(itemId, { Icon: emoji });
 }
 
 /** Persist title-only metadata change (used when title is edited live).
@@ -424,9 +488,8 @@ export async function apiSetTitle(id: string, title: string): Promise<void> {
   if (itemId) {
     const fields: Record<string, unknown> = { Title: title };
     if (meta?.published) fields.PublishedDirty = 1;
-    await updateListItem(PAGES_LIST, itemId, fields);
+    await updatePageRow(itemId, fields);
   }
-  await refreshSyncWatermark(id);
 }
 
 // ── Draft-as-page (duplicate to draft / apply to origin) ──
@@ -449,8 +512,11 @@ export async function apiDuplicateAsDraft(originId: string): Promise<Page> {
   const draftTitle = '[下書き] ' + (origin.title || '無題');
   const created = await createListItem(PAGES_LIST, {
     Title: draftTitle,
-    ParentId: origin.parent || '',
-    PageType: 'page',
+    // ParentId is intentionally empty so drafts never appear as a child of
+    // anything in the regular page tree (defence-in-depth on top of the
+    // IsDraft filter in tree.ts / search-ui / page-picker).
+    ParentId: '',
+    PageType: 'draft',
     Icon: '✏️',
     Pinned: 0,
     Trashed: 0,
@@ -461,12 +527,12 @@ export async function apiDuplicateAsDraft(originId: string): Promise<Page> {
   S.meta.pages.push({
     id: newId,
     title: draftTitle,
-    parent: origin.parent || '',
+    parent: '',
     type: 'page',
     icon: '✏️',
     originPageId: originId,
   });
-  return { Id: newId, Title: draftTitle, ParentId: origin.parent || '', Type: 'page' };
+  return { Id: newId, Title: draftTitle, ParentId: '', Type: 'page', IsDraft: true };
 }
 
 /** Apply a draft's contents to its origin page, preserving the origin's
@@ -495,11 +561,11 @@ export async function apiApplyDraftToOrigin(draftId: string): Promise<string> {
 
 // ── DB row-as-page bodies ─────────────────────────────────
 //
-// A "row" entry in n365-pages has PageType='row', ListTitle=<db list>, and
+// A "row" entry in memola-pages has PageType='row', ListTitle=<db list>, and
 // DbRowId=<row item id>. Title is mirrored from the DB row for human readability
 // in SP UI; the canonical title still lives on the DB row itself.
 
-/** Find every n365-pages row matching (PageType='row', listTitle, dbRowId).
+/** Find every memola-pages row matching (PageType='row', listTitle, dbRowId).
  *  Returns multiple in case a prior race created duplicates; callers can
  *  pick a canonical winner and clean up the rest. Sorted by Id ascending. */
 async function findRowEntries(
@@ -520,7 +586,7 @@ async function findRowEntry(listTitle: string, dbRowId: number): Promise<{ id: n
   return all[0] || null;
 }
 
-/** Read the markdown body for a DB row from the n365-pages list. */
+/** Read the markdown body for a DB row from the memola-pages list. */
 export async function getRowBody(listTitle: string, dbRowId: number): Promise<string> {
   await ensurePagesList();
   const hit = await findRowEntry(listTitle, dbRowId);
@@ -529,7 +595,7 @@ export async function getRowBody(listTitle: string, dbRowId: number): Promise<st
   return fetched?.row.Body || '';
 }
 
-/** Upsert (title, body) for a DB row's page entry in n365-pages.
+/** Upsert (title, body) for a DB row's page entry in memola-pages.
  *
  *  Race handling: SP has no unique constraint on (ListTitle, DbRowId), so a
  *  concurrent caller could create a parallel `PageType='row'` entry between
@@ -549,7 +615,7 @@ export async function setRowBody(
   const hits = await findRowEntries(listTitle, dbRowId);
   if (hits.length >= 1) {
     // Update canonical (lowest Id) entry.
-    await updateListItem(PAGES_LIST, hits[0].id, { Title: title, Body: body });
+    await updatePageRow(hits[0].id, { Title: title, Body: body });
     // Best-effort cleanup of any duplicates accumulated by past races.
     for (let i = 1; i < hits.length; i++) {
       await deleteListItem(PAGES_LIST, hits[i].id).catch(() => undefined);
@@ -571,14 +637,14 @@ export async function setRowBody(
   if (after.length > 1) {
     // Make sure the surviving canonical entry has our latest body — the
     // older entry might be stale.
-    await updateListItem(PAGES_LIST, after[0].id, { Title: title, Body: body }).catch(() => undefined);
+    await updatePageRow(after[0].id, { Title: title, Body: body }).catch(() => undefined);
     for (let i = 1; i < after.length; i++) {
       await deleteListItem(PAGES_LIST, after[i].id).catch(() => undefined);
     }
   }
 }
 
-/** Delete the n365-pages entry for a DB row, if present. Removes ALL
+/** Delete the memola-pages entry for a DB row, if present. Removes ALL
  *  matching entries in case duplicates accumulated. */
 export async function deleteRowEntry(listTitle: string, dbRowId: number): Promise<void> {
   const hits = await findRowEntries(listTitle, dbRowId);
@@ -587,7 +653,7 @@ export async function deleteRowEntry(listTitle: string, dbRowId: number): Promis
   }
 }
 
-/** Delete every n365-pages entry that points at a given DB list (used when the DB itself is removed). */
+/** Delete every memola-pages entry that points at a given DB list (used when the DB itself is removed). */
 export async function deleteAllRowEntriesForList(listTitle: string): Promise<void> {
   await ensurePagesList();
   const filter = "PageType eq 'row' and ListTitle eq '" + listTitle.replace(/'/g, "''") + "'";

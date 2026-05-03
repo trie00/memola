@@ -1,14 +1,21 @@
 // Block-level drag handle (Notion-style ⋮⋮ on hover, drag to reorder).
-// Lightweight implementation: HTML5 drag API on top-level editor children.
+// Lightweight: HTML5 drag API on top-level editor children.
+//
+// Uses the shared `lib/floating-handle` scaffold for the handle DOM /
+// positioning / hover tracking. The drop logic (placeholder insertion,
+// schedule-save) stays here because it's editor-specific.
 
 import { S } from '../state';
 import { getEd } from './dom';
 import { setSave } from './ui-helpers';
 import { schedSave } from './actions';
+import {
+  createFloatingHandle, isCursorOverWithExtend, type FloatingHandle,
+} from '../lib/floating-handle';
 
 let _dragging: HTMLElement | null = null;
 let _placeholder: HTMLElement | null = null;
-let _handle: HTMLElement | null = null;
+let _handle: FloatingHandle | null = null;
 let _hoveredBlock: HTMLElement | null = null;
 
 const DRAGGABLE_TAGS = /^(P|H1|H2|H3|H4|H5|H6|UL|OL|BLOCKQUOTE|PRE|HR|DIV)$/;
@@ -19,45 +26,32 @@ function isTopLevelBlock(el: Element): boolean {
   return DRAGGABLE_TAGS.test(el.tagName);
 }
 
-function ensureHandle(): HTMLElement {
+function ensureHandle(): FloatingHandle {
   if (_handle) return _handle;
-  const h = document.createElement('div');
-  h.id = 'n365-block-handle';
-  h.draggable = true;
-  h.title = 'ドラッグして並べ替え / クリックでメニュー';
-  h.innerHTML = '<svg viewBox="0 0 10 16" width="10" height="16" fill="currentColor" style="pointer-events:none"><circle cx="2" cy="3" r="1.3"/><circle cx="2" cy="8" r="1.3"/><circle cx="2" cy="13" r="1.3"/><circle cx="8" cy="3" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="13" r="1.3"/></svg>';
-  h.addEventListener('dragstart', onDragStart);
-  h.addEventListener('dragend', onDragEnd);
-  // ハンドル自身から完全に外れた時のみ hide (block 側へ戻るときは維持)
-  h.addEventListener('mouseleave', (e) => {
-    const rt = (e as MouseEvent).relatedTarget as HTMLElement | null;
-    const ed = getEd();
-    if (rt && ed.contains(rt)) return;       // editor へ戻る → 維持
-    hideHandle();
+  _handle = createFloatingHandle({
+    id: 'memola-block-handle',
+    title: 'ドラッグして並べ替え / クリックでメニュー',
+    onDragStart: onDragStart,
+    onDragEnd: onDragEnd,
+    onMouseLeave: (e) => {
+      // ハンドルから完全に外れた時のみ hide (block 側へ戻るときは維持)
+      const rt = (e as MouseEvent).relatedTarget as HTMLElement | null;
+      if (rt && getEd().contains(rt)) return;
+      hideHandle();
+    },
   });
-  document.getElementById('n365-overlay')?.appendChild(h);
-  _handle = h;
-  return h;
-}
-
-function positionHandle(block: HTMLElement): void {
-  const h = ensureHandle();
-  const rect = block.getBoundingClientRect();
-  h.style.top = (rect.top + window.scrollY) + 'px';
-  h.style.left = (rect.left + window.scrollX - 24) + 'px';
-  h.style.height = Math.max(20, Math.min(rect.height, 32)) + 'px';
-  h.style.display = 'flex';
+  return _handle;
 }
 
 function hideHandle(): void {
-  if (_handle) _handle.style.display = 'none';
+  if (_handle) _handle.hide();
   _hoveredBlock = null;
 }
 
 function onDragStart(e: DragEvent): void {
   if (!_hoveredBlock) { e.preventDefault(); return; }
   _dragging = _hoveredBlock;
-  _dragging.classList.add('n365-block-dragging');
+  _dragging.classList.add('memola-block-dragging');
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move';
     // Some browsers refuse drag without setting data
@@ -65,13 +59,13 @@ function onDragStart(e: DragEvent): void {
   }
   // Create a thin placeholder
   _placeholder = document.createElement('div');
-  _placeholder.className = 'n365-block-placeholder';
+  _placeholder.className = 'memola-block-placeholder';
   document.addEventListener('dragover', onDragOver);
   document.addEventListener('drop', onDrop);
 }
 
 function onDragEnd(): void {
-  if (_dragging) _dragging.classList.remove('n365-block-dragging');
+  if (_dragging) _dragging.classList.remove('memola-block-dragging');
   _dragging = null;
   if (_placeholder && _placeholder.parentNode) _placeholder.parentNode.removeChild(_placeholder);
   _placeholder = null;
@@ -123,23 +117,12 @@ function onDrop(e: DragEvent): void {
   onDragEnd();
 }
 
-// Hit-detection extends 42px to the LEFT of each block so the gap between
-// block and handle (24px) plus the handle width (18px) all count as "still
-// hovering". Without this, the editor's mouseleave would hide the handle
-// the moment the cursor crosses the editor's left edge to reach it.
-const HIT_LEFT_EXTEND = 44;
-const HIT_VERT_PAD = 2;
-
 function blockUnderCursor(clientX: number, clientY: number): HTMLElement | null {
   const ed = getEd();
   const blocks = Array.from(ed.children) as HTMLElement[];
   for (const block of blocks) {
     if (!isTopLevelBlock(block)) continue;
-    const rect = block.getBoundingClientRect();
-    if (clientY >= rect.top - HIT_VERT_PAD && clientY <= rect.bottom + HIT_VERT_PAD &&
-        clientX >= rect.left - HIT_LEFT_EXTEND && clientX <= rect.right) {
-      return block;
-    }
+    if (isCursorOverWithExtend(block, clientX, clientY)) return block;
   }
   return null;
 }
@@ -150,20 +133,14 @@ export function attachBlockDrag(): void {
   // and handle, or directly over the handle, or just to the left.
   document.addEventListener('mousemove', (e) => {
     if (_dragging) return;
-    const ed = getEd();
-    if (!ed) return;
-    // If the cursor is over the handle itself, just keep current state
-    const handle = _handle;
-    if (handle && handle.style.display !== 'none') {
-      const hr = handle.getBoundingClientRect();
-      if (e.clientX >= hr.left - 2 && e.clientX <= hr.right + 2 &&
-          e.clientY >= hr.top - 2 && e.clientY <= hr.bottom + 2) return;
-    }
+    if (!getEd()) return;
+    // Cursor on the handle itself → keep current state
+    if (_handle && _handle.isCursorOnHandle(e.clientX, e.clientY)) return;
     const block = blockUnderCursor(e.clientX, e.clientY);
     if (block) {
       if (block !== _hoveredBlock) {
         _hoveredBlock = block;
-        positionHandle(block);
+        ensureHandle().positionAt(block);
       }
     } else {
       hideHandle();

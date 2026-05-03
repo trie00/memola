@@ -13,7 +13,7 @@ export function domWalk(node: Node): string {
   const tag = el.tagName.toLowerCase();
 
   // Inline table block → GFM pipe table (with optional header-row/col attrs preserved as HTML comment)
-  if (tag === 'div' && el.classList.contains('n365-itbl-wrap')) {
+  if (tag === 'div' && el.classList.contains('memola-itbl-wrap')) {
     const tbl = el.querySelector('table') as HTMLTableElement | null;
     if (!tbl) return '';
     const rows = Array.from(tbl.querySelectorAll('tr'));
@@ -26,7 +26,7 @@ export function domWalk(node: Node): string {
     const hrow = tbl.dataset.hrow === '1' ? 1 : 0;
     const hcol = tbl.dataset.hcol === '1' ? 1 : 0;
     let out = '\n';
-    if (hrow || hcol) out += '<!-- n365-table hrow=' + hrow + ' hcol=' + hcol + ' -->\n';
+    if (hrow || hcol) out += '<!-- memola-table hrow=' + hrow + ' hcol=' + hcol + ' -->\n';
     out += '| ' + head.join(' | ') + ' |\n';
     out += '| ' + Array(cols).fill('---').join(' | ') + ' |\n';
     for (const r of body) {
@@ -40,12 +40,12 @@ export function domWalk(node: Node): string {
   // Linked-DB embed block: round-trips as a single HTML comment so the
   // payload survives Markdown editing without leaking rendered children.
   // The block's body is regenerated at view-load time from `data-db-id` etc.
-  if (tag === 'div' && el.classList.contains('n365-linkdb')) {
+  if (tag === 'div' && el.classList.contains('memola-linkdb')) {
     const dbId = el.getAttribute('data-db-id') || '';
     const view = el.getAttribute('data-view') || 'table';
     const filterAttr = el.getAttribute('data-filter') || '';
     const sortAttr = el.getAttribute('data-sort') || '';
-    let out = '\n<!-- n365-linkdb dbId="' + dbId + '" view="' + view + '"';
+    let out = '\n<!-- memola-linkdb dbId="' + dbId + '" view="' + view + '"';
     if (filterAttr) out += ' filter="' + filterAttr.replace(/"/g, '&quot;') + '"';
     if (sortAttr)   out += ' sort="' + sortAttr.replace(/"/g, '&quot;') + '"';
     out += ' -->\n';
@@ -53,21 +53,21 @@ export function domWalk(node: Node): string {
   }
 
   // Skip todo checkbox inputs
-  if (tag === 'input' && el.classList.contains('n365-todo-cb')) return '';
+  if (tag === 'input' && el.classList.contains('memola-todo-cb')) return '';
 
   // Todo item
-  if (tag === 'div' && el.classList.contains('n365-todo')) {
-    const cb = el.querySelector('.n365-todo-cb') as HTMLInputElement | null;
-    const txtEl = el.querySelector('.n365-todo-txt');
+  if (tag === 'div' && el.classList.contains('memola-todo')) {
+    const cb = el.querySelector('.memola-todo-cb') as HTMLInputElement | null;
+    const txtEl = el.querySelector('.memola-todo-txt');
     const checked = !!(cb && cb.checked);
     const txt = txtEl ? (txtEl.textContent || '') : '';
     return '\n- [' + (checked ? 'x' : ' ') + '] ' + txt + '\n';
   }
 
   // Callout block: header line "> [emoji] line1", continuation lines prefixed with "> "
-  if (tag === 'div' && el.classList.contains('n365-callout')) {
-    const ic = el.querySelector('.n365-callout-ic');
-    const body = el.querySelector('.n365-callout-body');
+  if (tag === 'div' && el.classList.contains('memola-callout')) {
+    const ic = el.querySelector('.memola-callout-ic');
+    const body = el.querySelector('.memola-callout-body');
     const emoji = ic ? (ic.textContent || '').trim() : '💡';
     const bodyMd = body ? Array.from(body.childNodes).map(domWalk).join('').replace(/^\n+|\n+$/g, '') : '';
     const lines = bodyMd.split('\n');
@@ -77,7 +77,7 @@ export function domWalk(node: Node): string {
   }
 
   // Todo txt span — just return textContent
-  if (tag === 'span' && el.classList.contains('n365-todo-txt')) {
+  if (tag === 'span' && el.classList.contains('memola-todo-txt')) {
     return el.textContent || '';
   }
 
@@ -135,7 +135,7 @@ export function domWalk(node: Node): string {
     // Internal page-link: serialize to wiki-style `[[<id>|<title>]]` so the
     // round-trip is stable across renames (id is canonical, title is just
     // a snapshot for human-readable Markdown).
-    if (el.classList.contains('n365-page-link')) {
+    if (el.classList.contains('memola-page-link')) {
       // Daily-note "deferred" link → `[[daily:YYYY-MM-DD]]`. The link target
       // is the *date*, not a page id, because the row may not exist yet
       // (clicking it find-or-creates).
@@ -173,22 +173,22 @@ export function mdToHtml(md: string): string {
       // Must come BEFORE the bare [[title]] regex (which would otherwise
       // match `daily:2026-05-02` as a free-form title).
       .replace(/\[\[daily:(\d{4}-\d{2}-\d{2})\]\]/g,
-        '<a class="n365-page-link daily-link" data-daily-date="$1" contenteditable="false">$1</a>')
+        '<a class="memola-page-link daily-link" data-daily-date="$1" contenteditable="false">$1</a>')
       // Internal page-link with id: [[<id>|<title>]] → atomic anchor chip.
       // Match before standard [text](url) so the inner [..] aren't parsed as
       // image/link syntax. contenteditable=false makes the chip behave as a
       // single deletable unit inside the editor.
       .replace(/\[\[(\d+)\|([^\]]+)\]\]/g,
-        '<a class="n365-page-link" data-page-id="$1" contenteditable="false">$2</a>')
+        '<a class="memola-page-link" data-page-id="$1" contenteditable="false">$2</a>')
       // Bare [[<title>]] (not yet resolved to an id) — kept for hand-typed
       // links. Click handler resolves to id at navigation time.
       .replace(/\[\[([^\[\]\|]+)\]\]/g,
-        '<a class="n365-page-link" data-pending="1" contenteditable="false">$1</a>')
+        '<a class="memola-page-link" data-pending="1" contenteditable="false">$1</a>')
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       .replace(/~~(.+?)~~/g, '<s>$1</s>')
       .replace(/`(.+?)`/g, '<code>$1</code>')
-      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="n365-img">')
+      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="memola-img">')
       .replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2">$1</a>');
   }
 
@@ -206,7 +206,7 @@ export function mdToHtml(md: string): string {
     // dbId / view / filter / sort. Renders as an empty placeholder div with
     // those attributes — a JS pass populates the table contents at view time
     // from the live SP data (DB rows aren't part of the page Markdown).
-    const ldb = ln.match(/^\s*<!--\s*n365-linkdb\s+([^>]*?)\s*-->\s*$/);
+    const ldb = ln.match(/^\s*<!--\s*memola-linkdb\s+([^>]*?)\s*-->\s*$/);
     if (ldb) {
       const attrs = ldb[1];
       const get = (key: string): string => {
@@ -217,7 +217,7 @@ export function mdToHtml(md: string): string {
       const view = get('view') || 'table';
       const filter = get('filter');
       const sort = get('sort');
-      html += '<div class="n365-linkdb" contenteditable="false"' +
+      html += '<div class="memola-linkdb" contenteditable="false"' +
         ' data-db-id="' + esc(dbId) + '"' +
         ' data-view="' + esc(view) + '"' +
         (filter ? ' data-filter="' + esc(filter) + '"' : '') +
@@ -240,18 +240,22 @@ export function mdToHtml(md: string): string {
 
     // Todo: - [ ] or - [x]  (trailing space optional — tail trim of file may strip it)
     if (ln.match(/^- \[[ xX]\](\s|$)/)) {
-      html += '<div class="n365-todo">';
+      html += '<div class="memola-todo">';
       const checked = ln.charAt(3).toLowerCase() === 'x';
       const todotxt = ln.replace(/^- \[[ xX]\]\s?/, '');
-      html += '<input type="checkbox" class="n365-todo-cb"' + (checked ? ' checked' : '') + '>';
-      html += '<span class="n365-todo-txt' + (checked ? ' done' : '') + '">' + inline(todotxt) + '</span>';
+      html += '<input type="checkbox" class="memola-todo-cb"' + (checked ? ' checked' : '') + '>';
+      // Empty span isn't focusable in contenteditable — insert a <br> so the
+      // user can click into and type in it. Keeps trailing-empty todos
+      // editable after a page reload.
+      const inner = todotxt ? inline(todotxt) : '<br>';
+      html += '<span class="memola-todo-txt' + (checked ? ' done' : '') + '">' + inner + '</span>';
       html += '</div>';
       i++; continue;
     }
 
-    // n365-table 属性コメント (テーブル直前)
+    // memola-table 属性コメント (テーブル直前)
     let pendingHrow = -1, pendingHcol = -1;
-    const cm = ln.match(/^<!--\s*n365-table\s+hrow=([01])\s+hcol=([01])\s*-->\s*$/);
+    const cm = ln.match(/^<!--\s*memola-table\s+hrow=([01])\s+hcol=([01])\s*-->\s*$/);
     if (cm) {
       pendingHrow = parseInt(cm[1]);
       pendingHcol = parseInt(cm[2]);
@@ -283,8 +287,8 @@ export function mdToHtml(md: string): string {
       // hrow/hcol: コメントが無い場合のデフォルト = hrow=1 (GFM convention), hcol=0
       const hrow = pendingHrow >= 0 ? pendingHrow : 1;
       const hcol = pendingHcol >= 0 ? pendingHcol : 0;
-      let tbl = '<div class="n365-itbl-wrap" contenteditable="false">' +
-        '<table class="n365-itbl" data-hrow="' + hrow + '" data-hcol="' + hcol + '"><colgroup>';
+      let tbl = '<div class="memola-itbl-wrap" contenteditable="false">' +
+        '<table class="memola-itbl" data-hrow="' + hrow + '" data-hcol="' + hcol + '"><colgroup>';
       for (let c = 0; c < cols; c++) tbl += '<col>';
       tbl += '</colgroup><tbody>';
       // 1行目もそのまま <tr><td> に。見出し可視化は CSS の data-hrow で行う。
@@ -314,8 +318,8 @@ export function mdToHtml(md: string): string {
           calloutBody += '\n' + lines[i].slice(2); i++;
         }
         const bodyHtml = mdToHtml(calloutBody) || '<p><br></p>';
-        html += '<div class="n365-callout"><span class="n365-callout-ic">' + esc(calloutEmoji) +
-          '</span><div class="n365-callout-body">' + bodyHtml + '</div></div>';
+        html += '<div class="memola-callout"><span class="memola-callout-ic">' + esc(calloutEmoji) +
+          '</span><div class="memola-callout-body">' + bodyHtml + '</div></div>';
         continue;
       }
       // Regular blockquote

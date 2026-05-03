@@ -1,9 +1,14 @@
 // Browser-style page navigation history.
 //
-// Maintains an in-memory stack of visited page IDs with a current pointer.
-// `goBack()` / `goForward()` move the pointer and re-open the page; the
-// regular `doSelect()` path pushes new entries (truncating any forward tail,
-// matching browser behavior).
+// Maintains an in-memory stack of visited entries with a current pointer.
+// Each entry is either a regular page (just `pageId`) or a DB row open as a
+// page (`pageId` of the parent DB plus `rowList` + `rowId`). This lets the
+// back button distinguish "back from a DB row to its DB list view" from
+// "back from a regular page to the previous page".
+//
+// `goBack()` / `goForward()` move the pointer and re-open the entry; the
+// regular `doSelect()` / `openRowAsPage()` paths push new entries
+// (truncating any forward tail, matching browser behavior).
 //
 // To avoid recording the back/forward navigation itself as a new entry,
 // callers set `_skipPush` via `withSkipPush()` when navigating through the
@@ -13,22 +18,40 @@ import { S } from '../state';
 
 const MAX_ENTRIES = 100;
 
-const _stack: string[] = [];
-let _idx = -1;       // index of currently-displayed page in _stack
+interface HistoryEntry {
+  pageId: string;          // the active page (or parent DB id when row is set)
+  rowList?: string;        // SP list title for a DB-row entry
+  rowId?: number;          // DB row id for a DB-row entry
+}
+
+const _stack: HistoryEntry[] = [];
+let _idx = -1;       // index of currently-displayed entry in _stack
 let _skipPush = false;
 
-/** Record a page navigation. Drops any forward history past the current
- *  index — exactly as a browser back/forward stack does when the user goes
- *  back and then opens a different page. */
-export function pushHistory(pageId: string): void {
+function entriesEqual(a: HistoryEntry, b: HistoryEntry): boolean {
+  return a.pageId === b.pageId &&
+    (a.rowId || 0) === (b.rowId || 0) &&
+    (a.rowList || '') === (b.rowList || '');
+}
+
+/** Record a navigation. Page-only call: `pushHistory(pageId)`. Row call:
+ *  `pushHistory(parentDbId, { rowList, rowId })`. Drops any forward
+ *  history past the current index. */
+export function pushHistory(
+  pageId: string,
+  rowRef?: { rowList: string; rowId: number },
+): void {
   if (_skipPush) return;
   if (!pageId) return;
-  // No-op if it's the same as current — typing into the active page or
-  // re-opening it shouldn't bloat history.
-  if (_idx >= 0 && _stack[_idx] === pageId) return;
+  const entry: HistoryEntry = rowRef
+    ? { pageId, rowList: rowRef.rowList, rowId: rowRef.rowId }
+    : { pageId };
+  // No-op if same as current — typing into the active page or re-opening
+  // it shouldn't bloat history.
+  if (_idx >= 0 && entriesEqual(_stack[_idx], entry)) return;
   // Drop forward tail
   if (_idx < _stack.length - 1) _stack.splice(_idx + 1);
-  _stack.push(pageId);
+  _stack.push(entry);
   // Cap stack growth — drop the oldest entry but keep _idx pointing at the
   // most-recent (post-trim).
   if (_stack.length > MAX_ENTRIES) _stack.shift();
@@ -37,20 +60,21 @@ export function pushHistory(pageId: string): void {
 }
 
 export function canGoBack(): boolean {
-  return _idx > 0 && pageExists(_stack[_idx - 1]);
+  return _idx > 0 && entryReachable(_stack[_idx - 1]);
 }
 
 export function canGoForward(): boolean {
-  return _idx >= 0 && _idx < _stack.length - 1 && pageExists(_stack[_idx + 1]);
+  return _idx >= 0 && _idx < _stack.length - 1 && entryReachable(_stack[_idx + 1]);
 }
 
-function pageExists(id: string | undefined): boolean {
-  return !!id && S.pages.some((p) => p.Id === id);
+function entryReachable(e: HistoryEntry | undefined): boolean {
+  if (!e || !e.pageId) return false;
+  return S.pages.some((p) => p.Id === e.pageId);
 }
 
 async function navigate(targetIdx: number): Promise<void> {
-  const pageId = _stack[targetIdx];
-  if (!pageId || !pageExists(pageId)) {
+  const entry = _stack[targetIdx];
+  if (!entry || !entryReachable(entry)) {
     // Target was deleted — drop it and any further entries in the same
     // direction, then bail. Buttons will refresh.
     _stack.splice(targetIdx, 1);
@@ -61,8 +85,16 @@ async function navigate(targetIdx: number): Promise<void> {
   _idx = targetIdx;
   _skipPush = true;
   try {
-    const { doSelect } = await import('./views');
-    await doSelect(pageId);
+    const v = await import('./views');
+    await v.doSelect(entry.pageId);
+    if (entry.rowId && entry.rowList) {
+      // The DB list is now loaded — find the row and open it as a page.
+      const row = S.dbItems.find((it) => it.Id === entry.rowId);
+      if (row) {
+        const rp = await import('./row-page');
+        await rp.openRowAsPage(entry.pageId, row);
+      }
+    }
   } finally {
     _skipPush = false;
   }
@@ -82,8 +114,8 @@ export async function goForward(): Promise<void> {
 /** Sync the back/forward button enabled-state with the stack. Called from
  *  every state change (push, navigate, S.pages reload). */
 export function refreshButtons(): void {
-  const back = document.getElementById('n365-nav-back') as HTMLButtonElement | null;
-  const fwd  = document.getElementById('n365-nav-fwd')  as HTMLButtonElement | null;
+  const back = document.getElementById('memola-nav-back') as HTMLButtonElement | null;
+  const fwd  = document.getElementById('memola-nav-fwd')  as HTMLButtonElement | null;
   if (back) {
     back.disabled = !canGoBack();
     back.classList.toggle('disabled', back.disabled);

@@ -1,12 +1,17 @@
-// Corporate AI gateway client (Azure OpenAI 互換 / Function Calling 対応)。
+// Azure OpenAI 互換 API クライアント (Function Calling 対応)。
 //
-// ベース URL とデプロイ ID 命名規則は組織ごとに違うため、コードに固有値を
-// 持たず ai-settings.ts からユーザー設定値を取得して動的に組み立てる。
+// 対応サービス例:
+//   - Azure OpenAI Service (Microsoft 純正)
+//   - Azure API Management 経由のラッパー
+//   - 社内 API ゲートウェイ (Azure OpenAI 互換のもの)
+//
+// ベース URL とデプロイ ID 命名規則はインスタンスごとに違うため、コードに
+// 固有値を持たず ai-settings.ts からユーザー設定値を取得して動的に組み立て。
 //
 // 提供:
 //  - corpAiChatText  ... プレーンチャット (text only)
 //  - corpAiChatRaw   ... Claude 互換 (Tool Use / Function Calling 対応)
-//                        run-agent.ts の agent loop を Claude / 企業AI 両対応
+//                        run-agent.ts の agent loop を Claude / Azure OpenAI 互換 両対応
 //                        にするための統一インターフェース。
 //
 // ストリーミングは SSE (data: {...}\n\n) で OpenAI 互換。
@@ -21,7 +26,7 @@ import type {
 } from './anthropic';
 
 /** OpenAI message shape — superset of what we send. Only role + content for
- *  the basic chat path. The SDK uses `image_url` parts for vision but n365's
+ *  the basic chat path. The SDK uses `image_url` parts for vision but Memola's
  *  in-app chat is text-only at the moment. */
 export interface OAMessage {
   role: 'system' | 'user' | 'assistant';
@@ -50,7 +55,7 @@ export interface CorpChatOpts {
  *    {endpoint}/openai/deployments/{deployment-id}/chat/completions?api-version={api-version}
  *
  *  where `{endpoint}` already includes a date segment (the gateway-side
- *  supported api version, e.g. ".../corpapi/2024-10-21") and `{api-version}`
+ *  supported api version, e.g. ".../{gateway-path}/2024-10-21") and `{api-version}`
  *  in the query is *independent* (e.g. "2024-12-01-preview" for reasoning
  *  models). Both can differ — early versions of this code injected the
  *  api-version into the path too, which broke whenever the two diverged
@@ -61,8 +66,8 @@ function chatUrlFor(modelId: string): string {
   const m = findCorpAiModel(modelId);
   if (!m) throw new Error('未知のモデル: ' + modelId);
   const ep = resolveCorpAiEndpoint(modelId);
-  if (!ep.baseUrl) throw new Error('企業AI API ベース URL が未設定です (設定で構成)');
-  if (!ep.deploymentId) throw new Error('企業AI API デプロイ名が未設定です (設定でプレフィックスを構成)');
+  if (!ep.baseUrl) throw new Error('Azure OpenAI 互換 API ベース URL が未設定です (設定で構成)');
+  if (!ep.deploymentId) throw new Error('Azure OpenAI 互換 API デプロイ名が未設定です (設定でプレフィックスを構成)');
   return ep.baseUrl +
     '/openai/deployments/' + ep.deploymentId +
     '/chat/completions?api-version=' + ep.apiVersion;
@@ -71,7 +76,7 @@ function chatUrlFor(modelId: string): string {
 /** Plain (non-streaming) chat completion. Returns the assistant's reply. */
 export async function corpAiChatText(opts: CorpChatOpts): Promise<string> {
   const apiKey = getCorpAiKey();
-  if (!apiKey) throw new Error('企業AI API キーが未設定です');
+  if (!apiKey) throw new Error('Azure OpenAI 互換 API キーが未設定です');
   const modelId = opts.model || getCorpAiModel();
   const m = findCorpAiModel(modelId);
   if (!m) throw new Error('未知のモデル: ' + modelId);
@@ -166,21 +171,21 @@ async function streamChat(
  *  to the raw response text otherwise. */
 function formatCorpError(status: number, body: string): string {
   const sliced = body ? ' — ' + body.slice(0, 240) : '';
-  if (status === 401) return '企業AI 失敗: 401 サブスクリプションキーが無効/未指定' + sliced;
-  if (status === 403) return '企業AI 失敗: 403 接続元 IP が許可されていません (社内ネットワーク接続を確認)' + sliced;
-  if (status === 429) return '企業AI 失敗: 429 トークン上限超過 (1分後に再試行)' + sliced;
-  if (status === 400) return '企業AI 失敗: 400 リクエスト不正 (モデル/JSON を確認)' + sliced;
-  return '企業AI 失敗: ' + status + sliced;
+  if (status === 401) return 'Azure OpenAI 互換 API 失敗: 401 API キーが無効/未指定' + sliced;
+  if (status === 403) return 'Azure OpenAI 互換 API 失敗: 403 接続元 IP が許可されていません' + sliced;
+  if (status === 429) return 'Azure OpenAI 互換 API 失敗: 429 レート上限超過 (1分後に再試行)' + sliced;
+  if (status === 400) return 'Azure OpenAI 互換 API 失敗: 400 リクエスト不正 (モデル/JSON を確認)' + sliced;
+  return 'Azure OpenAI 互換 API 失敗: ' + status + sliced;
 }
 
 // ─── Tool Use bridge: Claude format ↔ OpenAI Function Calling format ───────
 
-interface OAToolCall {
+export interface OAToolCall {
   id: string;
   type: 'function';
   function: { name: string; arguments: string };
 }
-interface OAFullMessage {
+export interface OAFullMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content?: string | null;
   tool_calls?: OAToolCall[];
@@ -191,7 +196,7 @@ interface OAFullMessage {
  *  shape. Each Claude `tool_use` block becomes an OpenAI `tool_calls` entry on
  *  the same assistant turn; each `tool_result` block becomes a separate
  *  message with `role: 'tool'` (OpenAI's convention). */
-function toOAMessages(msgs: ApiMessage[]): OAFullMessage[] {
+export function toOAMessages(msgs: ApiMessage[]): OAFullMessage[] {
   const out: OAFullMessage[] = [];
   for (const m of msgs) {
     if (typeof m.content === 'string') {
@@ -240,7 +245,7 @@ interface OAToolDef {
 /** Convert Claude ToolDef[] to OpenAI's `tools` request param. Claude's
  *  `cache_control` is not transferable; the corporate gateway doesn't expose
  *  prompt-caching here, so we drop it. */
-function toOATools(tools: ToolDef[]): OAToolDef[] {
+export function toOATools(tools: ToolDef[]): OAToolDef[] {
   return tools.map((t) => ({
     type: 'function',
     function: {
@@ -254,7 +259,7 @@ function toOATools(tools: ToolDef[]): OAToolDef[] {
 /** Flatten a SystemBlock[] (with cache_control hints) to a single string —
  *  OpenAI accepts a `role: 'system'` message body without the structured
  *  per-block format. */
-function flattenSystem(s: string | SystemBlock[] | undefined): string {
+export function flattenSystem(s: string | SystemBlock[] | undefined): string {
   if (!s) return '';
   if (typeof s === 'string') return s;
   return s.map((b) => b.text).join('\n\n');
@@ -275,7 +280,7 @@ interface CorpRawOpts {
  *  can dispatch on provider without conditional branching downstream. */
 export async function corpAiChatRaw(opts: CorpRawOpts): Promise<ClaudeResponse> {
   const apiKey = getCorpAiKey();
-  if (!apiKey) throw new Error('企業AI API キーが未設定です');
+  if (!apiKey) throw new Error('Azure OpenAI 互換 API キーが未設定です');
   const modelId = opts.model || getCorpAiModel();
   const m = findCorpAiModel(modelId);
   if (!m) throw new Error('未知のモデル: ' + modelId);
@@ -320,7 +325,7 @@ export async function corpAiChatRaw(opts: CorpRawOpts): Promise<ClaudeResponse> 
 
 /** Convert an OpenAI message + finish_reason into Claude's content[] /
  *  stop_reason shape so the agent loop can stay provider-agnostic. */
-function parseOAResponseToClaudeShape(
+export function parseOAResponseToClaudeShape(
   msg: OAFullMessage | undefined,
   finish: string | undefined,
 ): ClaudeResponse {

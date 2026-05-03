@@ -2,6 +2,7 @@
 // sibling order persisted in localStorage.
 
 import type { Page } from '../state';
+import { prefTreeOrder } from './prefs';
 
 /** Collect a page id along with all transitive descendants. */
 export function collectDescendantIds(pages: Page[], rootId: string): string[] {
@@ -14,19 +15,14 @@ export function collectDescendantIds(pages: Page[], rootId: string): string[] {
 
 // ── Per-parent sibling order ────────────────────────────
 
-const TREE_ORDER_KEY = 'n365.tree.order';
-
 interface OrderMap { [parentId: string]: string[] }
 
 function loadOrderMap(): OrderMap {
-  try {
-    const raw = localStorage.getItem(TREE_ORDER_KEY);
-    return raw ? (JSON.parse(raw) as OrderMap) : {};
-  } catch { return {}; }
+  return prefTreeOrder.get() as OrderMap;
 }
 
 function saveOrderMap(m: OrderMap): void {
-  try { localStorage.setItem(TREE_ORDER_KEY, JSON.stringify(m)); } catch { /* ignore */ }
+  prefTreeOrder.set(m);
 }
 
 /** Reorder a list of sibling pages by the saved order. Unknown ids appended. */

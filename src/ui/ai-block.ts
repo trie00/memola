@@ -8,6 +8,7 @@ import { setSave, toast } from './ui-helpers';
 import { schedSave } from './actions';
 import { callClaude } from '../api/anthropic';
 import { htmlToMd } from '../lib/markdown';
+import { escapeHtml } from '../lib/html-escape';
 
 const ACTIONS: Array<{ key: string; label: string; prompt: string }> = [
   { key: 'summarize', label: '要約', prompt: 'このページの内容を3行で簡潔に要約してください。' },
@@ -22,7 +23,7 @@ export function insertAiBlock(): void {
   if (!sel || !sel.rangeCount) return;
 
   const wrap = document.createElement('div');
-  wrap.className = 'n365-ai-block';
+  wrap.className = 'memola-ai-block';
   wrap.contentEditable = 'false';
   wrap.innerHTML = renderActionPicker();
 
@@ -47,21 +48,21 @@ export function insertAiBlock(): void {
 
 function renderActionPicker(): string {
   return (
-    '<div class="n365-aib-head">' +
-      '<span class="n365-aib-title">✦ AI ブロック</span>' +
-      '<span class="n365-aib-hint">アクションを選択</span>' +
+    '<div class="memola-aib-head">' +
+      '<span class="memola-aib-title">✦ AI ブロック</span>' +
+      '<span class="memola-aib-hint">アクションを選択</span>' +
     '</div>' +
-    '<div class="n365-aib-actions">' +
+    '<div class="memola-aib-actions">' +
       ACTIONS.map((a) =>
-        '<button class="n365-aib-action" data-action="' + a.key + '">' + a.label + '</button>',
+        '<button class="memola-aib-action" data-action="' + a.key + '">' + a.label + '</button>',
       ).join('') +
-      '<button class="n365-aib-action n365-aib-cancel" data-action="cancel">×</button>' +
+      '<button class="memola-aib-action memola-aib-cancel" data-action="cancel">×</button>' +
     '</div>'
   );
 }
 
 function attachActionHandlers(wrap: HTMLElement): void {
-  wrap.querySelectorAll<HTMLButtonElement>('.n365-aib-action').forEach((btn) => {
+  wrap.querySelectorAll<HTMLButtonElement>('.memola-aib-action').forEach((btn) => {
     btn.addEventListener('click', () => {
       const action = btn.dataset.action!;
       if (action === 'cancel') { wrap.remove(); S.dirty = true; setSave('未保存'); schedSave(); return; }
@@ -76,46 +77,46 @@ async function runAction(wrap: HTMLElement, cfg: { key: string; label: string; p
   const ed = getEd();
   const ctx = htmlToMd(ed.innerHTML);
   wrap.innerHTML =
-    '<div class="n365-aib-head">' +
-      '<span class="n365-aib-title">✦ ' + escapeHtml(cfg.label) + '</span>' +
-      '<span class="n365-aib-hint">考え中…</span>' +
+    '<div class="memola-aib-head">' +
+      '<span class="memola-aib-title">✦ ' + escapeHtml(cfg.label) + '</span>' +
+      '<span class="memola-aib-hint">考え中…</span>' +
     '</div>' +
-    '<div class="n365-aib-body n365-aib-loading">…</div>';
+    '<div class="memola-aib-body memola-aib-loading">…</div>';
 
   try {
     const reply = await callClaude(
       [{ role: 'user', content: cfg.prompt + '\n\n--- ページ本文 ---\n' + ctx }],
-      'あなたは n365 のAIアシスタントです。簡潔で自然な日本語で答えてください。',
+      'あなたは Memola のAIアシスタントです。簡潔で自然な日本語で答えてください。',
     );
     showResult(wrap, cfg, reply);
   } catch (err) {
     wrap.innerHTML =
-      '<div class="n365-aib-head"><span class="n365-aib-title">✦ ' + escapeHtml(cfg.label) + '</span></div>' +
-      '<div class="n365-aib-body n365-aib-error">⚠️ ' + escapeHtml((err as Error).message) + '</div>' +
-      '<div class="n365-aib-foot">' +
-        '<button class="n365-aib-btn n365-aib-retry" data-action="retry">再試行</button>' +
-        '<button class="n365-aib-btn n365-aib-discard" data-action="discard">破棄</button>' +
+      '<div class="memola-aib-head"><span class="memola-aib-title">✦ ' + escapeHtml(cfg.label) + '</span></div>' +
+      '<div class="memola-aib-body memola-aib-error">⚠️ ' + escapeHtml((err as Error).message) + '</div>' +
+      '<div class="memola-aib-foot">' +
+        '<button class="memola-aib-btn memola-aib-retry" data-action="retry">再試行</button>' +
+        '<button class="memola-aib-btn memola-aib-discard" data-action="discard">破棄</button>' +
       '</div>';
-    wrap.querySelector<HTMLButtonElement>('.n365-aib-retry')?.addEventListener('click', () => runAction(wrap, cfg));
-    wrap.querySelector<HTMLButtonElement>('.n365-aib-discard')?.addEventListener('click', () => { wrap.remove(); });
+    wrap.querySelector<HTMLButtonElement>('.memola-aib-retry')?.addEventListener('click', () => runAction(wrap, cfg));
+    wrap.querySelector<HTMLButtonElement>('.memola-aib-discard')?.addEventListener('click', () => { wrap.remove(); });
   }
 }
 
 function showResult(wrap: HTMLElement, cfg: { key: string; label: string; prompt: string }, text: string): void {
   wrap.innerHTML =
-    '<div class="n365-aib-head">' +
-      '<span class="n365-aib-title">✦ ' + escapeHtml(cfg.label) + '</span>' +
-      '<button class="n365-aib-regen" title="再生成">↻</button>' +
+    '<div class="memola-aib-head">' +
+      '<span class="memola-aib-title">✦ ' + escapeHtml(cfg.label) + '</span>' +
+      '<button class="memola-aib-regen" title="再生成">↻</button>' +
     '</div>' +
-    '<div class="n365-aib-body">' + nl2br(escapeHtml(text)) + '</div>' +
-    '<div class="n365-aib-foot">' +
-      '<button class="n365-aib-btn n365-aib-adopt" data-action="adopt">採用</button>' +
-      '<button class="n365-aib-btn n365-aib-edit" data-action="edit">編集</button>' +
-      '<button class="n365-aib-btn n365-aib-discard" data-action="discard">破棄</button>' +
+    '<div class="memola-aib-body">' + nl2br(escapeHtml(text)) + '</div>' +
+    '<div class="memola-aib-foot">' +
+      '<button class="memola-aib-btn memola-aib-adopt" data-action="adopt">採用</button>' +
+      '<button class="memola-aib-btn memola-aib-edit" data-action="edit">編集</button>' +
+      '<button class="memola-aib-btn memola-aib-discard" data-action="discard">破棄</button>' +
     '</div>';
 
-  wrap.querySelector<HTMLButtonElement>('.n365-aib-regen')?.addEventListener('click', () => runAction(wrap, cfg));
-  wrap.querySelector<HTMLButtonElement>('.n365-aib-adopt')?.addEventListener('click', () => {
+  wrap.querySelector<HTMLButtonElement>('.memola-aib-regen')?.addEventListener('click', () => runAction(wrap, cfg));
+  wrap.querySelector<HTMLButtonElement>('.memola-aib-adopt')?.addEventListener('click', () => {
     // Replace block with paragraphs of the result
     const ed = getEd();
     const lines = text.split(/\n+/).filter((l) => l.trim());
@@ -129,18 +130,15 @@ function showResult(wrap: HTMLElement, cfg: { key: string; label: string; prompt
     S.dirty = true; setSave('未保存'); schedSave();
     toast('AIブロックを採用しました');
   });
-  wrap.querySelector<HTMLButtonElement>('.n365-aib-edit')?.addEventListener('click', () => {
-    const body = wrap.querySelector('.n365-aib-body') as HTMLElement;
+  wrap.querySelector<HTMLButtonElement>('.memola-aib-edit')?.addEventListener('click', () => {
+    const body = wrap.querySelector('.memola-aib-body') as HTMLElement;
     body.contentEditable = 'true';
     body.focus();
   });
-  wrap.querySelector<HTMLButtonElement>('.n365-aib-discard')?.addEventListener('click', () => {
+  wrap.querySelector<HTMLButtonElement>('.memola-aib-discard')?.addEventListener('click', () => {
     wrap.remove();
     S.dirty = true; setSave('未保存'); schedSave();
   });
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
 function nl2br(s: string): string { return s.replace(/\n/g, '<br>'); }

@@ -7,10 +7,10 @@ import css from './styles/app.css';
 
 (function () {
   // 多重起動防止
-  const existing = document.getElementById('n365-overlay');
+  const existing = document.getElementById('memola-overlay');
   if (existing) {
     existing.remove();
-    const es = document.getElementById('n365-style');
+    const es = document.getElementById('memola-style');
     if (es) es.remove();
     return;
   }
@@ -25,13 +25,13 @@ import css from './styles/app.css';
 
   // CSS
   const st = document.createElement('style');
-  st.id = 'n365-style';
+  st.id = 'memola-style';
   st.textContent = css;
   document.head.appendChild(st);
 
   // HTML overlay
   const ov = document.createElement('div');
-  ov.id = 'n365-overlay';
+  ov.id = 'memola-overlay';
   ov.innerHTML = buildHtml();
   document.body.appendChild(ov);
 

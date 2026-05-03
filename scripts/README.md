@@ -1,9 +1,9 @@
-# n365 補助スクリプト
+# Memola 補助スクリプト
 
 ## `corp-ai-relay.py` — 社用 AI ゲートウェイ用ローカル中継
 
 ブラウザの `fetch()` は環境変数 `HTTP_PROXY` を読まず、Fetch API にも
-プロキシを per-request 指定する手段がないため、bookmarklet (n365) から
+プロキシを per-request 指定する手段がないため、bookmarklet (Memola) から
 社用 AI ゲートウェイをオンプレプロキシ経由で直接呼ぶことができない。
 
 このスクリプトは PC 上で **`localhost:18080` を待ち受ける小さな HTTP リレー**
@@ -13,7 +13,7 @@
 両方一気に解決できる。
 
 ```
-n365 (browser)  ─── fetch ───>  http://localhost:18080  ─┐
+Memola (browser)  ─── fetch ───>  http://localhost:18080  ─┐
                                                           │
                                   +--- requests + proxies +
                                   ▼
@@ -95,7 +95,7 @@ Windows なら `scripts/corp-ai-relay.bat` または `corp-ai-relay.ps1` を
   target  : https://gateway.example.com/customapi
   proxy   : http://onprem-proxy.example.com:8080
 ────────────────────────────────────────────────────────────────
-n365 の設定モーダルに「ベース URL」を入力 (どちらでも可):
+Memola の設定モーダルに「ベース URL」を入力 (どちらでも可):
   A: http://localhost:18080
   B: http://localhost:18080/customapi    (実 URL のパスを保ったまま localhost に
                                            置き換える形 — 視認性◎)
@@ -103,9 +103,9 @@ n365 の設定モーダルに「ベース URL」を入力 (どちらでも可):
 Ctrl+C で終了
 ```
 
-#### 3) n365 の設定モーダルに入力
+#### 3) Memola の設定モーダルに入力
 
-1. n365 を起動 → 設定 (⚙)
+1. Memola を起動 → 設定 (⚙)
 2. **プロバイダ**: `企業AI API`
 3. **ベース URL**: 上記 A / B のどちらか (リレーが自動でパスを揃えるので
    どちらでも動作)
@@ -143,7 +143,7 @@ python3 scripts/corp-ai-relay.py \
 curl http://localhost:18080/    # ゲートウェイのルートにフォワード
 ```
 
-あるいは n365 を起動して AI パネルで何か質問。バッジが
+あるいは Memola を起動して AI パネルで何か質問。バッジが
 「企業AI · gpt-4.1-mini」に変わっていれば設定 OK。
 
 ### 自動起動 (任意)

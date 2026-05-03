@@ -12,15 +12,15 @@ let _bar: HTMLElement | null = null;
 
 function ensureBar(): HTMLElement {
   if (_bar && document.body.contains(_bar)) return _bar;
-  const overlay = document.getElementById('n365-overlay') || document.body;
+  const overlay = document.getElementById('memola-overlay') || document.body;
   const el = document.createElement('div');
-  el.id = 'n365-db-bulkbar';
-  el.className = 'n365-db-bulkbar';
+  el.id = 'memola-db-bulkbar';
+  el.className = 'memola-db-bulkbar';
   el.innerHTML =
-    '<span class="n365-db-bulkbar-count">0 件選択</span>' +
-    '<button class="n365-db-bulkbar-btn" data-act="dup">複製</button>' +
-    '<button class="n365-db-bulkbar-btn danger" data-act="del">削除</button>' +
-    '<button class="n365-db-bulkbar-btn ghost" data-act="clr">解除</button>';
+    '<span class="memola-db-bulkbar-count">0 件選択</span>' +
+    '<button class="memola-db-bulkbar-btn" data-act="dup">複製</button>' +
+    '<button class="memola-db-bulkbar-btn danger" data-act="del">削除</button>' +
+    '<button class="memola-db-bulkbar-btn ghost" data-act="clr">解除</button>';
   overlay.appendChild(el);
   el.addEventListener('click', onClick);
   _bar = el;
@@ -92,7 +92,7 @@ async function doDuplicate(): Promise<void> {
       if (!data.Title) data.Title = (item.Title as string) || '無題';
       try {
         // Carry over the row-page markdown body (notes/details stored under
-        // n365-pages with PageType='row'). Without this, duplicates of rows
+        // memola-pages with PageType='row'). Without this, duplicates of rows
         // with rich detail pages would silently lose all that content.
         const body = await getRowBody(S.dbList, id).catch(() => '');
         const newItem = await addRowWithUndo(S.dbList, data, body || undefined);
@@ -113,7 +113,7 @@ async function doDuplicate(): Promise<void> {
       toast(`${created} 件成功 / ${errors.length} 件失敗 (${errors[0]})`, 'err');
     }
     // eslint-disable-next-line no-console
-    if (errors.length > 0) console.warn('[n365 duplicate errors]', errors);
+    if (errors.length > 0) console.warn('[Memola duplicate errors]', errors);
   } finally { setLoad(false); }
 }
 
@@ -121,7 +121,7 @@ async function doDuplicate(): Promise<void> {
 function updateBarPosition(): void {
   const bar = _bar;
   if (!bar || !bar.classList.contains('on')) return;
-  const tb = document.getElementById('n365-db-tb');
+  const tb = document.getElementById('memola-db-tb');
   if (!tb) return;
   const r = tb.getBoundingClientRect();
   const barH = bar.offsetHeight || 44;
@@ -135,9 +135,9 @@ function onOutsideClick(e: MouseEvent): void {
   if (S.dbSelected.size === 0) return;
   const t = e.target as HTMLElement;
   if (!t) return;
-  if (t.closest('.n365-db-bulkbar')) return;          // inside the toolbar
-  if (t.closest('.n365-cb')) return;                  // checkbox toggle
-  if (t.closest('#n365-row-handle')) return;          // drag handle
+  if (t.closest('.memola-db-bulkbar')) return;          // inside the toolbar
+  if (t.closest('.memola-cb')) return;                  // checkbox toggle
+  if (t.closest('#memola-row-handle')) return;          // drag handle
   if (e.shiftKey) return;                              // shift+click extends selection
   clearSelectionUI();
 }
@@ -145,14 +145,14 @@ function onOutsideClick(e: MouseEvent): void {
 /** Clear selection state + remove visual marks without a full re-render. */
 function clearSelectionUI(): void {
   S.dbSelected.clear();
-  document.querySelectorAll('.n365-card-sel, .n365-tr-sel').forEach((el) => {
-    el.classList.remove('n365-card-sel', 'n365-tr-sel');
+  document.querySelectorAll('.memola-card-sel, .memola-tr-sel').forEach((el) => {
+    el.classList.remove('memola-card-sel', 'memola-tr-sel');
   });
-  document.querySelectorAll<HTMLInputElement>('#n365-dt .n365-cb').forEach((cb) => {
+  document.querySelectorAll<HTMLInputElement>('#memola-dt .memola-cb').forEach((cb) => {
     cb.checked = false; cb.indeterminate = false;
   });
-  const dt = document.getElementById('n365-dt');
-  if (dt) dt.classList.remove('n365-has-sel');
+  const dt = document.getElementById('memola-dt');
+  if (dt) dt.classList.remove('memola-has-sel');
   renderBulkBar();
 }
 
@@ -160,7 +160,7 @@ function clearSelectionUI(): void {
 export function renderBulkBar(): void {
   const bar = ensureBar();
   const n = S.dbSelected.size;
-  const count = bar.querySelector<HTMLElement>('.n365-db-bulkbar-count');
+  const count = bar.querySelector<HTMLElement>('.memola-db-bulkbar-count');
   if (count) count.textContent = n + ' 件選択';
   const visible = n > 0 && S.currentType === 'database';
   bar.classList.toggle('on', visible);

@@ -35,6 +35,10 @@ export interface Page {
   Title: string;
   ParentId: string;
   Type?: 'page' | 'database';
+  /** True when this entry is a 「下書きとして複製」 result. Such pages are
+   *  excluded from the main page tree, search, and page-link picker — they
+   *  only appear in the 「📝 下書き」 sidebar. */
+  IsDraft?: boolean;
 }
 
 export interface ListField {
@@ -79,6 +83,11 @@ export interface AppState {
     loadedModified: string | null;
     loadedEtag: string | null;
     pollTimer: ReturnType<typeof setInterval> | null;
+    /** Etags this tab has produced via its own save calls. The poll
+     *  loop suppresses the "別タブで更新" banner when the remote etag
+     *  is in this set — it's our own save we're seeing, not someone
+     *  else's. Bounded to 32 entries (FIFO) to cap memory. */
+    ourSavedEtags: string[];
   };
   expanded: Set<string>;
   dirty: boolean;
@@ -100,8 +109,36 @@ export const S: AppState = {
   currentRow: null,
   dbSelected: new Set<number>(),
   ai: { panelOpen: false, messages: [], loading: false },
-  sync: { pageId: null, loadedModified: null, loadedEtag: null, pollTimer: null },
+  sync: { pageId: null, loadedModified: null, loadedEtag: null, pollTimer: null, ourSavedEtags: [] },
   expanded: new Set<string>(),
   dirty: false,
   saving: false,
 };
+
+/** Wipe in-memory app state. Used by workspace switching — caches in
+ *  /api are cleared separately. Does NOT touch S itself by reassignment
+ *  (other modules import S as a live reference); mutates fields in place. */
+export function resetAppState(): void {
+  S.pages = [];
+  S.meta = { pages: [] };
+  S.currentId = null;
+  S.currentType = 'page';
+  S.dbFields = [];
+  S.dbItems = [];
+  S.dbList = '';
+  S.dbSort = { field: null, asc: true };
+  S.dbFilters = [];
+  S.dbColumnWidths = {};
+  S.currentRow = null;
+  S.dbSelected.clear();
+  S.ai.messages = [];
+  S.ai.loading = false;
+  S.sync.pageId = null;
+  S.sync.loadedModified = null;
+  S.sync.loadedEtag = null;
+  S.sync.ourSavedEtags = [];
+  if (S.sync.pollTimer) { clearInterval(S.sync.pollTimer); S.sync.pollTimer = null; }
+  S.expanded.clear();
+  S.dirty = false;
+  S.saving = false;
+}

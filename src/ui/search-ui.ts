@@ -2,7 +2,7 @@
 //
 // Body (full-text) search is intentionally not provided: the previous SP-Search
 // path indexed markdown files in a document library, but pages now live as rows
-// in the n365-pages list. Searching list bodies via SP REST is left as future
+// in the memola-pages list. Searching list bodies via SP REST is left as future
 // work; until then this overlay is title + action only.
 
 import { S, type Page } from '../state';
@@ -42,6 +42,7 @@ export function getPagePath(id: string): string {
 
 export function renderQs(q: string): void {
   const matchedPages = S.pages.filter((p) => {
+    if (p.IsDraft) return false;     // drafts surface only in 「📝 下書き」
     if (!q) return true;
     return (p.Title || '').toLowerCase().includes(q.toLowerCase());
   });
@@ -61,7 +62,7 @@ export function rebuildQsDom(): void {
   // ── ページセクション ──
   if (!isActionMode && _qsTitleItems.length > 0) {
     const hd = document.createElement('div');
-    hd.className = 'n365-qs-section';
+    hd.className = 'memola-qs-section';
     hd.textContent = ql ? 'ページ' : '最近のページ';
     res.appendChild(hd);
     _qsTitleItems.forEach((p) => {
@@ -73,7 +74,7 @@ export function rebuildQsDom(): void {
   // ── DBセクション ──
   if (!isActionMode && _qsDbItems.length > 0) {
     const hd = document.createElement('div');
-    hd.className = 'n365-qs-section';
+    hd.className = 'memola-qs-section';
     hd.textContent = 'DB';
     res.appendChild(hd);
     _qsDbItems.forEach((p) => {
@@ -89,7 +90,7 @@ export function rebuildQsDom(): void {
   );
   if (matchingActions.length > 0) {
     const hd = document.createElement('div');
-    hd.className = 'n365-qs-section';
+    hd.className = 'memola-qs-section';
     hd.textContent = 'アクション';
     res.appendChild(hd);
     matchingActions.forEach((a) => {
@@ -101,7 +102,7 @@ export function rebuildQsDom(): void {
   // ── ヘルプ ──
   if (!isActionMode && !ql) {
     const hd = document.createElement('div');
-    hd.className = 'n365-qs-section';
+    hd.className = 'memola-qs-section';
     hd.textContent = 'ヘルプ';
     res.appendChild(hd);
     const helpAction: CmdAction = {
@@ -113,7 +114,7 @@ export function rebuildQsDom(): void {
   }
 
   if (_qsItems.length === 0) {
-    res.innerHTML = '<div class="n365-qs-empty">見つかりませんでした</div>';
+    res.innerHTML = '<div class="memola-qs-empty">見つかりませんでした</div>';
   }
 
   if (_qsSel >= _qsItems.length) _qsSel = 0;
@@ -121,14 +122,14 @@ export function rebuildQsDom(): void {
 
 export function buildQsPageItem(p: Page, idx: number): HTMLDivElement {
   const div = document.createElement('div');
-  div.className = 'n365-qs-item' + (idx === _qsSel ? ' sel' : '');
+  div.className = 'memola-qs-item' + (idx === _qsSel ? ' sel' : '');
   const isDb = p.Type === 'database';
   const pathStr = getPagePath(p.Id);
   div.innerHTML =
-    '<span class="n365-qs-ic">' + (isDb ? '🗃' : '📄') + '</span>' +
+    '<span class="memola-qs-ic">' + (isDb ? '🗃' : '📄') + '</span>' +
     '<div style="flex:1;min-width:0">' +
-      '<div class="n365-qs-title">' + escHtml(p.Title || '無題') + '</div>' +
-      (pathStr ? '<div class="n365-qs-path">' + escHtml(pathStr) + '</div>' : '') +
+      '<div class="memola-qs-title">' + escHtml(p.Title || '無題') + '</div>' +
+      (pathStr ? '<div class="memola-qs-path">' + escHtml(pathStr) + '</div>' : '') +
     '</div>';
   div.addEventListener('click', () => {
     closeSearch();
@@ -139,13 +140,13 @@ export function buildQsPageItem(p: Page, idx: number): HTMLDivElement {
 
 export function buildQsActionItem(a: CmdAction, idx: number): HTMLDivElement {
   const div = document.createElement('div');
-  div.className = 'n365-qs-item' + (idx === _qsSel ? ' sel' : '');
+  div.className = 'memola-qs-item' + (idx === _qsSel ? ' sel' : '');
   div.innerHTML =
-    '<span class="n365-qs-ic">' + escHtml(a.icon) + '</span>' +
+    '<span class="memola-qs-ic">' + escHtml(a.icon) + '</span>' +
     '<div style="flex:1;min-width:0">' +
-      '<div class="n365-qs-title">' + escHtml(a.label) + '</div>' +
+      '<div class="memola-qs-title">' + escHtml(a.label) + '</div>' +
     '</div>' +
-    (a.key ? '<span class="n365-qs-kbd">' + escHtml(a.key) + '</span>' : '');
+    (a.key ? '<span class="memola-qs-kbd">' + escHtml(a.key) + '</span>' : '');
   div.addEventListener('click', () => {
     closeSearch();
     a.run();
@@ -156,7 +157,7 @@ export function buildQsActionItem(a: CmdAction, idx: number): HTMLDivElement {
 export function qsMove(dir: number): void {
   if (_qsItems.length === 0) return;
   _qsSel = (_qsSel + dir + _qsItems.length) % _qsItems.length;
-  const nodes = g('qs-res').querySelectorAll<HTMLElement>('.n365-qs-item');
+  const nodes = g('qs-res').querySelectorAll<HTMLElement>('.memola-qs-item');
   nodes.forEach((it, i) => { it.classList.toggle('sel', i === _qsSel); });
   if (nodes[_qsSel]) nodes[_qsSel].scrollIntoView({ block: 'nearest' });
 }

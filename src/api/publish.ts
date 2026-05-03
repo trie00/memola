@@ -1,12 +1,12 @@
 // Publish-to-SharePoint helpers (Modern Site Pages flavor).
 //
 // "Publishing" creates / updates a Modern Site Page (.aspx) that mirrors the
-// n365 page. SP renders Site Pages natively, so they aren't blocked by the
+// Memola page. SP renders Site Pages natively, so they aren't blocked by the
 // document-library "Strict Browser File Handling" policy that was forcing
 // .html files to download.
 //
 // Sync model: explicit, *not* automatic. `publishPage` does the initial
-// publish; subsequent edits in n365 mark the page as `PublishedDirty=1` but
+// publish; subsequent edits in Memola mark the page as `PublishedDirty=1` but
 // do NOT touch the Site Page. The "公開中" tag in the top bar shows the
 // dirty state and lets the user trigger `syncPublishedPage` on demand.
 //
@@ -17,23 +17,8 @@
 import { S } from '../state';
 import { SITE } from '../config';
 import { getDigest } from './digest';
-import { updateListItem } from './sp-list';
-import { PAGES_LIST, apiLoadFileMeta } from './pages';
+import { PAGES_LIST, updatePageRow } from './pages';
 import { mdToHtml } from '../lib/markdown';
-
-/** After any write to the n365-pages row, the row's Modified/ETag advances.
- *  If the active page is the one we just wrote, refresh S.sync so the next
- *  auto-save isn't flagged as a conflict against a stale ETag. */
-async function refreshSyncWatermark(pageId: string): Promise<void> {
-  if (S.sync.pageId !== pageId) return;
-  try {
-    const fm = await apiLoadFileMeta(pageId);
-    if (fm) {
-      S.sync.loadedEtag = fm.etag;
-      S.sync.loadedModified = fm.modified;
-    }
-  } catch { /* ignore */ }
-}
 
 interface SitePageRef {
   id: number;
@@ -298,7 +283,7 @@ export function publishedUrlFor(pageId: string): string {
 }
 
 /** Mark the page as published and create / refresh its Site Page mirror.
- *  Also clears the "未反映" dirty flag — the mirror now matches n365. */
+ *  Also clears the "未反映" dirty flag — the mirror now matches memola. */
 export async function publishPage(pageId: string, title: string, bodyMd: string): Promise<string> {
   const meta = S.meta.pages.find((p) => p.id === pageId);
   const content = buildCanvasContent(bodyMd);
@@ -313,7 +298,7 @@ export async function publishPage(pageId: string, title: string, bodyMd: string)
   }
   const itemId = parseInt(pageId, 10);
   if (itemId) {
-    await updateListItem(PAGES_LIST, itemId, {
+    await updatePageRow(itemId, {
       Published: 1,
       PublishedUrl: ref.url,
       PublishedPageId: ref.id,
@@ -326,7 +311,6 @@ export async function publishPage(pageId: string, title: string, bodyMd: string)
     meta.publishedSitePageId = ref.id;
     meta.publishedDirty = false;
   }
-  await refreshSyncWatermark(pageId);
   return ref.url;
 }
 
@@ -339,7 +323,7 @@ export async function unpublishPage(pageId: string): Promise<void> {
   }
   const itemId = parseInt(pageId, 10);
   if (itemId) {
-    await updateListItem(PAGES_LIST, itemId, {
+    await updatePageRow(itemId, {
       Published: 0,
       PublishedUrl: '',
       PublishedPageId: 0,
@@ -352,7 +336,6 @@ export async function unpublishPage(pageId: string): Promise<void> {
     delete meta.publishedSitePageId;
     delete meta.publishedDirty;
   }
-  await refreshSyncWatermark(pageId);
 }
 
 /** Explicitly push the current title/body to the Site Page mirror and clear
@@ -372,7 +355,7 @@ export async function syncPublishedPage(pageId: string, title: string, bodyMd: s
     const ref = await createSitePage(title, content);
     const itemId = parseInt(pageId, 10);
     if (itemId) {
-      await updateListItem(PAGES_LIST, itemId, {
+      await updatePageRow(itemId, {
         PublishedUrl: ref.url,
         PublishedPageId: ref.id,
       }).catch(() => undefined);
@@ -383,10 +366,9 @@ export async function syncPublishedPage(pageId: string, title: string, bodyMd: s
   // Clear dirty marker on success.
   const itemId = parseInt(pageId, 10);
   if (itemId) {
-    await updateListItem(PAGES_LIST, itemId, { PublishedDirty: 0 }).catch(() => undefined);
+    await updatePageRow(itemId, { PublishedDirty: 0 }).catch(() => undefined);
   }
   meta.publishedDirty = false;
-  await refreshSyncWatermark(pageId);
 }
 
 export function isPagePublished(pageId: string): boolean {

@@ -7,16 +7,16 @@ import { g } from './dom';
 import { ancs } from './tree';
 import { apiLoadFileMeta, PAGES_LIST } from '../api/pages';
 import { getListItemEditor } from '../api/sync';
-
-const PANEL_KEY = 'n365.properties.open';
+import { escapeHtml } from '../lib/html-escape';
+import { prefPropertiesOpen } from '../lib/prefs';
 
 export function isPropertiesOpen(): boolean {
-  return localStorage.getItem(PANEL_KEY) === '1';
+  return prefPropertiesOpen.get() === '1';
 }
 
 export function setPropertiesOpen(open: boolean): void {
-  if (open) localStorage.setItem(PANEL_KEY, '1');
-  else localStorage.removeItem(PANEL_KEY);
+  if (open) prefPropertiesOpen.set('1');
+  else prefPropertiesOpen.clear();
   applyPropertiesState();
 }
 
@@ -24,7 +24,7 @@ export function togglePropertiesPanel(): void { setPropertiesOpen(!isPropertiesO
 
 export function applyPropertiesState(): void {
   const panel = g('props');
-  const btn = document.getElementById('n365-props-btn');
+  const btn = document.getElementById('memola-props-btn');
   if (isPropertiesOpen() && S.currentId) {
     panel.classList.add('on');
     btn?.classList.add('on');
@@ -37,16 +37,13 @@ export function applyPropertiesState(): void {
 
 function row(label: string, value: string): string {
   return (
-    '<div class="n365-prop-row">' +
-      '<div class="n365-prop-label">' + escapeHtml(label) + '</div>' +
-      '<div class="n365-prop-value">' + escapeHtml(value) + '</div>' +
+    '<div class="memola-prop-row">' +
+      '<div class="memola-prop-label">' + escapeHtml(label) + '</div>' +
+      '<div class="memola-prop-value">' + escapeHtml(value) + '</div>' +
     '</div>'
   );
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
 
 export async function renderProperties(): Promise<void> {
   if (!isPropertiesOpen() || !S.currentId) return;
@@ -66,13 +63,13 @@ export async function renderProperties(): Promise<void> {
     row('ID', id) +
     (page.Type === 'database' && meta.list ? row('SP リスト', meta.list) : '') +
     (page.Type !== 'database' ? row('リスト項目', PAGES_LIST + ' #' + id) : '') +
-    '<div class="n365-prop-row n365-prop-loading">最終更新者を取得中...</div>';
+    '<div class="memola-prop-row memola-prop-loading">最終更新者を取得中...</div>';
 
   if (page.Type !== 'database') {
     try {
       const fm = await apiLoadFileMeta(id);
       const editor = await getListItemEditor(id).catch(() => '');
-      const loading = list.querySelector('.n365-prop-loading');
+      const loading = list.querySelector('.memola-prop-loading');
       if (loading) loading.remove();
       if (fm) {
         const time = new Date(fm.modified).toLocaleString('ja-JP');
@@ -81,33 +78,33 @@ export async function renderProperties(): Promise<void> {
       }
     } catch { /* ignore */ }
   } else {
-    const loading = list.querySelector('.n365-prop-loading');
+    const loading = list.querySelector('.memola-prop-loading');
     if (loading) loading.remove();
     list.insertAdjacentHTML('beforeend', row('行数', String(S.dbItems.length)));
     list.insertAdjacentHTML('beforeend', row('列数', String(S.dbFields.length)));
     // ＋ プロパティ追加 (DB 限定)
     list.insertAdjacentHTML('beforeend',
-      '<div class="n365-prop-add" id="n365-prop-add">＋ プロパティ追加</div>',
+      '<div class="memola-prop-add" id="memola-prop-add">＋ プロパティ追加</div>',
     );
-    list.querySelector('#n365-prop-add')?.addEventListener('click', () => {
-      document.getElementById('n365-col-md')?.classList.add('on');
+    list.querySelector('#memola-prop-add')?.addEventListener('click', () => {
+      document.getElementById('memola-col-md')?.classList.add('on');
     });
   }
 
   // バックリンクセクション (このページを参照しているページの簡易検出)
-  list.insertAdjacentHTML('beforeend', '<div class="n365-prop-sep"></div>');
-  list.insertAdjacentHTML('beforeend', '<div class="n365-prop-section">バックリンク</div>');
+  list.insertAdjacentHTML('beforeend', '<div class="memola-prop-sep"></div>');
+  list.insertAdjacentHTML('beforeend', '<div class="memola-prop-section">バックリンク</div>');
   const titleStr = (page.Title || '').toLowerCase();
   const backlinks = titleStr ? S.pages.filter((p) => {
     if (p.Id === id) return false;
     return false; // TODO: indexer がない為プレースホルダ
   }) : [];
   if (backlinks.length === 0) {
-    list.insertAdjacentHTML('beforeend', '<div class="n365-prop-empty">参照しているページはありません</div>');
+    list.insertAdjacentHTML('beforeend', '<div class="memola-prop-empty">参照しているページはありません</div>');
   } else {
     backlinks.forEach((bp) => {
       list.insertAdjacentHTML('beforeend',
-        '<div class="n365-prop-backlink">→ ' + escapeHtml(bp.Title || '無題') + '</div>',
+        '<div class="memola-prop-backlink">→ ' + escapeHtml(bp.Title || '無題') + '</div>',
       );
     });
   }

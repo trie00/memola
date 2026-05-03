@@ -1,7 +1,7 @@
 // Helpers for the "外部更新を検知してバナー" path.
 //
 // `getListItemEditor` returns the display name of whoever last modified an
-// n365-pages row. `getCurrentUser` returns the signed-in user's display name
+// memola-pages row. `getCurrentUser` returns the signed-in user's display name
 // (cached for the session). Together they let the watcher distinguish a real
 // foreign edit from an echo of the current user's own write — needed because
 // many side-channel writers (icon change, pin, Web 公開, AI tools, …) update
@@ -21,6 +21,7 @@ export async function getListItemEditor(pageId: string): Promise<string> {
 }
 
 let _currentUserPromise: Promise<string> | null = null;
+let _currentUserIdPromise: Promise<number> | null = null;
 
 /** Display name (Title) of the signed-in SharePoint user. Cached for the
  *  session — fetched lazily on first call. Returns '' on failure. */
@@ -31,4 +32,16 @@ export function getCurrentUser(): Promise<string> {
     return d?.Title || '';
   })().catch(() => '');
   return _currentUserPromise;
+}
+
+/** Numeric SP user Id of the signed-in user. Used to filter rows by
+ *  AuthorId (e.g. hide other users' drafts from this user's UI).
+ *  Returns 0 on failure. */
+export function getCurrentUserId(): Promise<number> {
+  if (_currentUserIdPromise) return _currentUserIdPromise;
+  _currentUserIdPromise = (async () => {
+    const d = await spGetD<{ Id?: number }>(SITE + '/_api/web/currentuser?$select=Id');
+    return d?.Id || 0;
+  })().catch(() => 0);
+  return _currentUserIdPromise;
 }

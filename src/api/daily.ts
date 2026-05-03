@@ -2,36 +2,58 @@
 // and convert-to-page (with restore) flow.
 //
 // Storage model:
-//   - One reserved SP custom list `n365-daily` holds all rows.
-//   - Each row's body markdown is stored in n365-pages (PageType='row',
-//     ListTitle='n365-daily', DbRowId=<row id>) — the same scheme used by
+//   - One reserved SP custom list `memola-daily` holds all rows.
+//   - Each row's body markdown is stored in memola-pages (PageType='row',
+//     ListTitle='memola-daily', DbRowId=<row id>) — the same scheme used by
 //     ordinary DB row-pages. This means the user can write Notion-style
 //     long-form content per day and the editor / row-props panel just work.
-//   - The DB itself is registered in n365-pages as PageType='database',
-//     ListTitle='n365-daily', Title='デイリーノート', Icon='📅', Pinned=1.
+//   - The DB itself is registered in memola-pages as PageType='database',
+//     ListTitle='memola-daily', Title='デイリーノート', Icon='📅', Pinned=1.
 
 import { S, type Page } from '../state';
 import {
-  createList, addListField, getListItems, deleteListItem, updateListItem,
+  createList, addListField, getListFields, getListItems, deleteListItem,
 } from './sp-list';
 import { spListUrl, spGetD } from './sp-rest';
 import {
   apiCreateDbPageRow, apiCreatePage, apiSavePageMd, apiLoadRawBody,
-  setRowBody, getRowBody, deleteRowEntry, PAGES_LIST,
+  setRowBody, getRowBody, deleteRowEntry, PAGES_LIST, updatePageRow,
 } from './pages';
 import { apiAddDbRow } from './db';
 import { todayYMD, addDaysYMD, formatDailyTitle, isDailyTitleFormat } from '../lib/date-utils';
 
-export const DAILY_LIST_TITLE = 'n365-daily';
+export const DAILY_LIST_TITLE = 'memola-daily';
 export const DAILY_DATE_FIELD = '日付';
 export const DAILY_TAG_FIELD = 'タグ';
 
 interface DailyDb {
-  dbPageId: string;          // n365-pages id of the database page
-  listTitle: string;         // 'n365-daily'
+  dbPageId: string;          // memola-pages id of the database page
+  listTitle: string;         // 'memola-daily'
+  /** Resolved internal name of the date column. SP encodes non-ASCII
+   *  display names like '日付' as '_x65e5__x4ed8_'; we need the encoded
+   *  form for OData $filter and direct property lookups. */
+  dateInternalName: string;
 }
 
 let _ensurePromise: Promise<DailyDb> | null = null;
+
+/** Forget any cached daily-db bootstrap result. Called on workspace switch. */
+export function clearDailyCache(): void {
+  _ensurePromise = null;
+}
+
+/** Resolve the InternalName of the daily list's date column. Falls back
+ *  to the display name (which works on lists where the column was created
+ *  with an ASCII title or by SP itself). */
+async function resolveDateInternalName(): Promise<string> {
+  try {
+    const fields = await getListFields(DAILY_LIST_TITLE);
+    const f = fields.find((x) => x.Title === DAILY_DATE_FIELD || x.InternalName === DAILY_DATE_FIELD);
+    return f?.InternalName || DAILY_DATE_FIELD;
+  } catch {
+    return DAILY_DATE_FIELD;
+  }
+}
 
 /** True if the given list title is the daily-notes list. Used elsewhere
  *  (e.g. row-page title-rename detection) to gate daily-specific behavior. */
@@ -39,12 +61,12 @@ export function isDailyList(listTitle: string | null | undefined): boolean {
   return listTitle === DAILY_LIST_TITLE;
 }
 
-/** Idempotently create the daily DB list + its n365-pages registration row.
+/** Idempotently create the daily DB list + its memola-pages registration row.
  *  Returns the resolved (dbPageId, listTitle) pair. */
 export async function ensureDailyDb(): Promise<DailyDb> {
   if (_ensurePromise) return _ensurePromise;
   _ensurePromise = (async (): Promise<DailyDb> => {
-    // 1. Look in the local meta first (fast path; loaded from n365-pages on app start)
+    // 1. Look in the local meta first (fast path; loaded from memola-pages on app start)
     const cachedMeta = S.meta.pages.find(
       (p) => p.type === 'database' && p.list === DAILY_LIST_TITLE && !p.trashed,
     );
@@ -52,7 +74,11 @@ export async function ensureDailyDb(): Promise<DailyDb> {
       // Verify the SP list still exists. If not, fall through to create.
       const listExists = (await spGetD<unknown>(spListUrl(DAILY_LIST_TITLE))) != null;
       if (listExists) {
-        return { dbPageId: cachedMeta.id, listTitle: DAILY_LIST_TITLE };
+        return {
+          dbPageId: cachedMeta.id,
+          listTitle: DAILY_LIST_TITLE,
+          dateInternalName: await resolveDateInternalName(),
+        };
       }
     }
 
@@ -69,21 +95,22 @@ export async function ensureDailyDb(): Promise<DailyDb> {
         ['仕事', '個人', '会議', '家族', 'その他']);
     } catch { /* ignore */ }
 
-    // 3. Make sure n365-pages has a row pointing at this list. Reuse cached
+    // 3. Make sure memola-pages has a row pointing at this list. Reuse cached
     //    meta if present, else create + pin.
+    const dateInternalName = await resolveDateInternalName();
     if (cachedMeta) {
-      return { dbPageId: cachedMeta.id, listTitle: DAILY_LIST_TITLE };
+      return { dbPageId: cachedMeta.id, listTitle: DAILY_LIST_TITLE, dateInternalName };
     }
     const created = await apiCreateDbPageRow('デイリーノート', '', DAILY_LIST_TITLE);
     const itemId = parseInt(created.Id, 10);
     if (itemId) {
-      await updateListItem(PAGES_LIST, itemId, { Icon: '📅', Pinned: 1 }).catch(() => undefined);
+      await updatePageRow(itemId, { Icon: '📅', Pinned: 1 }).catch(() => undefined);
     }
     // Mirror to in-memory meta so the sidebar updates without a full reload.
     const m = S.meta.pages.find((p) => p.id === created.Id);
     if (m) { m.icon = '📅'; m.pinned = true; }
     S.pages.push(created);
-    return { dbPageId: created.Id, listTitle: DAILY_LIST_TITLE };
+    return { dbPageId: created.Id, listTitle: DAILY_LIST_TITLE, dateInternalName };
   })().catch((e) => {
     // Allow a failed bootstrap to be retried on the next call.
     _ensurePromise = null;
@@ -96,10 +123,11 @@ interface DailyRowRef { rowId: number; title: string; body: string }
 
 /** Find a daily-note row for the given YYYY-MM-DD, or null if it doesn't exist. */
 export async function findNoteForDate(date: string): Promise<DailyRowRef | null> {
-  await ensureDailyDb();
-  // Filter on the Date column. SP DateTime fields accept ISO comparisons.
-  // We fetch a small page since at most one row should match on a given date.
-  const filter = DAILY_DATE_FIELD + " eq datetime'" + date + "T00:00:00'";
+  const db = await ensureDailyDb();
+  // Filter on the Date column. SP $filter requires the column's InternalName
+  // (the encoded form like '_x65e5__x4ed8_' for '日付'), not the display
+  // title. ensureDailyDb resolved this already.
+  const filter = db.dateInternalName + " eq datetime'" + date + "T00:00:00'";
   const url = spListUrl(DAILY_LIST_TITLE,
     '/items?$filter=' + encodeURIComponent(filter) + '&$top=1');
   const d = await spGetD<{ results: Array<{ Id: number; Title?: string }> }>(url).catch(() => null);
@@ -143,7 +171,7 @@ export async function getOrCreateNoteForDate(date: string): Promise<DailyRowRef 
   return { rowId: created.Id, title, body, dbPageId: db.dbPageId };
 }
 
-/** Convert a daily-note row into a standalone n365-pages entry. The original
+/** Convert a daily-note row into a standalone memola-pages entry. The original
  *  body is preserved verbatim; the SP DB row is then deleted. The new page
  *  carries `OriginDailyDate` so the user can later restore it via the
  *  「デイリーノートに戻す」 menu action. */
@@ -162,7 +190,7 @@ export async function convertDailyToPage(
   await apiSavePageMd(newPage.Id, newTitle, body).catch(() => undefined);
   const itemId = parseInt(newPage.Id, 10);
   if (itemId) {
-    await updateListItem(PAGES_LIST, itemId, { OriginDailyDate: originDate }).catch(() => undefined);
+    await updatePageRow(itemId, { OriginDailyDate: originDate }).catch(() => undefined);
   }
   const meta = S.meta.pages.find((p) => p.id === newPage.Id);
   if (meta) meta.originDailyDate = originDate;

@@ -5,6 +5,13 @@ import { SITE } from '../config';
 let _dig: string | null = null;
 let _digX = 0;
 
+/** Drop the cached digest so the next request fetches a fresh one. Used
+ *  by workspace switching (digest is per-site and stale once SITE changes). */
+export function clearDigestCache(): void {
+  _dig = null;
+  _digX = 0;
+}
+
 export async function getDigest(): Promise<string> {
   if (_dig && Date.now() < _digX) return _dig;
   const r = await fetch(SITE + '/_api/contextinfo', {

@@ -10,9 +10,10 @@ import { applySiblingOrder, saveSiblingOrder, computeReorder } from '../lib/page
 
 export function kidsOf(pid: string): Page[] {
   // Default natural order (creation = ascending Id) then apply any user-saved
-  // drag-reorder for this parent.
+  // drag-reorder for this parent. Drafts are hidden — they're accessed
+  // exclusively via the 「📝 下書き」 sidebar entry.
   const natural = S.pages
-    .filter((p) => (p.ParentId || '') === (pid || ''))
+    .filter((p) => !p.IsDraft && (p.ParentId || '') === (pid || ''))
     .sort((a, b) => (a.Id < b.Id ? -1 : 1));
   return applySiblingOrder(pid || '', natural);
 }
@@ -75,7 +76,7 @@ function ancestorIdAtDepth(page: Page, targetDepth: number): string | null {
  *  so the whole subtree fades together while its parent is being dragged. */
 function fadeDescendants(id: string, on: boolean): void {
   const tree = g('tree');
-  const all = tree.querySelectorAll<HTMLElement>('.n365-tr');
+  const all = tree.querySelectorAll<HTMLElement>('.memola-tr');
   // Build a set of descendant ids
   const descendants = new Set<string>();
   const collect = (pid: string): void => {
@@ -88,7 +89,7 @@ function fadeDescendants(id: string, on: boolean): void {
   all.forEach((r) => {
     const pid = r.dataset.pageId;
     if (pid && descendants.has(pid)) {
-      r.classList.toggle('n365-tr-dragging-descendant', on);
+      r.classList.toggle('memola-tr-dragging-descendant', on);
     }
   });
 }
@@ -97,12 +98,12 @@ function fadeDescendants(id: string, on: boolean): void {
 
 let _dropInd: HTMLDivElement | null = null;
 function getDropIndicator(): HTMLDivElement {
-  // Append into the n365 overlay so the namespaced CSS selector matches.
-  const overlay = document.getElementById('n365-overlay') || document.body;
+  // Append into the Memola overlay so the namespaced CSS selector matches.
+  const overlay = document.getElementById('memola-overlay') || document.body;
   if (_dropInd && overlay.contains(_dropInd)) return _dropInd;
   const el = document.createElement('div');
-  el.className = 'n365-tr-drop-line';
-  el.innerHTML = '<span class="n365-tr-drop-dot"></span><span class="n365-tr-drop-dot right"></span>';
+  el.className = 'memola-tr-drop-line';
+  el.innerHTML = '<span class="memola-tr-drop-dot"></span><span class="memola-tr-drop-dot right"></span>';
   overlay.appendChild(el);
   _dropInd = el;
   return el;
@@ -135,13 +136,13 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
 
   const item = document.createElement('div');
   const row = document.createElement('div');
-  row.className = 'n365-tr' + (act ? ' on' : '');
+  row.className = 'memola-tr' + (act ? ' on' : '');
   row.style.paddingLeft = (depth * TREE_INDENT + TREE_PAD_LEFT) + 'px';
   row.dataset.depth = String(depth);
   row.dataset.parentId = page.ParentId || '';
 
   const tog = document.createElement('span');
-  tog.className = 'n365-tog' + (hasK ? '' : ' lf') + (exp ? ' op' : '');
+  tog.className = 'memola-tog' + (hasK ? '' : ' lf') + (exp ? ' op' : '');
   tog.innerHTML = hasK ? '&#9658;' : '';
   tog.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -151,24 +152,24 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
   });
 
   const icEl = document.createElement('span');
-  icEl.className = 'n365-ti';
+  icEl.className = 'memola-ti';
   icEl.textContent = icon;
   const lbl = document.createElement('span');
-  lbl.className = 'n365-tl';
+  lbl.className = 'memola-tl';
   lbl.textContent = page.Title || '無題';
   const acts = document.createElement('span');
-  acts.className = 'n365-ta';
+  acts.className = 'memola-ta';
 
   if (!isDb) {
     const ab = document.createElement('button');
-    ab.className = 'n365-tac';
+    ab.className = 'memola-tac';
     ab.title = '子ページを追加';
     ab.innerHTML = '+';
     ab.addEventListener('click', (e) => { e.stopPropagation(); doNew(page.Id); });
     acts.appendChild(ab);
   }
   const pinBtn = document.createElement('button');
-  pinBtn.className = 'n365-tac';
+  pinBtn.className = 'memola-tac';
   pinBtn.title = metaPage?.pinned ? 'ピン留め解除' : 'ピン留め';
   pinBtn.innerHTML = metaPage?.pinned ? '📌' : '📍';
   pinBtn.addEventListener('click', async (e) => {
@@ -178,7 +179,7 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
   });
   acts.appendChild(pinBtn);
   const db = document.createElement('button');
-  db.className = 'n365-tac';
+  db.className = 'memola-tac';
   db.title = '削除';
   db.innerHTML = '🗑';
   db.addEventListener('click', (e) => { e.stopPropagation(); doDel(page.Id); });
@@ -199,11 +200,11 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', page.Id);
     }
-    row.classList.add('n365-tr-dragging');
+    row.classList.add('memola-tr-dragging');
     fadeDescendants(page.Id, true);
   });
   row.addEventListener('dragend', () => {
-    row.classList.remove('n365-tr-dragging');
+    row.classList.remove('memola-tr-dragging');
     fadeDescendants(page.Id, false);
     hideDropIndicator();
   });
@@ -213,22 +214,22 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
     const y = e.clientY - r.top;
     const z = zoneFor(y, r.height);
     if (z === 'into') {
-      row.classList.add('n365-tr-dropover');
+      row.classList.add('memola-tr-dropover');
       hideDropIndicator();
     } else {
-      row.classList.remove('n365-tr-dropover');
+      row.classList.remove('memola-tr-dropover');
       // Compute target depth from cursor X (allow promotion to ancestor levels)
       const targetDepth = pickDropDepth(e.clientX, r.left, depth);
       showDropIndicator(row, z === 'after', targetDepth);
     }
   });
   row.addEventListener('dragleave', () => {
-    row.classList.remove('n365-tr-dropover');
+    row.classList.remove('memola-tr-dropover');
   });
   row.addEventListener('drop', async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    row.classList.remove('n365-tr-dropover');
+    row.classList.remove('memola-tr-dropover');
     hideDropIndicator();
     const dragId = e.dataTransfer?.getData('text/plain');
     if (!dragId || dragId === page.Id) return;
@@ -284,12 +285,13 @@ export function renderTree(): void {
 
   // Pinned section at the top
   const pinned = S.pages.filter((p) => {
+    if (p.IsDraft) return false;
     const m = S.meta.pages.find((mp) => mp.id === p.Id);
     return m?.pinned;
   });
   if (pinned.length > 0) {
     const lbl = document.createElement('div');
-    lbl.className = 'n365-sl-label';
+    lbl.className = 'memola-sl-label';
     lbl.textContent = 'ピン留め';
     w.appendChild(lbl);
     pinned.forEach((p) => { w.appendChild(mkNode(p, 0)); });
@@ -297,7 +299,7 @@ export function renderTree(): void {
     sep.style.height = '8px';
     w.appendChild(sep);
     const lbl2 = document.createElement('div');
-    lbl2.className = 'n365-sl-label';
+    lbl2.className = 'memola-sl-label';
     lbl2.textContent = 'ページ';
     w.appendChild(lbl2);
   }
@@ -308,7 +310,7 @@ export function renderTree(): void {
   // Helper: decide whether the cursor is in the top half of the tree pane or
   // the bottom half (rounded to nearest row edge).
   function emptyDropPos(clientY: number): 'top' | 'bottom' | null {
-    const rows = w.querySelectorAll<HTMLElement>('.n365-tr');
+    const rows = w.querySelectorAll<HTMLElement>('.memola-tr');
     if (rows.length === 0) return 'bottom';
     const first = rows[0].getBoundingClientRect();
     const last = rows[rows.length - 1].getBoundingClientRect();
@@ -320,8 +322,8 @@ export function renderTree(): void {
   w.ondragover = (e) => {
     e.preventDefault();
     const target = e.target as HTMLElement;
-    if (target.closest('.n365-tr')) return;     // per-row handler is active
-    const rows = w.querySelectorAll<HTMLElement>('.n365-tr');
+    if (target.closest('.memola-tr')) return;     // per-row handler is active
+    const rows = w.querySelectorAll<HTMLElement>('.memola-tr');
     const pos = emptyDropPos(e.clientY);
     if (pos === 'top' && rows[0]) {
       showDropIndicator(rows[0], /* after */ false, 0);
@@ -337,7 +339,7 @@ export function renderTree(): void {
     e.preventDefault();
     hideDropIndicator();
     const target = e.target as HTMLElement;
-    if (target.closest('.n365-tr')) return;     // handled per-row
+    if (target.closest('.memola-tr')) return;     // handled per-row
     const dragId = e.dataTransfer?.getData('text/plain');
     if (!dragId) return;
     const pos = emptyDropPos(e.clientY) || 'bottom';
@@ -382,7 +384,7 @@ export function renderBc(id: string): void {
   const ancestors = ancs(id);
   ancestors.forEach((p, i) => {
     const s = document.createElement('span');
-    s.className = 'n365-bi';
+    s.className = 'memola-bi';
     s.textContent = p.Title || '無題';
     s.addEventListener('click', () => { doSelect(p.Id); });
     bc.appendChild(s);

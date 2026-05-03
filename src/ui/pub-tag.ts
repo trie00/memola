@@ -20,9 +20,9 @@ let _outsideHandler: ((e: MouseEvent) => void) | null = null;
  *  Hides the tag (and any open popover) when the active context isn't a
  *  publishable page. */
 export function syncPubTag(): void {
-  const tag = document.getElementById('n365-pub-tag');
+  const tag = document.getElementById('memola-pub-tag');
   if (!tag) return;
-  const labelEl = tag.querySelector<HTMLElement>('.n365-pub-tag-label');
+  const labelEl = tag.querySelector<HTMLElement>('.memola-pub-tag-label');
   const isRealPage = !!S.currentId && S.currentType === 'page' && !S.currentRow;
   const meta = isRealPage && S.currentId
     ? S.meta.pages.find((p) => p.id === S.currentId)
@@ -36,7 +36,7 @@ export function syncPubTag(): void {
   if (meta.publishedDirty) {
     tag.classList.add('dirty');
     if (labelEl) labelEl.textContent = '公開中・未反映';
-    tag.title = 'n365 側に未反映の更新があります — クリックで操作メニュー';
+    tag.title = 'Memola 側に未反映の更新があります — クリックで操作メニュー';
   } else {
     tag.classList.remove('dirty');
     if (labelEl) labelEl.textContent = '公開中';
@@ -45,16 +45,16 @@ export function syncPubTag(): void {
 }
 
 function openPubPop(): void {
-  const pop = document.getElementById('n365-pub-pop');
-  const tag = document.getElementById('n365-pub-tag');
+  const pop = document.getElementById('memola-pub-pop');
+  const tag = document.getElementById('memola-pub-tag');
   if (!pop || !tag) return;
   if (!S.currentId) return;
   const meta = S.meta.pages.find((p) => p.id === S.currentId);
   if (!meta?.published) return;
-  const msg = pop.querySelector<HTMLElement>('.n365-pub-pop-msg');
+  const msg = pop.querySelector<HTMLElement>('.memola-pub-pop-msg');
   if (msg) {
     msg.textContent = meta.publishedDirty
-      ? 'n365 の最新内容が公開ページに反映されていません。'
+      ? 'Memola の最新内容が公開ページに反映されていません。'
       : '公開ページは最新の内容と同期しています。';
   }
   // Position popover under the tag.
@@ -75,7 +75,7 @@ function openPubPop(): void {
 }
 
 function closePubPop(): void {
-  const pop = document.getElementById('n365-pub-pop');
+  const pop = document.getElementById('memola-pub-pop');
   if (pop) pop.style.display = 'none';
   if (_outsideHandler) {
     document.removeEventListener('mousedown', _outsideHandler, true);
@@ -88,20 +88,20 @@ async function runSync(): Promise<void> {
   if (!id) return;
   const meta = S.meta.pages.find((p) => p.id === id);
   if (!meta?.published) return;
-  // Persist any in-flight edits to n365-pages first. Without this we'd push
+  // Persist any in-flight edits to memola-pages first. Without this we'd push
   // the editor buffer to the Site Page while the source row still has the
   // pre-edit body — a subsequent reload would lose the synced content.
   if (S.dirty) {
     const { doSave } = await import('./actions');
     await doSave();
   }
-  const tag = document.getElementById('n365-pub-tag');
+  const tag = document.getElementById('memola-pub-tag');
   const titleEl = g('ttl') as HTMLTextAreaElement | null;
   const ed = getEd();
   const title = (titleEl?.value || '').trim() || '無題';
   const { htmlToMd } = await import('../lib/markdown');
   const bodyMd = htmlToMd(ed.innerHTML || '');
-  const labelEl = tag?.querySelector<HTMLElement>('.n365-pub-tag-label');
+  const labelEl = tag?.querySelector<HTMLElement>('.memola-pub-tag-label');
   const prevLabel = labelEl?.textContent || '';
   if (tag) tag.classList.add('busy');
   if (labelEl) labelEl.textContent = '同期中…';
@@ -154,8 +154,8 @@ async function unpublishHere(): Promise<void> {
 
 /** Wire click handlers — call once at startup. */
 export function attachPubTag(): void {
-  const tag = document.getElementById('n365-pub-tag');
-  const pop = document.getElementById('n365-pub-pop');
+  const tag = document.getElementById('memola-pub-tag');
+  const pop = document.getElementById('memola-pub-pop');
   if (!tag || !pop) return;
   tag.addEventListener('click', (e) => {
     e.stopPropagation();

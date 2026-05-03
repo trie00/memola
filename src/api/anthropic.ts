@@ -3,8 +3,13 @@
 //
 // Supports plain text chat (callClaudeText) and the structured Tool Use API
 // (callClaudeRaw) used by the AI agent loop in src/ai/.
+//
+// API key storage lives in `api/ai-settings` (single source of truth for all
+// AI provider prefs). `getApiKey` / `setApiKey` here are thin re-exports
+// kept so existing call sites don't need updating.
 
-const KEY_STORAGE = 'n365.anthropic.apiKey';
+import { getClaudeApiKey, setClaudeApiKey } from './ai-settings';
+
 const DEFAULT_MODEL = 'claude-sonnet-4-5';
 
 export type TextBlock = { type: 'text'; text: string };
@@ -36,12 +41,12 @@ export interface ClaudeResponse {
 }
 
 export function getApiKey(): string | null {
-  return localStorage.getItem(KEY_STORAGE);
+  const k = getClaudeApiKey();
+  return k || null;
 }
 
 export function setApiKey(key: string): void {
-  if (key) localStorage.setItem(KEY_STORAGE, key);
-  else localStorage.removeItem(KEY_STORAGE);
+  setClaudeApiKey(key);
 }
 
 export interface StreamHandlers {

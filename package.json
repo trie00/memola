@@ -1,7 +1,7 @@
 {
-  "name": "n365",
+  "name": "memola",
   "version": "0.2.0",
-  "description": "SharePoint-backed Notion-like bookmarklet app",
+  "description": "Memola — SharePoint-backed Notion-like bookmarklet app",
   "private": true,
   "scripts": {
     "build": "node build.js",

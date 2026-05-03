@@ -1,4 +1,4 @@
-# n365 corp-AI relay launcher (Windows / PowerShell)
+# Memola corp-AI relay launcher (Windows / PowerShell)
 #
 # 環境変数を編集して使ってください。
 # タスクスケジューラの「ログオン時」トリガで起動するのもおすすめです。

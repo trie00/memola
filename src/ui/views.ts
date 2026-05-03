@@ -1,10 +1,12 @@
 // Page / database view switching, table & kanban rendering.
 
 import { S, type ListField, type ListItem, type Page } from '../state';
+import { SITE } from '../config';
 import { g, getEd } from './dom';
 import { setLoad, setSave, setSavedAt, toast, autoR } from './ui-helpers';
 import { renderTree, ancs, renderBc } from './tree';
 import { apiLoadContent, apiLoadFileMeta } from '../api/pages';
+import { escapeHtml } from '../lib/html-escape';
 import { startWatching, stopWatching } from './sync-watch';
 import { applyOutlineState } from './outline';
 import { applyPropertiesState } from './properties-panel';
@@ -19,11 +21,12 @@ import {
   applyRowOrder, saveRowOrder, loadRowOrder,
   moveItem,
 } from '../lib/db-order';
+import { prefLastOpenedPages } from '../lib/prefs';
 import { recordDbCommand, recordCellChange, recordRowOrderChange, recordColOrderChange, deleteRowWithUndo } from './db-history';
 import { renderBulkBar } from './db-bulk';
 
 // doSave is imported lazily to avoid circular load issues.
-import { doSave } from './actions';
+import { doSave, flushPendingSave } from './actions';
 
 export function showView(mode: 'page' | 'db' | 'empty'): void {
   g('ea').style.display = mode !== 'db'    ? 'flex'  : 'none';
@@ -44,7 +47,7 @@ export function renderBcCustom(segments: { label: string; onClick?: () => void }
   bc.innerHTML = '';
   segments.forEach((seg, i) => {
     const s = document.createElement('span');
-    s.className = 'n365-bi';
+    s.className = 'memola-bi';
     s.textContent = seg.label;
     if (seg.onClick) s.addEventListener('click', seg.onClick);
     else s.style.cursor = 'default';
@@ -64,7 +67,7 @@ export function renderPageIcon(id: string): void {
   const icon = metaPage ? (metaPage.icon || '') : '';
   const pgIcon = g('pg-icon');
   const addIcon = g('add-icon');
-  const hd = document.getElementById('n365-pg-hd');
+  const hd = document.getElementById('memola-pg-hd');
   if (icon) {
     pgIcon.textContent = icon;
     pgIcon.style.display = 'inline-block';
@@ -78,7 +81,21 @@ export function renderPageIcon(id: string): void {
 }
 
 export async function doSelect(id: string): Promise<void> {
-  if (S.dirty && S.currentType !== 'database') await doSave();
+  // Strip empty todo blocks BEFORE the autosave fires — these are
+  // checkboxes the user inserted via /todo but never typed into. Pruning
+  // here keeps stale empty boxes from accumulating across sessions.
+  if (S.currentType === 'page' && !S.currentRow) {
+    try {
+      const { pruneEmptyTodos } = await import('./editor');
+      const n = pruneEmptyTodos();
+      if (n > 0) S.dirty = true;     // ensure the prune is persisted
+    } catch { /* ignore */ }
+  }
+  // Flush any pending / in-flight save to disk before we replace the
+  // editor DOM. This is the fix for "navigating away loses my last edits"
+  // — `flushPendingSave` waits for an in-flight save (autosave) to finish
+  // and then performs another save if the user typed during that flight.
+  if (S.currentType !== 'database') await flushPendingSave();
   S.currentRow = null;          // 別のページ/DB 選択時は行ページモードを解除
   S.currentId = id;
   const page = S.pages.find((p) => p.Id === id);
@@ -99,7 +116,7 @@ export async function doSelect(id: string): Promise<void> {
     autoR(te);
     renderPageIcon(id);
     // Hide row-props panel (only shown for DB row pages)
-    const propsEl = document.getElementById('n365-row-props');
+    const propsEl = document.getElementById('memola-row-props');
     if (propsEl) propsEl.innerHTML = '';
     // Clear the previous page's saved-time label so it doesn't linger while
     // the new page's content is still being fetched.
@@ -136,14 +153,33 @@ export async function doSelect(id: string): Promise<void> {
     refreshNavButtons();
     syncDraftBanner();
     syncPresenceForCurrent();
+    // Backlinks panel — render lazily after the editor itself is ready.
+    void import('./backlinks').then((m) => m.renderBacklinks());
   }
+  // Remember the last-opened page so the next app session reopens it.
+  // Keyed by SITE so each workspace gets its own "last page" memory.
+  rememberLastOpenedPage(id);
+}
+
+function rememberLastOpenedPage(pageId: string): void {
+  const map = prefLastOpenedPages.get();
+  // Key by SITE so different workspaces don't clobber each other.
+  map[SITE] = pageId;
+  prefLastOpenedPages.set(map);
+}
+
+/** Read the last-opened page id for the current workspace, if any.
+ *  Returns null when there's no record or storage is unavailable. */
+export function loadLastOpenedPage(): string | null {
+  const map = prefLastOpenedPages.get();
+  return map[SITE] || null;
 }
 
 /** Show the 「下書き」 banner above the title when this page is a draft
  *  duplicate (originPageId set). The banner offers an "原本に適用" button
  *  that copies the body back to the origin and deletes the draft. */
 function syncDraftBanner(): void {
-  const bn = document.getElementById('n365-draft-banner');
+  const bn = document.getElementById('memola-draft-banner');
   if (!bn) return;
   const meta = S.currentId ? S.meta.pages.find((p) => p.id === S.currentId) : null;
   if (!meta?.originPageId) {
@@ -156,23 +192,23 @@ function syncDraftBanner(): void {
   const exists = !!origin && !origin.trashed;
   bn.style.display = '';
   bn.innerHTML =
-    '<span class="n365-draft-banner-icon">✏️</span>' +
-    '<span class="n365-draft-banner-msg">' +
-    '原本: <a class="n365-draft-banner-link" data-origin-id="' + (meta.originPageId || '') + '">' +
+    '<span class="memola-draft-banner-icon">✏️</span>' +
+    '<span class="memola-draft-banner-msg">' +
+    '原本: <a class="memola-draft-banner-link" data-origin-id="' + (meta.originPageId || '') + '">' +
     escapeHtml(originTitle) + '</a> の<b>下書き</b>です' +
     '</span>' +
     (exists
-      ? '<button class="n365-draft-banner-apply" type="button">原本に適用</button>'
-      : '<span class="n365-draft-banner-broken">原本が削除されています</span>'
+      ? '<button class="memola-draft-banner-apply" type="button">原本に適用</button>'
+      : '<span class="memola-draft-banner-broken">原本が削除されています</span>'
     );
   // Click on origin link → navigate to origin
-  bn.querySelector<HTMLElement>('.n365-draft-banner-link')?.addEventListener('click', (e) => {
+  bn.querySelector<HTMLElement>('.memola-draft-banner-link')?.addEventListener('click', (e) => {
     e.preventDefault();
     const id = (e.target as HTMLElement).dataset.originId;
     if (id) void doSelect(id);
   });
   // Apply button → copy draft body to origin
-  bn.querySelector<HTMLElement>('.n365-draft-banner-apply')?.addEventListener('click', async () => {
+  bn.querySelector<HTMLElement>('.memola-draft-banner-apply')?.addEventListener('click', async () => {
     if (S.dirty) {
       const m = await import('./actions');
       await m.doSave();
@@ -194,16 +230,13 @@ function syncDraftBanner(): void {
       S.pages = await apiGetPages();
       const { renderTree } = await import('./tree');
       renderTree();
+      void import('./drafts-modal').then((m) => m.refreshDraftsBadge?.());
       await doSelect(originId);
       toast('原本に適用しました');
     } catch (e) {
       toast('適用失敗: ' + (e as Error).message, 'err');
     } finally { setLoad(false); }
   });
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 export async function doSelectDb(id: string, page: Page): Promise<void> {
@@ -223,7 +256,7 @@ export async function doSelectDb(id: string, page: Page): Promise<void> {
 
   const dvIcon = g('dv-pg-icon');
   const dvAddIcon = g('dv-add-icon');
-  const dvHd = document.getElementById('n365-dv-hd');
+  const dvHd = document.getElementById('memola-dv-hd');
   if (meta.icon) {
     dvIcon.textContent = meta.icon;
     dvIcon.style.display = 'inline-block';
@@ -237,7 +270,7 @@ export async function doSelectDb(id: string, page: Page): Promise<void> {
 
   setLoad(true, 'データを読み込み中...');
   try {
-    // Bodies live in n365-pages; nothing to provision on the DB list itself.
+    // Bodies live in memola-pages; nothing to provision on the DB list itself.
     const results = await Promise.all([getListFields(meta.list), getListItems(meta.list)]);
     S.dbFields = results[0];
     S.dbItems  = results[1];
@@ -350,15 +383,15 @@ export function renderDbTable(): void {
 
   // Reflect "any-selected" mode on the table so CSS can switch to always-show
   const dt = g('dt');
-  dt.classList.toggle('n365-has-sel', S.dbSelected.size > 0);
+  dt.classList.toggle('memola-has-sel', S.dbSelected.size > 0);
   renderBulkBar();
 
   // Leading checkbox column (header) — selects/clears all visible rows
   const thCb = document.createElement('th');
-  thCb.className = 'n365-th-cb';
+  thCb.className = 'memola-th-cb';
   const headCb = document.createElement('input');
   headCb.type = 'checkbox';
-  headCb.className = 'n365-cb';
+  headCb.className = 'memola-cb';
   const visibleItems = getSortedFilteredItems();
   const visIds = visibleItems.map((it) => it.Id);
   const selVisCount = visIds.filter((id) => S.dbSelected.has(id)).length;
@@ -380,7 +413,7 @@ export function renderDbTable(): void {
     const th = document.createElement('th');
     const isSorted = S.dbSort.field === f.InternalName;
     const headerSpan = document.createElement('span');
-    headerSpan.className = 'n365-th-label';
+    headerSpan.className = 'memola-th-label';
     headerSpan.innerHTML = f.Title + (isSorted ? '<span class="sort-arrow">' + (S.dbSort.asc ? '▲' : '▼') + '</span>' : '');
     th.appendChild(headerSpan);
     th.dataset.field = f.InternalName;
@@ -401,36 +434,36 @@ export function renderDbTable(): void {
     th.addEventListener('dragstart', (e) => {
       if (!e.dataTransfer) return;
       e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/n365-col', String(idx));
-      th.classList.add('n365-th-dragging');
+      e.dataTransfer.setData('text/memola-col', String(idx));
+      th.classList.add('memola-th-dragging');
     });
-    th.addEventListener('dragend', () => th.classList.remove('n365-th-dragging'));
+    th.addEventListener('dragend', () => th.classList.remove('memola-th-dragging'));
     th.addEventListener('dragover', (e) => {
       const dt = e.dataTransfer;
       if (!dt) return;
       // Accept only column drags
-      if (Array.from(dt.types).indexOf('text/n365-col') < 0) return;
+      if (Array.from(dt.types).indexOf('text/memola-col') < 0) return;
       e.preventDefault();
       dt.dropEffect = 'move';
       const rect = th.getBoundingClientRect();
       const after = e.clientX > rect.left + rect.width / 2;
-      th.classList.toggle('n365-th-drop-before', !after);
-      th.classList.toggle('n365-th-drop-after', after);
+      th.classList.toggle('memola-th-drop-before', !after);
+      th.classList.toggle('memola-th-drop-after', after);
     });
     th.addEventListener('dragleave', () => {
-      th.classList.remove('n365-th-drop-before', 'n365-th-drop-after');
+      th.classList.remove('memola-th-drop-before', 'memola-th-drop-after');
     });
     th.addEventListener('drop', (e) => {
       const dt = e.dataTransfer;
       if (!dt) return;
-      const fromStr = dt.getData('text/n365-col');
+      const fromStr = dt.getData('text/memola-col');
       if (!fromStr) return;
       e.preventDefault();
       const from = parseInt(fromStr, 10);
       const rect = th.getBoundingClientRect();
       const after = e.clientX > rect.left + rect.width / 2;
       const to = after ? idx + 1 : idx;
-      th.classList.remove('n365-th-drop-before', 'n365-th-drop-after');
+      th.classList.remove('memola-th-drop-before', 'memola-th-drop-after');
       const prevOrder = loadColOrder(S.dbList) || [];
       const newFields = moveItem(fields, from, to);
       const newOrder = newFields.map((x) => x.InternalName);
@@ -440,7 +473,7 @@ export function renderDbTable(): void {
     });
     // Resize handle
     const handle = document.createElement('div');
-    handle.className = 'n365-col-resize';
+    handle.className = 'memola-col-resize';
     handle.addEventListener('mousedown', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -467,20 +500,20 @@ export function renderDbTable(): void {
   });
 
   // Delete column header (icon column)
-  const thDel = document.createElement('th'); thDel.className = 'n365-th-del'; thead.appendChild(thDel);
+  const thDel = document.createElement('th'); thDel.className = 'memola-th-del'; thead.appendChild(thDel);
   // "+" column right after the data columns
-  const thAdd = document.createElement('th'); thAdd.className = 'n365-th-add';
+  const thAdd = document.createElement('th'); thAdd.className = 'memola-th-add';
   thAdd.textContent = '+'; thAdd.title = '列を追加';
   thAdd.addEventListener('click', () => {
     (g('col-name') as HTMLInputElement).value = '';
     // Reset grid type selection by clicking the first tile (syncs _colTypeKind in wiring.ts)
-    const tiles = document.querySelectorAll<HTMLDivElement>('#n365-col-type-grid .n365-col-type');
+    const tiles = document.querySelectorAll<HTMLDivElement>('#memola-col-type-grid .memola-col-type');
     if (tiles[0]) tiles[0].click();
     // Reset choices & SP map fields
-    const choicesEl = document.getElementById('n365-col-choices') as HTMLTextAreaElement | null;
+    const choicesEl = document.getElementById('memola-col-choices') as HTMLTextAreaElement | null;
     if (choicesEl) choicesEl.value = '';
     g('col-choices-row').classList.remove('on');
-    const spmap = document.getElementById('n365-col-spmap') as HTMLInputElement | null;
+    const spmap = document.getElementById('memola-col-spmap') as HTMLInputElement | null;
     if (spmap) spmap.value = '';
     g('col-md').classList.add('on');
     (g('col-name') as HTMLInputElement).focus();
@@ -488,7 +521,7 @@ export function renderDbTable(): void {
   thead.appendChild(thAdd);
   // Spacer column to absorb remaining horizontal space (so + stays adjacent to last data column)
   const thSpacer = document.createElement('th');
-  thSpacer.className = 'n365-th-spacer';
+  thSpacer.className = 'memola-th-spacer';
   thead.appendChild(thSpacer);
 
   getSortedFilteredItems().forEach((item) => { tbody.appendChild(mkDbRow(item, fields)); });
@@ -500,7 +533,7 @@ export function renderDbTable(): void {
  *  Reusable across all DB view renderers (table / board / list / etc.). */
 export function mkOpenRowBtn(item: ListItem): HTMLButtonElement {
   const btn = document.createElement('button');
-  btn.className = 'n365-row-open';
+  btn.className = 'memola-row-open';
   btn.title = '行を開く（ページ表示）';
   btn.textContent = '↗';
   btn.addEventListener('click', (e) => {
@@ -524,12 +557,12 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
     if (!e.shiftKey) return;
     const t = e.target as HTMLElement;
     if (!t) return;
-    if (t.closest('.n365-cb')) return;            // shift-range on checkbox itself
-    if (t.closest('.n365-row-open')) return;
-    if (t.closest('.n365-del-btn')) return;
+    if (t.closest('.memola-cb')) return;            // shift-range on checkbox itself
+    if (t.closest('.memola-row-open')) return;
+    if (t.closest('.memola-del-btn')) return;
     e.preventDefault();
     e.stopPropagation();
-    const cb = tr.querySelector<HTMLInputElement>('.n365-cb');
+    const cb = tr.querySelector<HTMLInputElement>('.memola-cb');
     if (!cb) return;
     cb.checked = !cb.checked;
     cb.dispatchEvent(new Event('change'));
@@ -537,12 +570,12 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
 
   // Leading checkbox cell — visibility controlled via CSS (hover or any-selected)
   const cbTd = document.createElement('td');
-  cbTd.className = 'n365-td-cb';
+  cbTd.className = 'memola-td-cb';
   const cb = document.createElement('input');
   cb.type = 'checkbox';
-  cb.className = 'n365-cb';
+  cb.className = 'memola-cb';
   cb.checked = S.dbSelected.has(item.Id);
-  if (cb.checked) tr.classList.add('n365-tr-sel');
+  if (cb.checked) tr.classList.add('memola-tr-sel');
   cb.addEventListener('click', (e) => {
     const me = e as MouseEvent;
     e.stopPropagation();
@@ -570,11 +603,11 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
     if (cb.checked) S.dbSelected.add(item.Id);
     else S.dbSelected.delete(item.Id);
     _lastClickedId = item.Id;
-    tr.classList.toggle('n365-tr-sel', cb.checked);
-    g('dt').classList.toggle('n365-has-sel', S.dbSelected.size > 0);
+    tr.classList.toggle('memola-tr-sel', cb.checked);
+    g('dt').classList.toggle('memola-has-sel', S.dbSelected.size > 0);
     renderBulkBar();
     // Update header checkbox state without full re-render
-    const head = document.querySelector<HTMLInputElement>('.n365-th-cb .n365-cb');
+    const head = document.querySelector<HTMLInputElement>('.memola-th-cb .memola-cb');
     if (head) {
       const visible = getSortedFilteredItems().map((it) => it.Id);
       const selCount = visible.filter((id) => S.dbSelected.has(id)).length;
@@ -590,7 +623,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
     if (f.FieldTypeKind === 4) {
       // ── Date cell (JST display, JST 0時 → UTC ISO で保存) ──
       const wrapper = document.createElement('div');
-      wrapper.className = 'n365-dc-date';
+      wrapper.className = 'memola-dc-date';
       let raw = (item[f.InternalName] as string) || '';
       function renderText(): void {
         const txt = formatDateJST(raw);
@@ -603,15 +636,15 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
       function showInput(): void {
         wrapper.innerHTML = '';
         const wrap = document.createElement('span');
-        wrap.className = 'n365-dc-date-wrap';
+        wrap.className = 'memola-dc-date-wrap';
         const inp = document.createElement('input');
         inp.type = 'text';
-        inp.className = 'n365-dc-date-inp';
+        inp.className = 'memola-dc-date-inp';
         inp.placeholder = 'YYYY-MM-DD';
         inp.value = formatDateJST(raw);
         const pick = document.createElement('input');
         pick.type = 'date';
-        pick.className = 'n365-dc-date-pick';
+        pick.className = 'memola-dc-date-pick';
         pick.value = formatDateJST(raw);
         pick.tabIndex = -1;
         pick.title = 'カレンダーから選択';
@@ -708,7 +741,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
         if (val) {
           const idx = choices.indexOf(val) % 6;
           const chip = document.createElement('span');
-          chip.className = 'n365-select-chip n365-sc-' + idx;
+          chip.className = 'memola-select-chip memola-sc-' + idx;
           chip.textContent = val;
           chip.style.cursor = 'pointer';
           chip.addEventListener('click', () => {
@@ -745,7 +778,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
     } else {
       const isMulti = f.FieldTypeKind === 3;
       const span = document.createElement('span');
-      span.className = 'n365-dc' + (isMulti ? ' multi' : '');
+      span.className = 'memola-dc' + (isMulti ? ' multi' : '');
       span.contentEditable = 'true';
       span.textContent = item[f.InternalName] != null ? String(item[f.InternalName]) : '';
       span.dataset.field = f.InternalName;
@@ -793,9 +826,9 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
   });
 
   const delTd = document.createElement('td');
-  delTd.className = 'n365-td-del';
+  delTd.className = 'memola-td-del';
   const delBtn = document.createElement('button');
-  delBtn.className = 'n365-del-btn';
+  delBtn.className = 'memola-del-btn';
   delBtn.title = '行を削除';
   delBtn.textContent = '🗑';
   delBtn.addEventListener('click', () => {
@@ -815,7 +848,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
   // Add empty cells for "+" column and spacer column to keep alignment
   tr.appendChild(document.createElement('td'));
   const spacerTd = document.createElement('td');
-  spacerTd.className = 'n365-td-spacer';
+  spacerTd.className = 'memola-td-spacer';
   tr.appendChild(spacerTd);
   return tr;
 }
@@ -836,10 +869,10 @@ export function renderKanban(): void {
   const choices = choiceField.Choices.concat(['未設定']);
   choices.forEach((choice) => {
     const col = document.createElement('div');
-    col.className = 'n365-kb-col';
+    col.className = 'memola-kb-col';
     col.dataset.choice = choice;
     const hd = document.createElement('div');
-    hd.className = 'n365-kb-col-hd';
+    hd.className = 'memola-kb-col-hd';
     hd.textContent = choice;
     col.appendChild(hd);
 
@@ -850,12 +883,12 @@ export function renderKanban(): void {
 
     colItems.forEach((item) => {
       const card = document.createElement('div');
-      card.className = 'n365-kb-card';
-      if (S.dbSelected.has(item.Id)) card.classList.add('n365-card-sel');
+      card.className = 'memola-kb-card';
+      if (S.dbSelected.has(item.Id)) card.classList.add('memola-card-sel');
       card.draggable = true;
       card.dataset.id = String(item.Id);
       const titleSpan = document.createElement('span');
-      titleSpan.className = 'n365-kb-card-title';
+      titleSpan.className = 'memola-kb-card-title';
       titleSpan.textContent = item.Title || '(無題)';
       card.appendChild(titleSpan);
       card.appendChild(mkOpenRowBtn(item));
@@ -867,7 +900,7 @@ export function renderKanban(): void {
     // Column accepts kanban-card drops → change row's choice value
     col.addEventListener('dragover', (e) => {
       const dt = e.dataTransfer;
-      if (!dt || Array.from(dt.types).indexOf('text/n365-kb') < 0) return;
+      if (!dt || Array.from(dt.types).indexOf('text/memola-kb') < 0) return;
       e.preventDefault();
       dt.dropEffect = 'move';
       // Show line indicator: between cards (insert position) within this column
@@ -880,7 +913,7 @@ export function renderKanban(): void {
     col.addEventListener('drop', (e) => {
       const dt = e.dataTransfer;
       if (!dt) return;
-      const idStr = dt.getData('text/n365-kb');
+      const idStr = dt.getData('text/memola-kb');
       if (!idStr) return;
       e.preventDefault();
       hideCardDropLine();
@@ -928,10 +961,10 @@ export function renderKanban(): void {
 
 let _cardDropLine: HTMLElement | null = null;
 function ensureCardDropLine(): HTMLElement {
-  const overlay = document.getElementById('n365-overlay') || document.body;
+  const overlay = document.getElementById('memola-overlay') || document.body;
   if (_cardDropLine && overlay.contains(_cardDropLine)) return _cardDropLine;
   const el = document.createElement('div');
-  el.className = 'n365-card-drop-line';
+  el.className = 'memola-card-drop-line';
   overlay.appendChild(el);
   _cardDropLine = el;
   return el;
@@ -940,7 +973,7 @@ function ensureCardDropLine(): HTMLElement {
 /** Place a horizontal line indicator at the nearest card-gap to clientY
  *  inside `container`. Used by kanban columns. */
 export function showCardDropLine(container: HTMLElement, clientY: number): void {
-  const cards = Array.from(container.querySelectorAll<HTMLElement>('.n365-kb-card, .n365-gv-card'));
+  const cards = Array.from(container.querySelectorAll<HTMLElement>('.memola-kb-card, .memola-gv-card'));
   if (cards.length === 0) {
     // Empty column → place line just under the column header
     const r = container.getBoundingClientRect();
@@ -968,6 +1001,12 @@ export function showCardDropLine(container: HTMLElement, clientY: number): void 
 
 export function hideCardDropLine(): void {
   if (_cardDropLine) _cardDropLine.classList.remove('on');
+  // Defensive: gallery view creates its own drop-line element (different
+  // module-local ref); clear every line in the DOM so a stray one doesn't
+  // linger after a kanban → gallery transition.
+  document.querySelectorAll<HTMLElement>('.memola-card-drop-line').forEach((el) => {
+    el.classList.remove('on');
+  });
 }
 
 /** Click + Shift+click handlers for card selection. Mirrors table checkbox
@@ -975,12 +1014,12 @@ export function hideCardDropLine(): void {
 export function attachCardSelectionHandlers(card: HTMLElement, itemId: number): void {
   card.addEventListener('click', (e) => {
     // Ignore clicks on the open-row (↗) button
-    if ((e.target as HTMLElement).closest('.n365-row-open')) return;
+    if ((e.target as HTMLElement).closest('.memola-row-open')) return;
     const me = e as MouseEvent;
     if (me.shiftKey) {
       if (S.dbSelected.has(itemId)) S.dbSelected.delete(itemId);
       else S.dbSelected.add(itemId);
-      card.classList.toggle('n365-card-sel', S.dbSelected.has(itemId));
+      card.classList.toggle('memola-card-sel', S.dbSelected.has(itemId));
       void import('./db-bulk').then((m) => m.renderBulkBar());
     }
   });
@@ -991,17 +1030,17 @@ export function attachCardDragHandlers(card: HTMLElement, itemId: number): void 
   card.addEventListener('dragstart', (e) => {
     if (!e.dataTransfer) return;
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/n365-kb', String(itemId));
+    e.dataTransfer.setData('text/memola-kb', String(itemId));
     // Fade every selected card if this drag is part of a multi-selection
     const ids = S.dbSelected.has(itemId) ? Array.from(S.dbSelected) : [itemId];
-    document.querySelectorAll<HTMLElement>('.n365-kb-card[data-id], .n365-gv-card[data-id]').forEach((n) => {
+    document.querySelectorAll<HTMLElement>('.memola-kb-card[data-id], .memola-gv-card[data-id]').forEach((n) => {
       const id = parseInt(n.dataset.id || '0', 10);
-      if (ids.indexOf(id) >= 0) n.classList.add('n365-kb-card-dragging');
+      if (ids.indexOf(id) >= 0) n.classList.add('memola-kb-card-dragging');
     });
   });
   card.addEventListener('dragend', () => {
-    document.querySelectorAll('.n365-kb-card-dragging').forEach((n) =>
-      n.classList.remove('n365-kb-card-dragging'));
+    document.querySelectorAll('.memola-kb-card-dragging').forEach((n) =>
+      n.classList.remove('memola-kb-card-dragging'));
     hideCardDropLine();
   });
 }

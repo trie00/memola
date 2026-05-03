@@ -36,7 +36,10 @@ function err(message: string): ToolResult {
 
 function handleListPages(input: { include_trashed?: boolean }): ToolResult {
   const includeTrashed = !!input.include_trashed;
-  const items = (includeTrashed ? S.meta.pages : S.meta.pages.filter((p) => !p.trashed))
+  // Drafts are personal scratch; don't expose them to AI tooling either.
+  const items = S.meta.pages
+    .filter((p) => !p.originPageId)
+    .filter((p) => includeTrashed || !p.trashed)
     .map((p) => ({
       id: p.id,
       title: p.title,
@@ -51,6 +54,7 @@ function handleSearchPages(input: { query: string }): ToolResult {
   const q = (input.query || '').toLowerCase();
   if (!q) return ok({ pages: [] });
   const hits = S.pages
+    .filter((p) => !p.IsDraft)
     .filter((p) => (p.Title || '').toLowerCase().includes(q))
     .map((p) => ({
       id: p.Id,
@@ -182,7 +186,7 @@ export async function executeTool(name: string, input: Record<string, unknown>):
   // "Claude said it added body but the page is empty" type issues.
   // Remove or gate behind a debug flag once stable.
   // eslint-disable-next-line no-console
-  console.log('[n365 tool]', name, input);
+  console.log('[Memola tool]', name, input);
   let result: ToolResult;
   try {
     switch (name) {

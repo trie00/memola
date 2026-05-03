@@ -55,22 +55,22 @@ function buildEditor(
     case 4: { // Date — flexible text input + native calendar picker.
               // Text accepts YYYYMMDD / YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD.
       const wrap = document.createElement('div');
-      wrap.className = 'n365-rp-date-wrap';
+      wrap.className = 'memola-rp-date-wrap';
       const inp = document.createElement('input');
       inp.type = 'text';
-      inp.className = 'n365-rp-input n365-rp-date';
+      inp.className = 'memola-rp-input memola-rp-date';
       inp.placeholder = 'YYYY-MM-DD';
       inp.value = formatDateJST(value as string);
       const pick = document.createElement('input');
       pick.type = 'date';
-      pick.className = 'n365-rp-date-pick';
+      pick.className = 'memola-rp-date-pick';
       pick.value = formatDateJST(value as string);
       pick.tabIndex = -1;
       pick.title = 'カレンダーから選択';
       wrap.append(inp, pick);
 
       const save = (norm: string): void => {
-        inp.classList.remove('n365-rp-invalid');
+        inp.classList.remove('memola-rp-invalid');
         inp.value = norm;
         pick.value = norm;
         void commit(listTitle, item.Id, field, norm, item);
@@ -78,14 +78,14 @@ function buildEditor(
       inp.addEventListener('blur', () => {
         const trimmed = inp.value.trim();
         if (!trimmed) {
-          inp.classList.remove('n365-rp-invalid');
+          inp.classList.remove('memola-rp-invalid');
           pick.value = '';
           void commit(listTitle, item.Id, field, '', item);
           return;
         }
         const norm = parseFlexibleDate(trimmed);
         if (!norm) {
-          inp.classList.add('n365-rp-invalid');
+          inp.classList.add('memola-rp-invalid');
           toast('日付形式が無効です: ' + trimmed, 'err');
           return;
         }
@@ -104,16 +104,16 @@ function buildEditor(
     case 6: { // Choice — custom popover (matches the create-menu styling).
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'n365-rp-input n365-rp-choice';
+      btn.className = 'memola-rp-input memola-rp-choice';
       const choices = field.Choices || [];
       const renderLabel = (): void => {
         const v = (item[field.InternalName] as string) || '';
         if (v) {
           const idx = choices.indexOf(v);
-          btn.innerHTML = '<span class="n365-select-chip n365-sc-' + (idx >= 0 ? idx % 6 : 0) + '">' +
+          btn.innerHTML = '<span class="memola-select-chip memola-sc-' + (idx >= 0 ? idx % 6 : 0) + '">' +
             v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>';
         } else {
-          btn.innerHTML = '<span class="n365-rp-placeholder">—</span>';
+          btn.innerHTML = '<span class="memola-rp-placeholder">—</span>';
         }
       };
       renderLabel();
@@ -128,7 +128,7 @@ function buildEditor(
     }
     case 8: { // Bool
       const lab = document.createElement('label');
-      lab.className = 'n365-rp-checkbox';
+      lab.className = 'memola-rp-checkbox';
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.checked = value === true || value === 'true' || value === 1 || value === '1';
@@ -141,7 +141,7 @@ function buildEditor(
     case 9: { // Number
       const inp = document.createElement('input');
       inp.type = 'number';
-      inp.className = 'n365-rp-input';
+      inp.className = 'memola-rp-input';
       inp.value = value == null ? '' : String(value);
       inp.addEventListener('blur', () => {
         const v = inp.value.trim() === '' ? '' : Number(inp.value);
@@ -151,7 +151,7 @@ function buildEditor(
     }
     case 3: { // Multiline
       const ta = document.createElement('textarea');
-      ta.className = 'n365-rp-input n365-rp-multi';
+      ta.className = 'memola-rp-input memola-rp-multi';
       ta.rows = 2;
       ta.value = value == null ? '' : String(value);
       ta.addEventListener('blur', () => {
@@ -162,7 +162,7 @@ function buildEditor(
     default: { // Text (kind 2) and fallback
       const inp = document.createElement('input');
       inp.type = 'text';
-      inp.className = 'n365-rp-input';
+      inp.className = 'memola-rp-input';
       inp.value = value == null ? '' : String(value);
       inp.addEventListener('blur', () => {
         void commit(listTitle, item.Id, field, inp.value, item);
@@ -186,12 +186,12 @@ export function renderRowProperties(
 
   for (const f of visible) {
     const row = document.createElement('div');
-    row.className = 'n365-rp-row';
+    row.className = 'memola-rp-row';
     const lbl = document.createElement('div');
-    lbl.className = 'n365-rp-label';
+    lbl.className = 'memola-rp-label';
     lbl.textContent = f.Title;
     const val = document.createElement('div');
-    val.className = 'n365-rp-value';
+    val.className = 'memola-rp-value';
     val.appendChild(buildEditor(f, item, listTitle));
     row.append(lbl, val);
     container.appendChild(row);

@@ -13,7 +13,7 @@ import type { ToolDef } from '../api/anthropic';
 const TOOL_DEFS_RAW: ToolDef[] = [
   {
     name: 'list_pages',
-    description: `n365 のすべてのページとデータベースの一覧を返す。
+    description: `Memola のすべてのページとデータベースの一覧を返す。
 タイトル / ID / 親 ID / 種類のみ返し本文は含まない（軽量）。
 AI が作業前に全体像を把握する用途。include_trashed=true でゴミ箱内も含める。`,
     input_schema: {
@@ -138,7 +138,7 @@ list_db_rows / create_db_row / update_db_row を呼ぶ前に必ずこれで列�
     input_schema: {
       type: 'object',
       properties: {
-        db_id: { type: 'string', description: 'DB の page id (n365-pages の Id)' },
+        db_id: { type: 'string', description: 'DB の page id (memola-pages の Id)' },
       },
       required: ['db_id'],
     },
@@ -240,7 +240,7 @@ type に指定できる値:
 手順:
 1. read_db_schema で列構成を取得
 2. fields に列の InternalName または Title をキーに値を渡す
-3. 必要なら body に行ページの markdown 本文を渡す（n365-pages に保存される）
+3. 必要なら body に行ページの markdown 本文を渡す（memola-pages に保存される）
 
 値の形式:
 - text/multiline: 文字列
@@ -294,7 +294,7 @@ type に指定できる値:
     description: `データベースから行を削除する。
 
 ⚠️ ホスト側で確認ダイアログが出る。user_cancelled の場合は中止される。
-n365-pages 上の対応する行ページ本文も同時に削除される（カスケード）。`,
+memola-pages 上の対応する行ページ本文も同時に削除される（カスケード）。`,
     input_schema: {
       type: 'object',
       properties: {

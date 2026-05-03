@@ -11,24 +11,24 @@ function getEl<T extends HTMLElement = HTMLElement>(id: string): T | null {
 }
 
 export function renderFilterChips(): void {
-  const wrap = getEl('n365-filter-chips');
+  const wrap = getEl('memola-filter-chips');
   if (!wrap) return;
   wrap.innerHTML = '';
   S.dbFilters.forEach((flt, idx) => {
     const field = S.dbFields.find((f) => f.InternalName === flt.field);
     if (!field) return;
     const chip = document.createElement('div');
-    chip.className = 'n365-flt-chip';
+    chip.className = 'memola-flt-chip';
 
     const lbl = document.createElement('span');
-    lbl.className = 'n365-flt-chip-label';
+    lbl.className = 'memola-flt-chip-label';
     lbl.textContent = field.Title;
     chip.appendChild(lbl);
 
     chip.appendChild(makeValueEditor(field, flt, idx));
 
     const xbtn = document.createElement('button');
-    xbtn.className = 'n365-flt-chip-x';
+    xbtn.className = 'memola-flt-chip-x';
     xbtn.title = '削除';
     xbtn.textContent = '×';
     xbtn.addEventListener('click', () => {
@@ -50,7 +50,7 @@ function makeValueEditor(
   // Choice → dropdown
   if (field.FieldTypeKind === 6 && field.Choices) {
     const sel = document.createElement('select');
-    sel.className = 'n365-flt-chip-val';
+    sel.className = 'memola-flt-chip-val';
     const empty = document.createElement('option');
     empty.value = ''; empty.textContent = '—';
     sel.appendChild(empty);
@@ -70,7 +70,7 @@ function makeValueEditor(
   // Boolean → dropdown
   if (field.FieldTypeKind === 8) {
     const sel = document.createElement('select');
-    sel.className = 'n365-flt-chip-val';
+    sel.className = 'memola-flt-chip-val';
     [['', '—'], ['true', 'チェック済み'], ['false', '未チェック']].forEach(([v, t]) => {
       const o = document.createElement('option');
       o.value = v; o.textContent = t;
@@ -87,7 +87,7 @@ function makeValueEditor(
   // Text / number / date / multi-line → text input (contains)
   const inp = document.createElement('input');
   inp.type = 'text';
-  inp.className = 'n365-flt-chip-val';
+  inp.className = 'memola-flt-chip-val';
   inp.placeholder = '値…';
   inp.value = flt.value || '';
   inp.addEventListener('input', () => {
@@ -102,8 +102,8 @@ function makeValueEditor(
 }
 
 export function showFilterPopover(): void {
-  const popMaybe = getEl('n365-filter-popover');
-  const btn = getEl('n365-db-filter-btn');
+  const popMaybe = getEl('memola-filter-popover');
+  const btn = getEl('memola-db-filter-btn');
   if (!popMaybe || !btn) return;
   const pop: HTMLElement = popMaybe;
   // Toggle off if already open
@@ -113,16 +113,16 @@ export function showFilterPopover(): void {
 
   // Search input
   const inpWrap = document.createElement('div');
-  inpWrap.className = 'n365-flt-pop-inpwrap';
+  inpWrap.className = 'memola-flt-pop-inpwrap';
   const inp = document.createElement('input');
   inp.type = 'text';
-  inp.className = 'n365-flt-pop-inp';
+  inp.className = 'memola-flt-pop-inp';
   inp.placeholder = 'フィルター対象…';
   inpWrap.appendChild(inp);
   pop.appendChild(inpWrap);
 
   const list = document.createElement('div');
-  list.className = 'n365-flt-pop-list';
+  list.className = 'memola-flt-pop-list';
   pop.appendChild(list);
 
   function renderList(q: string): void {
@@ -133,16 +133,16 @@ export function showFilterPopover(): void {
       .filter((f) => !ql || f.Title.toLowerCase().includes(ql));
     if (candidates.length === 0) {
       const empty = document.createElement('div');
-      empty.className = 'n365-flt-pop-empty';
+      empty.className = 'memola-flt-pop-empty';
       empty.textContent = used.size === S.dbFields.length ? '全項目に既に条件が設定済み' : '一致する項目なし';
       list.appendChild(empty);
       return;
     }
     candidates.forEach((f) => {
       const item = document.createElement('div');
-      item.className = 'n365-flt-pop-item';
+      item.className = 'memola-flt-pop-item';
       const ic = document.createElement('span');
-      ic.className = 'n365-flt-pop-ic';
+      ic.className = 'memola-flt-pop-ic';
       ic.textContent = iconFor(f.FieldTypeKind);
       const lbl = document.createElement('span');
       lbl.textContent = f.Title;
@@ -154,8 +154,8 @@ export function showFilterPopover(): void {
         renderDbTable();
         // Auto-focus the new chip's value editor
         setTimeout(() => {
-          const wrap = getEl('n365-filter-chips');
-          const chips = wrap?.querySelectorAll<HTMLElement>('.n365-flt-chip-val');
+          const wrap = getEl('memola-filter-chips');
+          const chips = wrap?.querySelectorAll<HTMLElement>('.memola-flt-chip-val');
           if (chips && chips.length > 0) chips[chips.length - 1].focus();
         }, 50);
       });
@@ -189,8 +189,8 @@ function iconFor(kind: number): string {
 
 export function attachFilterPopoverOutsideClick(): void {
   document.addEventListener('click', (e) => {
-    const pop = getEl('n365-filter-popover');
-    const btn = getEl('n365-db-filter-btn');
+    const pop = getEl('memola-filter-popover');
+    const btn = getEl('memola-db-filter-btn');
     if (!pop || !pop.classList.contains('on')) return;
     const t = e.target as Node;
     if (pop && pop.contains(t)) return;

@@ -148,7 +148,8 @@ export function recordRowOrderChange(
   const apply = async (order: number[] | null): Promise<void> => {
     const { saveRowOrder } = await import('../lib/db-order');
     if (order === null) {
-      try { localStorage.removeItem('n365.db.roworder.' + listTitle); } catch { /* ignore */ }
+      const { prefDbRowOrderLegacy } = await import('../lib/prefs');
+      prefDbRowOrderLegacy(listTitle).clear();
     } else {
       saveRowOrder(listTitle, order);
     }
@@ -381,7 +382,8 @@ export function recordColOrderChange(
   const apply = async (order: string[] | null): Promise<void> => {
     const { saveColOrder } = await import('../lib/db-order');
     if (order === null) {
-      try { localStorage.removeItem('n365.db.colorder.' + listTitle); } catch { /* ignore */ }
+      const { prefDbColOrderLegacy } = await import('../lib/prefs');
+      prefDbColOrderLegacy(listTitle).clear();
     } else {
       saveColOrder(listTitle, order);
     }

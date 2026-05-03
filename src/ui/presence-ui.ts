@@ -6,14 +6,10 @@ import {
   startPresence, pingPresence, leavePresence, listPresence,
   attachUnloadCleanup, PING_MS, type PresenceUser,
 } from '../api/presence';
+import { escapeHtml } from '../lib/html-escape';
 
 let _timer: ReturnType<typeof setInterval> | null = null;
 let _currentPageId: string | null = null;
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
 
 function initials(name: string): string {
   if (!name) return '?';
@@ -32,7 +28,7 @@ function colorFor(name: string): string {
 }
 
 function renderAvatars(users: PresenceUser[]): void {
-  const el = document.getElementById('n365-presence');
+  const el = document.getElementById('memola-presence');
   if (!el) return;
   // Hide self when alone — single-user case is uninteresting and
   // saves screen real-estate.
@@ -47,12 +43,12 @@ function renderAvatars(users: PresenceUser[]): void {
   const visible = others.slice(0, MAX_SHOWN);
   const overflow = others.length - visible.length;
   el.innerHTML = visible.map((u) => {
-    return '<span class="n365-presence-av" style="background:' + colorFor(u.userName) + '"' +
+    return '<span class="memola-presence-av" style="background:' + colorFor(u.userName) + '"' +
       ' title="' + escapeHtml(u.userName) + ' が閲覧中">' +
       escapeHtml(initials(u.userName)) + '</span>';
   }).join('') +
   (overflow > 0
-    ? '<span class="n365-presence-more" title="他 ' + overflow + ' 名">+' + overflow + '</span>'
+    ? '<span class="memola-presence-more" title="他 ' + overflow + ' 名">+' + overflow + '</span>'
     : '');
 }
 

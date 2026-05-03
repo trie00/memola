@@ -6,6 +6,7 @@ import { apiLoadFileMeta } from '../api/pages';
 import { getListItemEditor, getCurrentUser } from '../api/sync';
 import { setSave } from './ui-helpers';
 import { doSelect } from './views';
+import { escapeHtml } from '../lib/html-escape';
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -42,41 +43,44 @@ async function checkOnce(): Promise<void> {
     const etagSame = !!meta.etag && meta.etag === S.sync.loadedEtag;
     const modifiedSame = !!meta.modified && meta.modified === S.sync.loadedModified;
     if (etagSame || modifiedSame) return;
-    // Row advanced — find out who did it. Watermark-refresh discipline
-    // *should* keep our own writes from getting here, but we have a
-    // backup self-edit filter just in case some path is missing the
-    // refresh call (e.g. another tab of the same user).
-    const [editor, me] = await Promise.all([
-      getListItemEditor(id).catch(() => ''),
-      getCurrentUser(),
-    ]);
-    if (editor && me && editor === me) {
-      // Same user — could be: this tab missed a watermark update, OR
-      // another tab/AI tool/side-channel from this user. Silently align
-      // the watermark and don't pop a banner. (Multi-tab notifications
-      // are deferred — same-user activity is usually self-aware.)
-      S.sync.loadedModified = meta.modified;
+    // Self-edit guard: any etag THIS tab produced via its own save lives
+    // in `ourSavedEtags`. If the SP-side etag matches one of those, the
+    // mismatch is a stale watermark on our side, not a foreign change.
+    // Silently align so we stop noticing it next time.
+    if (meta.etag && S.sync.ourSavedEtags.indexOf(meta.etag) >= 0) {
       S.sync.loadedEtag = meta.etag;
+      S.sync.loadedModified = meta.modified;
       return;
     }
-    showStaleBanner(editor, meta.modified, meta.etag, id);
+    // Row advanced from somewhere other than this tab — could be another
+    // tab of this user, or a different user altogether. Distinguish so
+    // the banner can say "別のタブ (あなた)" vs "○○さん".
+    const editor = await getListItemEditor(id).catch(() => '');
+    const me = await getCurrentUser().catch(() => '');
+    const sameUser = !!editor && !!me && editor === me;
+    showStaleBanner(editor, meta.modified, meta.etag, id, sameUser);
   } catch { /* ignore transient errors */ }
 }
 
-function showStaleBanner(editor: string, modified: string, etag: string, pageId: string): void {
-  let bn = document.getElementById('n365-sync-banner');
+function showStaleBanner(editor: string, modified: string, etag: string, pageId: string, sameUser = false): void {
+  let bn = document.getElementById('memola-sync-banner');
   if (!bn) {
     bn = document.createElement('div');
-    bn.id = 'n365-sync-banner';
-    document.getElementById('n365-overlay')?.appendChild(bn);
+    bn.id = 'memola-sync-banner';
+    document.getElementById('memola-overlay')?.appendChild(bn);
   }
   const time = new Date(modified).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  // Same-user case is almost certainly "another tab of yours". We say so
+  // explicitly so the user doesn't get confused about who edited.
+  const who = sameUser
+    ? '別のタブ (あなた)'
+    : '<strong>' + escapeHtml(editor || '誰か') + '</strong>さん';
   bn.innerHTML =
-    '<span>🔔 <strong>' + escapeHtml(editor || '誰か') + '</strong>さんが ' + time + ' に更新しました</span>' +
-    '<button id="n365-sync-reload">今すぐ反映</button>' +
-    '<button id="n365-sync-dismiss">後で</button>';
+    '<span>🔔 ' + who + 'が ' + time + ' に更新しました</span>' +
+    '<button id="memola-sync-reload">今すぐ反映</button>' +
+    '<button id="memola-sync-dismiss">後で</button>';
   bn.classList.add('on');
-  document.getElementById('n365-sync-reload')?.addEventListener('click', async () => {
+  document.getElementById('memola-sync-reload')?.addEventListener('click', async () => {
     if (S.dirty) {
       if (!confirm('未保存の変更があります。リロードして上書きしますか？')) return;
     }
@@ -87,16 +91,13 @@ function showStaleBanner(editor: string, modified: string, etag: string, pageId:
     hideStaleBanner();
     await doSelect(pageId);
   });
-  document.getElementById('n365-sync-dismiss')?.addEventListener('click', () => {
+  document.getElementById('memola-sync-dismiss')?.addEventListener('click', () => {
     hideStaleBanner();
   });
 }
 
 function hideStaleBanner(): void {
-  const bn = document.getElementById('n365-sync-banner');
+  const bn = document.getElementById('memola-sync-banner');
   if (bn) bn.remove();
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}

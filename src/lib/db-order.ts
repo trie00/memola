@@ -5,28 +5,19 @@
 // in the saved order are appended at the end (so AI-added columns and new
 // rows don't disappear from view).
 
-const COL_ORDER_PREFIX = 'n365.db.colorder.';
-const ROW_ORDER_PREFIX = 'n365.db.roworder.';
-
-function safeLoad<T>(key: string): T | null {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : null;
-  } catch { return null; }
-}
-
-function safeSave(key: string, value: unknown): void {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* quota etc. */ }
-}
+import {
+  prefDbColOrderLegacy, prefDbRowOrderLegacy, prefDbGanttConfig,
+} from './prefs';
 
 // ── Column order ────────────────────────────────────────
 
 export function loadColOrder(listTitle: string): string[] | null {
-  return safeLoad<string[]>(COL_ORDER_PREFIX + listTitle);
+  const v = prefDbColOrderLegacy(listTitle).get();
+  return v.length === 0 ? null : v;
 }
 
 export function saveColOrder(listTitle: string, order: string[]): void {
-  safeSave(COL_ORDER_PREFIX + listTitle, order);
+  prefDbColOrderLegacy(listTitle).set(order);
 }
 
 /** Reorder fields per the saved list. Unknown fields (new columns) appended. */
@@ -46,11 +37,12 @@ export function applyColOrder<T extends { InternalName: string }>(fields: T[], l
 // ── Row order ───────────────────────────────────────────
 
 export function loadRowOrder(listTitle: string): number[] | null {
-  return safeLoad<number[]>(ROW_ORDER_PREFIX + listTitle);
+  const v = prefDbRowOrderLegacy(listTitle).get();
+  return v.length === 0 ? null : v;
 }
 
 export function saveRowOrder(listTitle: string, order: number[]): void {
-  safeSave(ROW_ORDER_PREFIX + listTitle, order);
+  prefDbRowOrderLegacy(listTitle).set(order);
 }
 
 /** Reorder items per the saved id list. New items (not in saved) appended. */
@@ -74,14 +66,13 @@ export interface GanttConfig {
   end: string | null;   // InternalName of the end-date field, or null for single-day bars
 }
 
-const GANTT_CONFIG_PREFIX = 'n365.db.gantt.';
-
 export function loadGanttConfig(listTitle: string): GanttConfig | null {
-  return safeLoad<GanttConfig>(GANTT_CONFIG_PREFIX + listTitle);
+  const v = prefDbGanttConfig<GanttConfig | null>(listTitle, null).get();
+  return v;
 }
 
 export function saveGanttConfig(listTitle: string, cfg: GanttConfig): void {
-  safeSave(GANTT_CONFIG_PREFIX + listTitle, cfg);
+  prefDbGanttConfig<GanttConfig>(listTitle, cfg).set(cfg);
 }
 
 // ── Generic drag reorder helper (pure) ──────────────────

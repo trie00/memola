@@ -51,29 +51,34 @@ export async function runAgent(
 
   for (let step = 0; step < MAX_STEPS; step++) {
     if (signal?.aborted) throw new Error('aborted');
-    // Provider dispatch: Claude API or 企業AI API. Both backends speak the
-    // same ClaudeResponse shape thanks to the translation layer in
-    // openai-corp.ts, so the rest of this loop (tool execution, history
-    // building) is unchanged.
-    const { getProvider, getClaudeModel, getCorpAiModel } = await import('../api/ai-settings');
+    // Provider dispatch: Claude API / Azure OpenAI 互換 API / ローカル AI.
+    // All three speak the same ClaudeResponse shape thanks to the
+    // translation layers in openai-corp.ts and openai-local.ts.
+    const { getProvider, getClaudeModel, getCorpAiModel, getLocalAiModel } =
+      await import('../api/ai-settings');
     const provider = getProvider();
-    const res = provider === 'corp'
-      ? await (await import('../api/openai-corp')).corpAiChatRaw({
-          messages: working,
-          system: systemPrompt,
-          tools: TOOL_DEFS,
-          model: getCorpAiModel(),
-          signal,
-          stream: onTextDelta ? { onText: onTextDelta } : undefined,
-        })
-      : await callClaudeRaw({
-          messages: working,
-          system: systemPrompt,
-          tools: TOOL_DEFS,
-          model: getClaudeModel(),
-          signal,
-          stream: onTextDelta ? { onText: onTextDelta } : undefined,
-        });
+    let res;
+    if (provider === 'corp') {
+      const { corpAiChatRaw } = await import('../api/openai-corp');
+      res = await corpAiChatRaw({
+        messages: working, system: systemPrompt, tools: TOOL_DEFS,
+        model: getCorpAiModel(), signal,
+        stream: onTextDelta ? { onText: onTextDelta } : undefined,
+      });
+    } else if (provider === 'local') {
+      const { localAiChatRaw } = await import('../api/openai-local');
+      res = await localAiChatRaw({
+        messages: working, system: systemPrompt, tools: TOOL_DEFS,
+        model: getLocalAiModel(), signal,
+        stream: onTextDelta ? { onText: onTextDelta } : undefined,
+      });
+    } else {
+      res = await callClaudeRaw({
+        messages: working, system: systemPrompt, tools: TOOL_DEFS,
+        model: getClaudeModel(), signal,
+        stream: onTextDelta ? { onText: onTextDelta } : undefined,
+      });
+    }
 
     const assistantMsg: ApiMessage = { role: 'assistant', content: res.content };
     working.push(assistantMsg);

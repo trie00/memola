@@ -3,57 +3,48 @@
 // Mirrors block-drag.ts: a single floating handle follows mouse hover over
 // table rows. Dragging the handle is the actual drag source; rows themselves
 // are not `draggable`, so cell text selection / inline editing aren't disrupted.
+//
+// Uses the shared `lib/floating-handle` scaffold for the handle DOM /
+// positioning / hover tracking. The drop indicator + reorder logic stays
+// here (it's table-specific — line element under the dropped row, then a
+// `reorderRows` call).
 
 import { S } from '../state';
 import { reorderRows, isManualRowOrderActive } from './views';
+import {
+  createFloatingHandle, isCursorOverWithExtend, type FloatingHandle,
+} from '../lib/floating-handle';
 
-let _handle: HTMLElement | null = null;
+let _handle: FloatingHandle | null = null;
 let _hoveredRow: HTMLTableRowElement | null = null;
 let _draggingId: number | null = null;
 let _draggingIds: number[] = [];          // all rows being dragged (multi-select)
 let _draggingRow: HTMLTableRowElement | null = null;
 
-const HANDLE_HTML =
-  '<svg viewBox="0 0 10 16" width="10" height="16" fill="currentColor" style="pointer-events:none">' +
-  '<circle cx="2" cy="3" r="1.3"/><circle cx="2" cy="8" r="1.3"/><circle cx="2" cy="13" r="1.3"/>' +
-  '<circle cx="8" cy="3" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="8" cy="13" r="1.3"/>' +
-  '</svg>';
-
-function ensureHandle(): HTMLElement {
-  if (_handle && document.body.contains(_handle)) return _handle;
-  const h = document.createElement('div');
-  h.id = 'n365-row-handle';
-  h.draggable = true;
-  h.title = 'ドラッグして行を並べ替え';
-  h.innerHTML = HANDLE_HTML;
-  h.addEventListener('dragstart', onDragStart);
-  h.addEventListener('dragend', onDragEnd);
-  h.addEventListener('mouseleave', (e) => {
-    const rt = (e as MouseEvent).relatedTarget as HTMLElement | null;
-    if (rt && _hoveredRow && _hoveredRow.contains(rt)) return;
-    hideHandle();
+function ensureHandle(): FloatingHandle {
+  if (_handle) return _handle;
+  _handle = createFloatingHandle({
+    id: 'memola-row-handle',
+    title: 'ドラッグして行を並べ替え',
+    centred: true,                         // 18px high, centred on row
+    onDragStart: onDragStart,
+    onDragEnd: onDragEnd,
+    onMouseLeave: (e) => {
+      const rt = (e as MouseEvent).relatedTarget as HTMLElement | null;
+      if (rt && _hoveredRow && _hoveredRow.contains(rt)) return;
+      hideHandle();
+    },
   });
-  document.getElementById('n365-overlay')?.appendChild(h);
-  _handle = h;
-  return h;
-}
-
-function positionHandle(row: HTMLTableRowElement): void {
-  const h = ensureHandle();
-  const r = row.getBoundingClientRect();
-  h.style.top = (r.top + window.scrollY) + 'px';
-  h.style.left = (r.left + window.scrollX - 24) + 'px';
-  h.style.height = Math.max(20, Math.min(r.height, 32)) + 'px';
-  h.style.display = 'flex';
+  return _handle;
 }
 
 function hideHandle(): void {
-  if (_handle) _handle.style.display = 'none';
+  if (_handle) _handle.hide();
   _hoveredRow = null;
 }
 
 function findRowAt(clientY: number): HTMLTableRowElement | null {
-  const tbody = document.getElementById('n365-dtb');
+  const tbody = document.getElementById('memola-dtb');
   if (!tbody) return null;
   const rows = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('tr'));
   for (const r of rows) {
@@ -69,8 +60,8 @@ let _line: HTMLElement | null = null;
 function ensureLine(): HTMLElement {
   if (_line && document.body.contains(_line)) return _line;
   const el = document.createElement('div');
-  el.className = 'n365-row-drop-line';
-  document.getElementById('n365-overlay')?.appendChild(el);
+  el.className = 'memola-row-drop-line';
+  document.getElementById('memola-overlay')?.appendChild(el);
   _line = el;
   return el;
 }
@@ -97,14 +88,14 @@ function onDragStart(e: DragEvent): void {
     : [_draggingId];
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/n365-row', idStr);
+    e.dataTransfer.setData('text/memola-row', idStr);
   }
   // Fade every dragged row (including non-hovered selected ones)
-  const tbody = document.getElementById('n365-dtb');
+  const tbody = document.getElementById('memola-dtb');
   if (tbody) {
     tbody.querySelectorAll<HTMLTableRowElement>('tr').forEach((r) => {
       const id = parseInt(r.dataset.id || '0', 10);
-      if (_draggingIds.indexOf(id) >= 0) r.classList.add('n365-tr-dragging');
+      if (_draggingIds.indexOf(id) >= 0) r.classList.add('memola-tr-dragging');
     });
   }
   document.addEventListener('dragover', onDragOver);
@@ -112,10 +103,10 @@ function onDragStart(e: DragEvent): void {
 }
 
 function onDragEnd(): void {
-  const tbody = document.getElementById('n365-dtb');
+  const tbody = document.getElementById('memola-dtb');
   if (tbody) {
-    tbody.querySelectorAll('.n365-tr-dragging').forEach((r) => {
-      r.classList.remove('n365-tr-dragging');
+    tbody.querySelectorAll('.memola-tr-dragging').forEach((r) => {
+      r.classList.remove('memola-tr-dragging');
     });
   }
   _draggingId = null;
@@ -152,21 +143,12 @@ function onDrop(e: DragEvent): void {
   onDragEnd();
 }
 
-// Hit-detection mirrors block-drag: extends 44px to the LEFT of each row to
-// keep the handle visible across the gap between row and handle.
-const HIT_LEFT_EXTEND = 44;
-const HIT_VERT_PAD = 2;
-
 function rowUnderCursor(clientX: number, clientY: number): HTMLTableRowElement | null {
-  const tbody = document.getElementById('n365-dtb');
+  const tbody = document.getElementById('memola-dtb');
   if (!tbody) return null;
   const rows = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('tr'));
   for (const r of rows) {
-    const rect = r.getBoundingClientRect();
-    if (clientY >= rect.top - HIT_VERT_PAD && clientY <= rect.bottom + HIT_VERT_PAD &&
-        clientX >= rect.left - HIT_LEFT_EXTEND && clientX <= rect.right) {
-      return r;
-    }
+    if (isCursorOverWithExtend(r, clientX, clientY)) return r;
   }
   return null;
 }
@@ -180,23 +162,21 @@ export function attachDbRowDrag(): void {
     // Only active when viewing a DB table
     if (S.currentType !== 'database') { hideHandle(); return; }
     if (!isManualRowOrderActive()) { hideHandle(); return; }
-    const dt = document.getElementById('n365-dt');
+    const dt = document.getElementById('memola-dt');
     if (!dt) { hideHandle(); return; }
 
     // If the cursor is on the handle itself, keep current state
-    if (_handle && _handle.style.display !== 'none') {
-      const hr = _handle.getBoundingClientRect();
-      if (e.clientX >= hr.left - 2 && e.clientX <= hr.right + 2 &&
-          e.clientY >= hr.top - 2 && e.clientY <= hr.bottom + 2) return;
-    }
+    if (_handle && _handle.isCursorOnHandle(e.clientX, e.clientY)) return;
     const row = rowUnderCursor(e.clientX, e.clientY);
     if (row) {
       if (row !== _hoveredRow) {
         _hoveredRow = row;
-        positionHandle(row);
+        ensureHandle().positionAt(row);
       }
     } else {
       hideHandle();
     }
   });
 }
+// Suppress unused-symbol warnings — `_draggingRow` is kept as a debug aid.
+void _draggingRow;

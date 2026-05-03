@@ -1,6 +1,7 @@
 // Toast / loading / save indicator helpers.
 
 import { g } from './dom';
+import { formatRelativeTime } from '../lib/date-utils';
 
 let _tkT: ReturnType<typeof setTimeout> | undefined;
 
@@ -17,21 +18,9 @@ export function setLoad(on: boolean, msg?: string): void {
   g('ld').classList.toggle('off', !on);
 }
 
-/** Format a Date as a per-page "保存済 …" label. Today → HH:MM, yesterday →
- *  「昨日 HH:MM」, this year → 「M/D HH:MM」, older → 「YYYY/M/D」. */
+/** "保存済 …" label — delegates to the shared `formatRelativeTime`. */
 function formatSavedLabel(d: Date): string {
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  const yest = new Date(now); yest.setDate(now.getDate() - 1);
-  const isYest = d.toDateString() === yest.toDateString();
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  if (sameDay) return '保存済 ' + hh + ':' + mm;
-  if (isYest)  return '保存済 昨日 ' + hh + ':' + mm;
-  if (d.getFullYear() === now.getFullYear()) {
-    return '保存済 ' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hh + ':' + mm;
-  }
-  return '保存済 ' + d.getFullYear() + '/' + (d.getMonth() + 1) + '/' + d.getDate();
+  return '保存済 ' + formatRelativeTime(d);
 }
 
 export function setSave(t: string): void {
@@ -64,7 +53,7 @@ export function setSavedAt(when: Date | string | null | undefined): void {
 // Online/offline indicator
 if (typeof window !== 'undefined') {
   const updateOnline = (): void => {
-    const el = document.getElementById('n365-ss');
+    const el = document.getElementById('memola-ss');
     if (!el) return;
     if (!navigator.onLine) {
       el.textContent = 'オフライン';
@@ -73,7 +62,7 @@ if (typeof window !== 'undefined') {
   };
   window.addEventListener('offline', updateOnline);
   window.addEventListener('online', () => {
-    const el = document.getElementById('n365-ss');
+    const el = document.getElementById('memola-ss');
     if (el && el.dataset.state === 'offline') { el.textContent = ''; el.dataset.state = ''; }
   });
 }

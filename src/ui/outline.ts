@@ -3,16 +3,15 @@
 
 import { S } from '../state';
 import { g, getEd } from './dom';
-
-const PANEL_KEY = 'n365.outline.open';
+import { prefOutlineOpen } from '../lib/prefs';
 
 export function isOutlineOpen(): boolean {
-  return localStorage.getItem(PANEL_KEY) === '1';
+  return prefOutlineOpen.get() === '1';
 }
 
 export function setOutlineOpen(open: boolean): void {
-  if (open) localStorage.setItem(PANEL_KEY, '1');
-  else localStorage.removeItem(PANEL_KEY);
+  if (open) prefOutlineOpen.set('1');
+  else prefOutlineOpen.clear();
   applyOutlineState();
 }
 
@@ -20,7 +19,7 @@ export function toggleOutline(): void { setOutlineOpen(!isOutlineOpen()); }
 
 export function applyOutlineState(): void {
   const panel = g('outline');
-  const btn = document.getElementById('n365-outline-btn');
+  const btn = document.getElementById('memola-outline-btn');
   const isPage = S.currentType === 'page' && !!S.currentId;
   // Outline isn't meaningful for DB views — hide the topbar toggle entirely.
   if (btn) btn.style.display = isPage ? '' : 'none';
@@ -42,16 +41,16 @@ export function renderOutline(): void {
   const headings = ed.querySelectorAll('h1, h2, h3');
   if (headings.length === 0) {
     const empty = document.createElement('div');
-    empty.className = 'n365-outline-empty';
+    empty.className = 'memola-outline-empty';
     empty.textContent = '見出しがありません';
     list.appendChild(empty);
     return;
   }
   headings.forEach((h, idx) => {
-    const id = 'n365-outline-h-' + idx;
+    const id = 'memola-outline-h-' + idx;
     h.setAttribute('data-outline-id', id);
     const item = document.createElement('div');
-    item.className = 'n365-outline-item n365-outline-' + h.tagName.toLowerCase();
+    item.className = 'memola-outline-item memola-outline-' + h.tagName.toLowerCase();
     item.textContent = (h.textContent || '').trim() || '(無題)';
     item.addEventListener('click', () => {
       h.scrollIntoView({ behavior: 'smooth', block: 'start' });

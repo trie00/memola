@@ -15,10 +15,11 @@ import {
 import { openSearch, closeSearch, renderQs, qsMove, qsConfirm, resetQsSel, setCommandActions } from './search-ui';
 import {
   closeAiPanel, toggleAiPanel, sendAiMessage, clearAiHistory,
-  configureApiKey, getQuickPrompts, loadAiSession, newAiSession, renderHistoryDropdown,
+  getQuickPrompts, loadAiSession, newAiSession, renderHistoryDropdown,
   applyAiPanelState,
 } from './ai-chat';
 import { toggleOutline, applyOutlineState, attachOutlineWatcher } from './outline';
+import { getApiKey, setApiKey } from '../api/anthropic';
 import { togglePropertiesPanel, applyPropertiesState } from './properties-panel';
 import { attachPubTag, syncPubTag } from './pub-tag';
 import { attachDraftsSidebar, refreshDraftsBadge, openDraftsModal } from './drafts-modal';
@@ -26,21 +27,21 @@ import { attachPresence } from './presence-ui';
 import { showWorkspaceMenu, getCurrentWorkspaceName } from './workspaces';
 import { openTrash, closeTrash } from './trash';
 import { exportCsv, importCsv } from './csv-io';
+import { prefFocusMode, prefSidebarState, prefDensity, prefTheme } from '../lib/prefs';
 
-const FOCUS_KEY = 'n365.focus';
 function applyFocusMode(): void {
-  const ov = document.getElementById('n365-overlay');
+  const ov = document.getElementById('memola-overlay');
   if (!ov) return;
-  const isFocus = localStorage.getItem(FOCUS_KEY) === '1';
+  const isFocus = prefFocusMode.get() === '1';
   if (isFocus) {
     ov.classList.add('focus-mode');
     // Focus mode auto-hides the sidebar (don't persist this state)
-    document.getElementById('n365-sb')?.classList.add('collapsed');
+    document.getElementById('memola-sb')?.classList.add('collapsed');
   } else {
     ov.classList.remove('focus-mode');
     // Restore persisted visibility on exit
-    const saved = (() => { try { return localStorage.getItem('n365.sidebar'); } catch { return null; } })();
-    const sb = document.getElementById('n365-sb');
+    const saved = prefSidebarState.get();
+    const sb = document.getElementById('memola-sb');
     if (sb) {
       sb.classList.remove('collapsed');
       if (saved === 'collapsed') sb.classList.add('collapsed');
@@ -48,15 +49,15 @@ function applyFocusMode(): void {
   }
 }
 function toggleFocusMode(): void {
-  const cur = localStorage.getItem(FOCUS_KEY) === '1';
-  if (cur) localStorage.removeItem(FOCUS_KEY);
-  else localStorage.setItem(FOCUS_KEY, '1');
+  const cur = prefFocusMode.get() === '1';
+  if (cur) prefFocusMode.clear();
+  else prefFocusMode.set('1');
   applyFocusMode();
 }
 
 // ビューポート < 900px で自動折畳（明示状態を上書きしない）
 function applyViewportAutoCollapse(): void {
-  const sb = document.getElementById('n365-sb');
+  const sb = document.getElementById('memola-sb');
   if (!sb) return;
   if (window.innerWidth < 900) {
     if (!sb.classList.contains('collapsed')) {
@@ -92,7 +93,7 @@ export function attachAll(): void {
   function persistSidebarState(): void {
     const sb = g('sb');
     const state = sb.classList.contains('collapsed') ? 'collapsed' : 'expanded';
-    try { localStorage.setItem('n365.sidebar', state); } catch { /* ignore */ }
+    prefSidebarState.set(state);
   }
   g('sb-toggle').addEventListener('click', () => {
     g('sb').classList.toggle('collapsed');
@@ -100,19 +101,17 @@ export function attachAll(): void {
   });
 
   // Browser-style back/forward navigation through page-open history
-  document.getElementById('n365-nav-back')?.addEventListener('click', () => {
+  document.getElementById('memola-nav-back')?.addEventListener('click', () => {
     void import('./nav-history').then((m) => m.goBack());
   });
-  document.getElementById('n365-nav-fwd')?.addEventListener('click', () => {
+  document.getElementById('memola-nav-fwd')?.addEventListener('click', () => {
     void import('./nav-history').then((m) => m.goForward());
   });
-  document.getElementById('n365-sb-collapse')?.addEventListener('click', () => {
+  document.getElementById('memola-sb-collapse')?.addEventListener('click', () => {
     g('sb').classList.add('collapsed');
     persistSidebarState();
   });
-  try {
-    if (localStorage.getItem('n365.sidebar') === 'collapsed') g('sb').classList.add('collapsed');
-  } catch { /* ignore */ }
+  if (prefSidebarState.get() === 'collapsed') g('sb').classList.add('collapsed');
 
   // New page buttons (empty-state CTA)
   g('ne').addEventListener('click', () => { doNew(''); });
@@ -121,10 +120,10 @@ export function attachAll(): void {
   g('ne-db').addEventListener('click', () => { doNewDb(''); });
 
   // Empty-state template chips & "テンプレ" button
-  document.getElementById('n365-ne-tpl')?.addEventListener('click', () => {
-    document.getElementById('n365-quick-add')?.click();
+  document.getElementById('memola-ne-tpl')?.addEventListener('click', () => {
+    document.getElementById('memola-quick-add')?.click();
   });
-  document.querySelectorAll<HTMLElement>('.n365-em-chip').forEach((chip) => {
+  document.querySelectorAll<HTMLElement>('.memola-em-chip').forEach((chip) => {
     chip.addEventListener('click', () => {
       const tpl = chip.dataset.tpl;
       if (tpl === 'tasks') void doNewDb('');
@@ -133,8 +132,8 @@ export function attachAll(): void {
   });
 
   // Quick-add (＋ 新規) primary button → CreateMenu popup
-  const quickAddBtn = document.getElementById('n365-quick-add');
-  const createMenu = document.getElementById('n365-create-menu');
+  const quickAddBtn = document.getElementById('memola-quick-add');
+  const createMenu = document.getElementById('memola-create-menu');
   if (quickAddBtn && createMenu) {
     quickAddBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -144,7 +143,7 @@ export function attachAll(): void {
       createMenu.classList.toggle('on');
     });
     createMenu.addEventListener('click', (e) => {
-      const item = (e.target as HTMLElement).closest<HTMLElement>('.n365-cm-item');
+      const item = (e.target as HTMLElement).closest<HTMLElement>('.memola-cm-item');
       if (!item) return;
       createMenu.classList.remove('on');
       switch (item.dataset.cm) {
@@ -174,16 +173,16 @@ export function attachAll(): void {
 
   // Toolbar buttons – preventDefault on mousedown preserves editor selection
   g('tb').addEventListener('mousedown', (e) => {
-    if ((e.target as HTMLElement).closest('.n365-b')) e.preventDefault();
+    if ((e.target as HTMLElement).closest('.memola-b')) e.preventDefault();
   });
   g('tb').addEventListener('click', (e) => {
-    const b = (e.target as HTMLElement).closest<HTMLElement>('.n365-b');
+    const b = (e.target as HTMLElement).closest<HTMLElement>('.memola-b');
     if (b && b.dataset.cmd) execCmd(b.dataset.cmd);
   });
 
   // Floating toolbar buttons
   g('ftb').addEventListener('mousedown', (e) => {
-    const b = (e.target as HTMLElement).closest<HTMLElement>('.n365-fb');
+    const b = (e.target as HTMLElement).closest<HTMLElement>('.memola-fb');
     if (b && b.dataset.cmd) { e.preventDefault(); execCmd(b.dataset.cmd); }
   });
 
@@ -193,19 +192,19 @@ export function attachAll(): void {
     g('md').classList.remove('on');
     setLoad(true, 'リストを準備中...');
     try {
-      // apiGetPages auto-creates the n365-pages list and its columns on first call
+      // apiGetPages auto-creates the memola-pages list and its columns on first call
       S.pages = await apiGetPages();
       renderTree();
-      toast('n365-pages リストを初期化しました');
+      toast('memola-pages リストを初期化しました');
     } catch (e) { toast('初期化に失敗: ' + (e as Error).message, 'err'); }
     finally { setLoad(false); }
   });
 
   // Column modal — grid type picker
   let _colTypeKind = 2;
-  const colGrid = document.getElementById('n365-col-type-grid');
+  const colGrid = document.getElementById('memola-col-type-grid');
   if (colGrid) {
-    const tiles = Array.from(colGrid.querySelectorAll<HTMLDivElement>('.n365-col-type'));
+    const tiles = Array.from(colGrid.querySelectorAll<HTMLDivElement>('.memola-col-type'));
     // Default selection
     tiles[0]?.classList.add('on');
     tiles.forEach((tile) => {
@@ -292,8 +291,8 @@ export function attachAll(): void {
   }
   g('db-csv-export').addEventListener('click', exportCsv);
   g('db-csv-import').addEventListener('click', importCsv);
-  document.getElementById('n365-db-new-row')?.addEventListener('click', doNewDbRow);
-  document.getElementById('n365-db-group-btn')?.addEventListener('click', () => {
+  document.getElementById('memola-db-new-row')?.addEventListener('click', doNewDbRow);
+  document.getElementById('memola-db-group-btn')?.addEventListener('click', () => {
     toast('グループ機能は今後実装予定');
   });
   g('dbv-table').addEventListener('click', () => setDbView('table'));
@@ -338,7 +337,7 @@ export function attachAll(): void {
     apiSetIcon(id, emoji).then(() => {
       const dvIcon = g('dv-pg-icon');
       const dvAdd = g('dv-add-icon');
-      const dvHd = document.getElementById('n365-dv-hd');
+      const dvHd = document.getElementById('memola-dv-hd');
       if (emoji) {
         dvIcon.textContent = emoji; dvIcon.style.display = 'inline-block'; dvAdd.style.display = 'none';
         dvHd?.classList.remove('no-icon');
@@ -365,7 +364,7 @@ export function attachAll(): void {
       if (meta?.type === 'database') {
         const dvIcon = g('dv-pg-icon');
         const dvAdd = g('dv-add-icon');
-        const dvHd = document.getElementById('n365-dv-hd');
+        const dvHd = document.getElementById('memola-dv-hd');
         dvIcon.style.display = 'none';
         dvAdd.style.display = '';
         dvHd?.classList.add('no-icon');
@@ -385,7 +384,7 @@ export function attachAll(): void {
     { id: 'props',    label: 'プロパティパネルを切替', icon: '▤', key: '⌘⇧R', run: () => { togglePropertiesPanel(); } },
     { id: 'focus',    label: '集中モード切替',    icon: '⛶',  key: '⌘⇧F', run: () => { toggleFocusMode(); } },
     { id: 'trash',    label: 'ゴミ箱を開く',       icon: '🗑', key: '',    run: () => { openTrash(); } },
-    { id: 'settings', label: '設定',              icon: '⚙', key: '',    run: () => { document.getElementById('n365-settings-md')?.classList.add('on'); } },
+    { id: 'settings', label: '設定',              icon: '⚙', key: '',    run: () => { document.getElementById('memola-settings-md')?.classList.add('on'); } },
   ]);
 
   // Quick search
@@ -429,7 +428,7 @@ export function attachAll(): void {
     togglePageMenu(g('pgm-btn'));
   });
   g('pgm').addEventListener('click', async (e) => {
-    const item = (e.target as HTMLElement).closest<HTMLElement>('.n365-pgm-item');
+    const item = (e.target as HTMLElement).closest<HTMLElement>('.memola-pgm-item');
     if (!item || !item.dataset.action) return;
     const action = item.dataset.action;
     hidePageMenu();
@@ -452,7 +451,7 @@ export function attachAll(): void {
   attachPageMenuOutsideClick();
   // Refresh the publish/unpublish label every time the menu opens
   function syncPublishMenuItem(): void {
-    const lbl = document.querySelector('.n365-pgm-publish-label');
+    const lbl = document.querySelector('.memola-pgm-publish-label');
     const copyItem = document.querySelector<HTMLElement>('[data-action="copy-pub-url"]');
     const publishItem = document.querySelector<HTMLElement>('[data-action="publish"]');
     const restoreItem = document.querySelector<HTMLElement>('[data-action="restore-daily"]');
@@ -490,10 +489,10 @@ export function attachAll(): void {
       } catch (e) { toast('解除失敗: ' + (e as Error).message, 'err'); }
       syncPubTag();
     } else {
-      // Flush any pending in-editor changes to n365-pages first, so the
+      // Flush any pending in-editor changes to memola-pages first, so the
       // Site Page mirror can't diverge from the source row. Otherwise, if
       // the user clicks 公開 before the 2s autosave fires, the publish path
-      // sends *new* text to SP while n365-pages keeps the *old* body — a
+      // sends *new* text to SP while memola-pages keeps the *old* body — a
       // reload would drop the published changes silently.
       if (S.dirty) {
         const { doSave } = await import('./actions');
@@ -541,9 +540,10 @@ export function attachAll(): void {
       const draft = await apiDuplicateAsDraft(id);
       S.pages = await apiGetPages();
       renderTree();
+      refreshDraftsBadge();
       const { doSelect } = await import('./views');
       await doSelect(draft.Id);
-      toast('下書きを作成しました。完成したらバナーの「原本に適用」を押してください');
+      toast('下書きを作成しました。本ライブラリには表示されません — サイドバーの「📝 下書き」 から再度開けます');
     } catch (e) {
       toast('下書き複製失敗: ' + (e as Error).message, 'err');
     } finally { setLoad(false); }
@@ -632,19 +632,25 @@ export function attachAll(): void {
   g('trash-md').addEventListener('click', (e) => { if (e.target === g('trash-md')) closeTrash(); });
 
   // Settings modal
-  const setBtn = document.getElementById('n365-settings-btn');
-  const setMd = document.getElementById('n365-settings-md');
-  const setKey = document.getElementById('n365-set-aikey') as HTMLInputElement | null;
-  const setProv = document.getElementById('n365-set-provider') as HTMLSelectElement | null;
-  const setClaudeModel = document.getElementById('n365-set-claude-model') as HTMLSelectElement | null;
-  const setCorpModel = document.getElementById('n365-set-corpai-model') as HTMLSelectElement | null;
-  const setCorpKey = document.getElementById('n365-set-corpai-key') as HTMLInputElement | null;
-  const setCorpBaseUrl = document.getElementById('n365-set-corpai-baseurl') as HTMLInputElement | null;
-  const setCorpPrefix = document.getElementById('n365-set-corpai-prefix') as HTMLInputElement | null;
-  const setCorpOverrides = document.getElementById('n365-set-corpai-overrides') as HTMLTextAreaElement | null;
-  const setDensity = document.getElementById('n365-set-density') as HTMLSelectElement | null;
-  const setTheme = document.getElementById('n365-set-theme') as HTMLSelectElement | null;
-  if (setBtn && setMd && setKey && setProv && setClaudeModel && setCorpModel && setCorpKey && setCorpBaseUrl && setCorpPrefix && setCorpOverrides && setDensity && setTheme) {
+  const setBtn = document.getElementById('memola-settings-btn');
+  const setMd = document.getElementById('memola-settings-md');
+  const setKey = document.getElementById('memola-set-aikey') as HTMLInputElement | null;
+  const setProv = document.getElementById('memola-set-provider') as HTMLSelectElement | null;
+  const setClaudeModel = document.getElementById('memola-set-claude-model') as HTMLSelectElement | null;
+  const setCorpModel = document.getElementById('memola-set-corpai-model') as HTMLSelectElement | null;
+  const setCorpKey = document.getElementById('memola-set-corpai-key') as HTMLInputElement | null;
+  const setCorpBaseUrl = document.getElementById('memola-set-corpai-baseurl') as HTMLInputElement | null;
+  const setCorpPrefix = document.getElementById('memola-set-corpai-prefix') as HTMLInputElement | null;
+  const setCorpOverrides = document.getElementById('memola-set-corpai-overrides') as HTMLTextAreaElement | null;
+  // Local AI fields
+  const setLocalBaseUrl = document.getElementById('memola-set-localai-baseurl') as HTMLInputElement | null;
+  const setLocalKey = document.getElementById('memola-set-localai-key') as HTMLInputElement | null;
+  const setLocalModel = document.getElementById('memola-set-localai-model') as HTMLInputElement | null;
+  const setLocalModels = document.getElementById('memola-set-localai-models') as HTMLTextAreaElement | null;
+  const setLocalReasoning = document.getElementById('memola-set-localai-reasoning') as HTMLInputElement | null;
+  const setDensity = document.getElementById('memola-set-density') as HTMLSelectElement | null;
+  const setTheme = document.getElementById('memola-set-theme') as HTMLSelectElement | null;
+  if (setBtn && setMd && setKey && setProv && setClaudeModel && setCorpModel && setCorpKey && setCorpBaseUrl && setCorpPrefix && setCorpOverrides && setLocalBaseUrl && setLocalKey && setLocalModel && setLocalModels && setLocalReasoning && setDensity && setTheme) {
     // Populate model dropdowns once.
     void import('../api/ai-settings').then((ai) => {
       ai.CLAUDE_MODELS.forEach((m) => {
@@ -664,7 +670,7 @@ export function attachAll(): void {
      *  has a `data-prov` attribute matching the provider value. */
     function syncProviderRows(): void {
       const cur = setProv!.value;
-      document.querySelectorAll<HTMLElement>('.n365-set-row[data-prov]').forEach((row) => {
+      document.querySelectorAll<HTMLElement>('.memola-set-row[data-prov]').forEach((row) => {
         row.style.display = (row.dataset.prov === cur) ? '' : 'none';
       });
     }
@@ -676,21 +682,30 @@ export function attachAll(): void {
           setProv.value = ai.getProvider();
           setClaudeModel.value = ai.getClaudeModel();
           setCorpModel.value = ai.getCorpAiModel();
-          setKey.value = localStorage.getItem('n365.aiKey') || '';
+          // Read via getApiKey so the settings panel reflects what
+          // anthropic.ts actually uses (key was previously stored under
+          // a different localStorage key, leaving the input always blank).
+          setKey.value = getApiKey() || '';
           setCorpKey.value = ai.getCorpAiKey();
           setCorpBaseUrl.value = ai.getCorpAiBaseUrl();
           setCorpPrefix.value = ai.getCorpAiDeploymentPrefix();
           setCorpOverrides.value = ai.getCorpAiOverridesRaw();
-          setDensity.value = localStorage.getItem('n365.density') || 'regular';
-          setTheme.value = localStorage.getItem('n365.theme') || 'light';
+          // Local AI prefill
+          setLocalBaseUrl.value = ai.getLocalAiBaseUrl();
+          setLocalKey.value = ai.getLocalAiKey();
+          setLocalModel.value = ai.getLocalAiModel();
+          setLocalModels.value = ai.getLocalAiModels().join('\n');
+          setLocalReasoning.value = ai.getLocalAiReasoningModels().join(' ');
+          setDensity.value = prefDensity.get();
+          setTheme.value = prefTheme.get();
         } catch { /* ignore */ }
         syncProviderRows();
         setMd.classList.add('on');
       });
     });
     setMd.addEventListener('click', (e) => { if (e.target === setMd) setMd.classList.remove('on'); });
-    document.getElementById('n365-set-cancel')?.addEventListener('click', () => setMd.classList.remove('on'));
-    document.getElementById('n365-set-save')?.addEventListener('click', () => {
+    document.getElementById('memola-set-cancel')?.addEventListener('click', () => setMd.classList.remove('on'));
+    document.getElementById('memola-set-save')?.addEventListener('click', () => {
       // Pre-validate the overrides JSON so the user gets immediate feedback
       // rather than silent fallback at request time.
       const ovRaw = setCorpOverrides.value.trim();
@@ -708,19 +723,28 @@ export function attachAll(): void {
       }
       void import('../api/ai-settings').then((ai) => {
         try {
-          ai.setProvider(setProv.value as 'claude' | 'corp');
+          ai.setProvider(setProv.value as 'claude' | 'corp' | 'local');
           if (setClaudeModel.value) ai.setClaudeModel(setClaudeModel.value);
           if (setCorpModel.value) ai.setCorpAiModel(setCorpModel.value);
-          if (setKey.value) localStorage.setItem('n365.aiKey', setKey.value);
-          else localStorage.removeItem('n365.aiKey');
+          // Persist via setApiKey so the value lands at the same
+          // localStorage key anthropic.ts reads from.
+          setApiKey(setKey.value);
           ai.setCorpAiKey(setCorpKey.value);
           ai.setCorpAiBaseUrl(setCorpBaseUrl.value);
           ai.setCorpAiDeploymentPrefix(setCorpPrefix.value);
           ai.setCorpAiOverridesRaw(setCorpOverrides.value);
-          localStorage.setItem('n365.density', setDensity.value);
-          localStorage.setItem('n365.theme', setTheme.value);
+          // Local AI persist
+          ai.setLocalAiBaseUrl(setLocalBaseUrl.value);
+          ai.setLocalAiKey(setLocalKey.value);
+          ai.setLocalAiModel(setLocalModel.value);
+          const localModelsList = setLocalModels.value
+            .split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+          ai.setLocalAiModels(localModelsList);
+          ai.setLocalAiReasoningModels(setLocalReasoning.value);
+          prefDensity.set(setDensity.value);
+          prefTheme.set(setTheme.value);
         } catch { /* ignore */ }
-        const ov = document.getElementById('n365-overlay');
+        const ov = document.getElementById('memola-overlay');
         if (ov) {
           ov.dataset.density = setDensity.value;
           ov.dataset.theme = setTheme.value;
@@ -732,13 +756,11 @@ export function attachAll(): void {
       });
     });
     // Apply on init
-    try {
-      const ov = document.getElementById('n365-overlay');
-      if (ov) {
-        ov.dataset.density = localStorage.getItem('n365.density') || 'regular';
-        ov.dataset.theme = localStorage.getItem('n365.theme') || 'light';
-      }
-    } catch { /* ignore */ }
+    const ov = document.getElementById('memola-overlay');
+    if (ov) {
+      ov.dataset.density = prefDensity.get();
+      ov.dataset.theme = prefTheme.get();
+    }
   }
 
   // Workspace switcher
@@ -751,7 +773,7 @@ export function attachAll(): void {
 
   // Outline panel
   g('outline-btn').addEventListener('click', toggleOutline);
-  document.getElementById('n365-outline-x')?.addEventListener('click', () => {
+  document.getElementById('memola-outline-x')?.addEventListener('click', () => {
     void import('./outline').then((m) => m.setOutlineOpen(false));
   });
   attachOutlineWatcher();
@@ -759,7 +781,7 @@ export function attachAll(): void {
 
   // Properties panel
   g('props-btn').addEventListener('click', togglePropertiesPanel);
-  document.getElementById('n365-props-x')?.addEventListener('click', () => {
+  document.getElementById('memola-props-x')?.addEventListener('click', () => {
     void import('./properties-panel').then((m) => m.setPropertiesOpen(false));
   });
   applyPropertiesState();
@@ -768,7 +790,7 @@ export function attachAll(): void {
   g('ai-btn').addEventListener('click', toggleAiPanel);
   g('ai-close').addEventListener('click', closeAiPanel);
   g('ai-clear').addEventListener('click', clearAiHistory);
-  document.getElementById('n365-ai-new')?.addEventListener('click', () => newAiSession());
+  document.getElementById('memola-ai-new')?.addEventListener('click', () => newAiSession());
   g('ai-hist').addEventListener('change', () => {
     const v = (g('ai-hist') as HTMLSelectElement).value;
     if (v === '__new__') newAiSession();
@@ -778,7 +800,15 @@ export function attachAll(): void {
   applyAiPanelState();
   // Pane resize handles (sidebar/outline/props/AI) — restore widths + install drag
   void import('./pane-resize').then((m) => m.attachPaneResizers());
-  g('ai-key').addEventListener('click', configureApiKey);
+  // Model picker in the chat input bar — single switch for provider+model.
+  // Refresh on panel open so external (settings modal) changes show up.
+  void import('./ai-chat').then((m) => m.syncProviderBadge?.());
+  const modelPick = document.getElementById('memola-ai-model-pick') as HTMLSelectElement | null;
+  if (modelPick) {
+    modelPick.addEventListener('change', () => {
+      void import('./ai-chat').then((m) => m.applyModelPick?.(modelPick.value));
+    });
+  }
   g('ai-send').addEventListener('click', () => {
     const ta = g('ai-input') as HTMLTextAreaElement;
     void sendAiMessage(ta.value);
@@ -808,7 +838,7 @@ export function attachAll(): void {
   const chips = g('ai-chips');
   getQuickPrompts().forEach((p) => {
     const b = document.createElement('button');
-    b.className = 'n365-ai-chip';
+    b.className = 'memola-ai-chip';
     b.textContent = p.label;
     b.addEventListener('click', () => {
       void sendAiMessage(p.prompt);
@@ -824,11 +854,24 @@ export function attachAll(): void {
 export async function init(): Promise<void> {
   setLoad(true);
   try {
-    // n365-pages list is auto-created by apiGetPages on first call
+    // Resolve workspace selection before touching SP — drops a stale
+    // current-workspace name if it's been deleted from the list, etc.
+    const { ensureWorkspaceSelected } = await import('./workspaces');
+    await ensureWorkspaceSelected();
+    // memola-pages list is auto-created by apiGetPages on first call
     S.pages = await apiGetPages();
     renderTree();
     showView('empty');
-    if (S.pages.length > 0) await doSelect(S.pages[0].Id);
+    // Boot-time page selection priority:
+    //   1. Last-opened page from previous session (per workspace)
+    //   2. First non-draft page (fallback)
+    const { loadLastOpenedPage } = await import('./views');
+    const lastId = loadLastOpenedPage();
+    const lastPage = lastId
+      ? S.pages.find((p) => p.Id === lastId && !p.IsDraft)
+      : null;
+    const target = lastPage || S.pages.find((p) => !p.IsDraft) || null;
+    if (target) await doSelect(target.Id);
   } catch (e) {
     g('em').innerHTML = '<div style="font-size:48px">⚠️</div><h2>エラー</h2><p>' + (e as Error).message + '</p>';
     g('em').style.display = 'flex';

@@ -7,6 +7,7 @@
 
 import { S } from '../state';
 import type { Page } from '../state';
+import { escapeHtml as escHtml } from '../lib/html-escape';
 
 interface PickerOptions {
   /** Initial query string (caller can supply one when reopening with input) */
@@ -34,24 +35,30 @@ interface ActivePicker {
  *  first-N result cap so narrow filters (e.g. dbsOnly) don't accidentally
  *  return an empty set when the matching pages live past the cap. */
 function candidatePool(opts: PickerOptions): Page[] | undefined {
-  if (opts.dbsOnly) return S.pages.filter((p) => p.Type === 'database');
-  return undefined;     // undefined = use S.pages (matchPages default)
+  // Drafts are never linkable: they're a personal scratch space and would
+  // create dangling links once the user applies / discards them.
+  if (opts.dbsOnly) return S.pages.filter((p) => p.Type === 'database' && !p.IsDraft);
+  return S.pages.filter((p) => !p.IsDraft);
 }
 
 let _active: ActivePicker | null = null;
 /** Document-level mousedown listener that closes the picker when the user
  *  clicks outside it. Wired on show, removed on hide. */
 let _outsideClickHandler: ((e: MouseEvent) => void) | null = null;
+/** Document-level keydown listener for ESC. Editor-side keydown can miss
+ *  this when focus drifts (clicking a slash menu item via mouse leaves
+ *  document.body focused, not the editor), so we install our own. */
+let _keyHandler: ((e: KeyboardEvent) => void) | null = null;
 
 function ensureContainer(): HTMLElement {
-  let el = document.getElementById('n365-page-picker');
+  let el = document.getElementById('memola-page-picker');
   if (el) return el;
   el = document.createElement('div');
-  el.id = 'n365-page-picker';
-  el.className = 'n365-page-picker';
+  el.id = 'memola-page-picker';
+  el.className = 'memola-page-picker';
   el.style.display = 'none';
   // Mount inside the overlay so it inherits z-index + scoping
-  const overlay = document.getElementById('n365-overlay') || document.body;
+  const overlay = document.getElementById('memola-overlay') || document.body;
   overlay.appendChild(el);
   return el;
 }
@@ -105,17 +112,13 @@ function ancestorPath(pageId: string): string {
   return segs.join(' / ');
 }
 
-function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 function render(): void {
   if (!_active) return;
   const { el, filtered, selIdx, opts } = _active;
   el.innerHTML = '';
   if (filtered.length === 0) {
     const empty = document.createElement('div');
-    empty.className = 'n365-page-picker-empty';
+    empty.className = 'memola-page-picker-empty';
     empty.textContent = 'ページが見つかりません';
     el.appendChild(empty);
   } else {
@@ -124,11 +127,11 @@ function render(): void {
       const icon = meta?.icon || (page.Type === 'database' ? '🗃' : '📄');
       const path = ancestorPath(page.Id);
       const item = document.createElement('div');
-      item.className = 'n365-page-picker-item' + (idx === selIdx ? ' sel' : '');
+      item.className = 'memola-page-picker-item' + (idx === selIdx ? ' sel' : '');
       item.innerHTML =
-        '<span class="n365-page-picker-icon">' + escHtml(icon) + '</span>' +
-        '<span class="n365-page-picker-name">' + escHtml(page.Title || '無題') + '</span>' +
-        (path ? '<span class="n365-page-picker-path">' + escHtml(path) + '</span>' : '');
+        '<span class="memola-page-picker-icon">' + escHtml(icon) + '</span>' +
+        '<span class="memola-page-picker-name">' + escHtml(page.Title || '無題') + '</span>' +
+        (path ? '<span class="memola-page-picker-path">' + escHtml(path) + '</span>' : '');
       // mousedown (not click) to fire before contenteditable's blur removes selection
       item.addEventListener('mousedown', (e) => {
         e.preventDefault();
@@ -186,6 +189,42 @@ export function showPagePicker(opts: PickerOptions): void {
   // Capture-phase so we beat any handler that would otherwise consume the
   // event (e.g. an editor mousedown stealing focus before we close).
   document.addEventListener('mousedown', _outsideClickHandler, true);
+
+  // ESC / arrow / Enter at the document level — editor keydown is unreliable
+  // when focus has drifted off the editor (e.g. mouse-clicking the slash
+  // menu item leaves focus on document.body, not the editor div).
+  if (_keyHandler) document.removeEventListener('keydown', _keyHandler, true);
+  _keyHandler = (e: KeyboardEvent): void => {
+    if (!_active) return;
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();          // beat the global onKey closeApp fallback
+      hide();
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      e.stopPropagation();
+      pagePickerMove(1);
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      e.stopPropagation();
+      pagePickerMove(-1);
+      return;
+    }
+    if (e.key === 'Enter') {
+      if (pagePickerCount() > 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        pagePickerCommit();
+      }
+      return;
+    }
+  };
+  document.addEventListener('keydown', _keyHandler, true);
 }
 
 export function updatePagePickerQuery(query: string): void {
@@ -204,8 +243,30 @@ export function pagePickerMove(delta: number): void {
   if (!_active || _active.filtered.length === 0) return;
   const n = _active.filtered.length;
   _active.selIdx = (_active.selIdx + delta + n) % n;
+  // Switch the picker into "keyboard mode" so :hover doesn't visually
+  // double-highlight the item the cursor happens to be hovering over while
+  // the user navigates with arrows. Cleared on the next real mousemove.
+  enterKeyboardMode();
   render();
 }
+
+/** Add `.kb-mode` so CSS suppresses :hover. The next mousemove clears it
+ *  so the user can switch back to mouse navigation seamlessly. */
+function enterKeyboardMode(): void {
+  if (!_active) return;
+  _active.el.classList.add('kb-mode');
+  if (!_kbMoveOff) {
+    const off = (): void => {
+      if (_active) _active.el.classList.remove('kb-mode');
+      document.removeEventListener('mousemove', off, true);
+      _kbMoveOff = null;
+    };
+    _kbMoveOff = off;
+    document.addEventListener('mousemove', off, true);
+  }
+}
+
+let _kbMoveOff: (() => void) | null = null;
 
 export function pagePickerCommit(): void {
   if (_active) commit(_active.selIdx);
@@ -221,7 +282,7 @@ export function pagePickerCommit(): void {
  *  SP lookup is fired async so the call stays non-blocking — the link is
  *  always immediately clickable (find-or-create on click handles both). */
 export function markBrokenPageLinks(root: Element): void {
-  const links = root.querySelectorAll<HTMLElement>('a.n365-page-link');
+  const links = root.querySelectorAll<HTMLElement>('a.memola-page-link');
   const dailyDates = new Set<string>();
   links.forEach((a) => {
     const id = a.getAttribute('data-page-id') || '';
@@ -261,7 +322,7 @@ export function markBrokenPageLinks(root: Element): void {
         if (!hit) continue;
         // Remove ghosted from any link in `root` that points at this date.
         root.querySelectorAll<HTMLElement>(
-          'a.n365-page-link[data-daily-date="' + date + '"]',
+          'a.memola-page-link[data-daily-date="' + date + '"]',
         ).forEach((a) => a.classList.remove('ghosted'));
       }
     } catch { /* ignore */ }
@@ -284,5 +345,9 @@ export function hide(suppressCancel = false): void {
   if (_outsideClickHandler) {
     document.removeEventListener('mousedown', _outsideClickHandler, true);
     _outsideClickHandler = null;
+  }
+  if (_keyHandler) {
+    document.removeEventListener('keydown', _keyHandler, true);
+    _keyHandler = null;
   }
 }

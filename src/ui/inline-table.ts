@@ -16,10 +16,10 @@ import { getEd } from './dom';
 /** Build a fresh table DOM (no header by default; 3 cols × 2 body rows). */
 export function buildTable(cols = 3, rows = 2): HTMLDivElement {
   const wrap = document.createElement('div');
-  wrap.className = 'n365-itbl-wrap';
+  wrap.className = 'memola-itbl-wrap';
   wrap.contentEditable = 'false';
   const tbl = document.createElement('table');
-  tbl.className = 'n365-itbl';
+  tbl.className = 'memola-itbl';
   tbl.dataset.hrow = '0';
   tbl.dataset.hcol = '0';
   // colgroup for column widths
@@ -49,7 +49,7 @@ export function attachTableHandlers(wrap: HTMLElement): void {
   if (wrap.dataset.itblWired === '1') return;
   wrap.dataset.itblWired = '1';
 
-  const tbl = wrap.querySelector('table.n365-itbl') as HTMLTableElement | null;
+  const tbl = wrap.querySelector('table.memola-itbl') as HTMLTableElement | null;
   if (!tbl) return;
 
   // Tab / Enter / Arrow navigation across cells
@@ -158,8 +158,8 @@ function installRangeSelection(tbl: HTMLTableElement): void {
   let anchor: HTMLTableCellElement | null = null;
   let dragging = false;
   function clearSel(): void {
-    tbl.querySelectorAll<HTMLElement>('.n365-itbl-selected').forEach((c) => {
-      c.classList.remove('n365-itbl-selected');
+    tbl.querySelectorAll<HTMLElement>('.memola-itbl-selected').forEach((c) => {
+      c.classList.remove('memola-itbl-selected');
       c.style.boxShadow = '';
     });
   }
@@ -177,7 +177,7 @@ function installRangeSelection(tbl: HTMLTableElement): void {
       for (let c = c0; c <= c1; c++) {
         const cell = row.children[c] as HTMLElement | undefined;
         if (!cell) continue;
-        cell.classList.add('n365-itbl-selected');
+        cell.classList.add('memola-itbl-selected');
         // 範囲の外周辺だけ accent border を inset box-shadow で描く
         const sh: string[] = [];
         if (r === r0) sh.push('inset 0 1.5px 0 0 var(--accent)');
@@ -224,7 +224,7 @@ function installRangeSelection(tbl: HTMLTableElement): void {
   });
   // Copy selected range as TSV
   tbl.addEventListener('copy', (e) => {
-    const cells = Array.from(tbl.querySelectorAll<HTMLTableCellElement>('.n365-itbl-selected'));
+    const cells = Array.from(tbl.querySelectorAll<HTMLTableCellElement>('.memola-itbl-selected'));
     if (cells.length === 0) return;
     const rows = new Map<number, HTMLTableCellElement[]>();
     cells.forEach((c) => {
@@ -391,15 +391,15 @@ function deleteCol(tbl: HTMLTableElement, colIdx: number): void {
 }
 
 function installHoverButtons(wrap: HTMLElement): void {
-  const tbl = wrap.querySelector('table.n365-itbl') as HTMLTableElement | null;
+  const tbl = wrap.querySelector('table.memola-itbl') as HTMLTableElement | null;
   if (!tbl) return;
   const rowBtn  = document.createElement('button');
-  rowBtn.className = 'n365-itbl-addrow';
+  rowBtn.className = 'memola-itbl-addrow';
   rowBtn.type = 'button';
   rowBtn.textContent = '＋';
   rowBtn.title = '行を追加';
   const colBtn  = document.createElement('button');
-  colBtn.className = 'n365-itbl-addcol';
+  colBtn.className = 'memola-itbl-addcol';
   colBtn.type = 'button';
   colBtn.textContent = '＋';
   colBtn.title = '列を追加';
@@ -431,7 +431,7 @@ function installHoverButtons(wrap: HTMLElement): void {
 
 /** Inspect current selected cells; returns whether they form exactly the top row / left col. */
 function selectionInfo(tbl: HTMLTableElement): { isTopRow: boolean; isLeftCol: boolean } {
-  const sel = Array.from(tbl.querySelectorAll<HTMLTableCellElement>('.n365-itbl-selected'));
+  const sel = Array.from(tbl.querySelectorAll<HTMLTableCellElement>('.memola-itbl-selected'));
   if (sel.length === 0) return { isTopRow: false, isLeftCol: false };
   const cols = tbl.rows[0]?.children.length || 0;
   const rows = tbl.rows.length;
@@ -445,26 +445,26 @@ function selectionInfo(tbl: HTMLTableElement): { isTopRow: boolean; isLeftCol: b
 }
 
 function showCellMenu(cell: HTMLTableCellElement, x: number, y: number): void {
-  const tbl = cell.closest('table.n365-itbl') as HTMLTableElement;
+  const tbl = cell.closest('table.memola-itbl') as HTMLTableElement;
   const tr = cell.parentElement as HTMLTableRowElement;
   const colIdx = Array.from(tr.children).indexOf(cell);
   const sel = selectionInfo(tbl);
 
   const menu = document.createElement('div');
-  menu.className = 'n365-itbl-menu';
+  menu.className = 'memola-itbl-menu';
   menu.style.left = x + 'px';
   menu.style.top = y + 'px';
 
   function makeItem(label: string, fn: () => void, danger = false): HTMLDivElement {
     const it = document.createElement('div');
-    it.className = 'n365-itbl-menu-item' + (danger ? ' danger' : '');
+    it.className = 'memola-itbl-menu-item' + (danger ? ' danger' : '');
     it.textContent = label;
     it.addEventListener('click', () => { fn(); menu.remove(); });
     return it;
   }
   function makeSep(): HTMLDivElement {
     const s = document.createElement('div');
-    s.className = 'n365-itbl-menu-sep';
+    s.className = 'memola-itbl-menu-sep';
     return s;
   }
 
@@ -503,7 +503,7 @@ function showCellMenu(cell: HTMLTableCellElement, x: number, y: number): void {
   menu.appendChild(makeItem('→ 右に列を追加', () => addColAfter(tbl, colIdx)));
   menu.appendChild(makeItem('列を削除', () => deleteCol(tbl, colIdx), true));
 
-  const overlay = document.getElementById('n365-overlay') || document.body;
+  const overlay = document.getElementById('memola-overlay') || document.body;
   overlay.appendChild(menu);
   function dismiss(ev: MouseEvent): void {
     if (!menu.contains(ev.target as Node)) {
@@ -558,10 +558,10 @@ function curBlockSelf(): HTMLElement | null {
 export function buildTableFromGrid(grid: string[][]): HTMLDivElement {
   const cols = Math.max(...grid.map((r) => r.length), 1);
   const wrap = document.createElement('div');
-  wrap.className = 'n365-itbl-wrap';
+  wrap.className = 'memola-itbl-wrap';
   wrap.contentEditable = 'false';
   const tbl = document.createElement('table');
-  tbl.className = 'n365-itbl';
+  tbl.className = 'memola-itbl';
   // Excel/HTML paste: 先頭行を見出しとみなす慣例
   tbl.dataset.hrow = '1';
   tbl.dataset.hcol = '0';
@@ -665,7 +665,7 @@ export function attachTablePaste(): void {
 
 /** After loading saved HTML, re-attach handlers to existing tables. */
 export function reattachInlineTables(root: HTMLElement): void {
-  root.querySelectorAll<HTMLDivElement>('.n365-itbl-wrap').forEach((w) => {
+  root.querySelectorAll<HTMLDivElement>('.memola-itbl-wrap').forEach((w) => {
     w.contentEditable = 'false';
     // Make sure nested cells stay editable
     w.querySelectorAll<HTMLElement>('th,td').forEach((c) => { c.contentEditable = 'true'; });

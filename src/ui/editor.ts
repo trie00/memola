@@ -49,7 +49,7 @@ const SLASH_ITEMS: SlashItem[] = [
   // データ
   { cat: 'データ', cmd: 'table',    icon: '⊞', name: '表',             desc: '簡易表 (3×2)・セル編集可' },
   { cat: 'データ', cmd: 'inlinedb', icon: '▤', name: 'インラインDB',    desc: 'ページにDBを埋め込む' },
-  { cat: 'データ', cmd: 'page-link', icon: '🔗', name: 'ページリンク',   desc: 'n365 内の他ページにリンク' },
+  { cat: 'データ', cmd: 'page-link', icon: '🔗', name: 'ページリンク',   desc: 'Memola 内の他ページにリンク' },
   // AI
   { cat: 'AI',  cmd: 'ai',       icon: '✦',    name: 'AI 要約',         desc: 'このページを要約' },
   { cat: 'AI',  cmd: 'ai-rewrite', icon: '✦',  name: 'AI 改稿',         desc: 'トーン調整・敬体/常体' },
@@ -77,6 +77,26 @@ let _wikiNode: Node | null = null;
 let _wikiStartOffset = -1; // offset of the first `[` in _wikiNode
 
 export function isSlashActive(): boolean { return _slashActive; }
+
+/** Remove `memola-todo` blocks that contain no text content. Called from
+ *  `doSelect` before navigation away — a freshly-inserted (`/todo`) item
+ *  the user never typed into shouldn't persist as an empty checkbox in
+ *  the saved markdown. Returns the number removed (callers may want to
+ *  flag the doc dirty if anything was pruned). */
+export function pruneEmptyTodos(): number {
+  const ed = getEd();
+  if (!ed) return 0;
+  let removed = 0;
+  ed.querySelectorAll<HTMLElement>('.memola-todo').forEach((td) => {
+    const txt = td.querySelector('.memola-todo-txt');
+    const raw = txt ? (txt.textContent || '') : '';
+    if (raw.trim() === '') {
+      td.remove();
+      removed++;
+    }
+  });
+  return removed;
+}
 
 export function closeSlashMenu(): void {
   _slashActive = false;
@@ -120,7 +140,7 @@ function insertPageLinkAtWikiTrigger(page: Page): void {
   const before = fullTxt.substring(0, _wikiStartOffset);
   const after = fullTxt.substring(curOff);
   const a = document.createElement('a');
-  a.className = 'n365-page-link';
+  a.className = 'memola-page-link';
   a.setAttribute('data-page-id', page.Id);
   a.setAttribute('contenteditable', 'false');
   a.textContent = page.Title || '無題';
@@ -186,19 +206,19 @@ function showSlashMenu(rect: { bottom: number; left: number }): void {
   _slashFiltered.forEach((item, idx) => {
     if (item.cat !== prevCat) {
       const sec = document.createElement('div');
-      sec.className = 'n365-slash-section';
+      sec.className = 'memola-slash-section';
       sec.textContent = item.cat;
       el.appendChild(sec);
       prevCat = item.cat;
     }
     const div = document.createElement('div');
-    div.className = 'n365-slash-item' + (idx === _slashSel ? ' sel' : '');
+    div.className = 'memola-slash-item' + (idx === _slashSel ? ' sel' : '');
     // Display priority: explicit kbd > md notation > nothing
     const hint = item.kbd || item.md;
-    const kbdHtml = hint ? '<div class="n365-slash-kbd">' + hint + '</div>' : '';
+    const kbdHtml = hint ? '<div class="memola-slash-kbd">' + hint + '</div>' : '';
     div.innerHTML =
-      '<div class="n365-slash-icon">' + item.icon + '</div>' +
-      '<div class="n365-slash-body"><div class="n365-slash-name">' + item.name + '</div><div class="n365-slash-desc">' + item.desc + '</div></div>' +
+      '<div class="memola-slash-icon">' + item.icon + '</div>' +
+      '<div class="memola-slash-body"><div class="memola-slash-name">' + item.name + '</div><div class="memola-slash-desc">' + item.desc + '</div></div>' +
       kbdHtml;
     div.addEventListener('mousedown', (e) => { e.preventDefault(); applySlashCmd(item.cmd); });
     el.appendChild(div);
@@ -253,11 +273,11 @@ function applySlashCmd(cmd: string): void {
   } else if (cmd === 'todo') {
     const sel = window.getSelection();
     const div = document.createElement('div');
-    div.className = 'n365-todo';
+    div.className = 'memola-todo';
     const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.className = 'n365-todo-cb';
+    cb.type = 'checkbox'; cb.className = 'memola-todo-cb';
     const sp = document.createElement('span');
-    sp.className = 'n365-todo-txt';
+    sp.className = 'memola-todo-txt';
     div.appendChild(cb); div.appendChild(sp);
     if (sel && sel.rangeCount) {
       const r = sel.getRangeAt(0);
@@ -289,11 +309,11 @@ function applySlashCmd(cmd: string): void {
     }
   } else if (cmd === 'callout') {
     const calloutDiv = document.createElement('div');
-    calloutDiv.className = 'n365-callout';
+    calloutDiv.className = 'memola-callout';
     const ic = document.createElement('span');
-    ic.className = 'n365-callout-ic'; ic.textContent = '💡';
+    ic.className = 'memola-callout-ic'; ic.textContent = '💡';
     const body = document.createElement('div');
-    body.className = 'n365-callout-body';
+    body.className = 'memola-callout-body';
     calloutDiv.appendChild(ic); calloutDiv.appendChild(body);
     const selC = window.getSelection();
     if (selC && selC.rangeCount) {
@@ -376,14 +396,14 @@ function applySlashCmd(cmd: string): void {
     return;
   } else if (cmd === 'page-link') {
     // Open the page picker at the caret. Selection inserts an atomic
-    // <a class="n365-page-link"> chip with a trailing space for further typing.
+    // <a class="memola-page-link"> chip with a trailing space for further typing.
     showPagePicker({
       anchor: _slashAnchorRect,
       onSelect: (p) => {
         const s2 = window.getSelection();
         if (!s2 || !s2.rangeCount) return;
         const a = document.createElement('a');
-        a.className = 'n365-page-link';
+        a.className = 'memola-page-link';
         a.setAttribute('data-page-id', p.Id);
         a.setAttribute('contenteditable', 'false');
         a.textContent = p.Title || '無題';
@@ -425,7 +445,7 @@ export function curBlock(): HTMLElement | null {
 function findCallout(node: Node | null): HTMLElement | null {
   const _ed = getEd();
   while (node && node !== _ed) {
-    if (node.nodeType === 1 && (node as Element).classList && (node as Element).classList.contains('n365-callout')) {
+    if (node.nodeType === 1 && (node as Element).classList && (node as Element).classList.contains('memola-callout')) {
       return node as HTMLElement;
     }
     node = node.parentNode;
@@ -509,7 +529,7 @@ function unwrapPre(pre: HTMLElement): void {
 
 function unwrapTodo(todo: HTMLElement): void {
   const p = document.createElement('p');
-  const txt = todo.querySelector('.n365-todo-txt');
+  const txt = todo.querySelector('.memola-todo-txt');
   if (txt) { while (txt.firstChild) p.appendChild(txt.firstChild); }
   if (!p.firstChild) p.innerHTML = '<br>';
   todo.parentNode!.replaceChild(p, todo);
@@ -517,7 +537,7 @@ function unwrapTodo(todo: HTMLElement): void {
 }
 
 function unwrapCallout(callout: HTMLElement): void {
-  const body = callout.querySelector('.n365-callout-body');
+  const body = callout.querySelector('.memola-callout-body');
   const parent = callout.parentNode!;
   let firstMoved: Node | null = null;
   if (body) {
@@ -541,7 +561,7 @@ function unwrapCallout(callout: HTMLElement): void {
 }
 
 function isAtCalloutStart(range: Range, callout: HTMLElement): boolean {
-  const body = callout.querySelector('.n365-callout-body');
+  const body = callout.querySelector('.memola-callout-body');
   if (!body) return false;
   const r = document.createRange();
   r.setStart(body, 0);
@@ -602,20 +622,55 @@ export function execCmd(cmd: string): void {
   _ed.focus();
   const sel = window.getSelection();
   switch (cmd) {
-    case 'h1': case 'h2': case 'h3': document.execCommand('formatBlock', false, cmd); break;
+    case 'h1': case 'h2': case 'h3': {
+      // Toggle: if the current block is already this heading, revert to <p>.
+      // queryCommandValue is unreliable across browsers (some return 'h1',
+      // others 'H1' or '<h1>'); fall back to walking from the caret to the
+      // nearest block element so the toggle behavior is predictable.
+      const block = curBlock();
+      const blockTag = block && block !== _ed ? block.tagName.toLowerCase() : '';
+      const queryTag = (document.queryCommandValue('formatBlock') || '')
+        .toLowerCase().replace(/[<>]/g, '');
+      const cur = blockTag || queryTag;
+      const target = cur === cmd ? 'p' : cmd;
+      document.execCommand('formatBlock', false, target);
+      break;
+    }
     case 'bold':   document.execCommand('bold'); break;
     case 'italic': document.execCommand('italic'); break;
     case 'strike': document.execCommand('strikeThrough'); break;
-    case 'code':
-      if (sel && sel.rangeCount && !sel.isCollapsed) {
+    case 'code': {
+      // Toggle: if the caret / selection is already inside <code>, unwrap;
+      // otherwise wrap the selection in a fresh <code>.
+      if (sel && sel.rangeCount) {
         const r = sel.getRangeAt(0);
-        const t = r.toString();
-        r.deleteContents();
-        const c = document.createElement('code');
-        c.textContent = t;
-        r.insertNode(c);
+        const codeAnc = findAncestor(r.startContainer, 'code') as HTMLElement | null;
+        if (codeAnc && codeAnc !== _ed) {
+          // Unwrap by replacing the <code> with its children
+          const parent = codeAnc.parentNode;
+          if (parent) {
+            while (codeAnc.firstChild) parent.insertBefore(codeAnc.firstChild, codeAnc);
+            parent.removeChild(codeAnc);
+            parent.normalize?.();
+          }
+          break;
+        }
+        if (!sel.isCollapsed) {
+          const t = r.toString();
+          r.deleteContents();
+          const c = document.createElement('code');
+          c.textContent = t;
+          r.insertNode(c);
+          // Caret right after the inserted <code>
+          const rng = document.createRange();
+          rng.setStartAfter(c);
+          rng.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(rng);
+        }
       }
       break;
+    }
     case 'ul': document.execCommand('insertUnorderedList'); break;
     case 'ol': document.execCommand('insertOrderedList'); break;
     case 'quote': {
@@ -650,7 +705,7 @@ export function execCmd(cmd: string): void {
     case 'todo': {
       const selTd = window.getSelection();
       if (selTd && selTd.rangeCount) {
-        const todoEl = findAncestor(selTd.getRangeAt(0).startContainer, '.n365-todo');
+        const todoEl = findAncestor(selTd.getRangeAt(0).startContainer, '.memola-todo');
         if (todoEl) {
           unwrapTodo(todoEl);
           S.dirty = true; setSave('未保存'); schedSave();
@@ -699,11 +754,11 @@ export function refTb(): void {
     todo: () => {
       const s = window.getSelection();
       if (!s || !s.rangeCount) return false;
-      return !!findAncestor(s.getRangeAt(0).startContainer, '.n365-todo');
+      return !!findAncestor(s.getRangeAt(0).startContainer, '.memola-todo');
     },
   };
   const _ov = getOverlay();
-  _ov.querySelectorAll<HTMLElement>('.n365-b[data-cmd]').forEach((b) => {
+  _ov.querySelectorAll<HTMLElement>('.memola-b[data-cmd]').forEach((b) => {
     const cmd = b.dataset.cmd!;
     const f = m[cmd];
     b.classList.toggle('on', f ? f() : false);
@@ -902,7 +957,7 @@ export function attachEditor(): void {
           return;
         }
 
-        const bsTodo = findAncestor(startNode, '.n365-todo');
+        const bsTodo = findAncestor(startNode, '.memola-todo');
         if (bsTodo && isAtBlockStart(bsRange, bsTodo)) {
           e.preventDefault();
           unwrapTodo(bsTodo);
@@ -948,10 +1003,10 @@ export function attachEditor(): void {
       const tdSel = window.getSelection();
       if (tdSel && tdSel.rangeCount) {
         const tdRange = tdSel.getRangeAt(0);
-        const tdEl = findAncestor(tdRange.startContainer, '.n365-todo');
+        const tdEl = findAncestor(tdRange.startContainer, '.memola-todo');
         if (tdEl) {
           e.preventDefault();
-          const txt = tdEl.querySelector('.n365-todo-txt');
+          const txt = tdEl.querySelector('.memola-todo-txt');
           const isEmpty = !txt || !(txt.textContent || '').trim();
           if (isEmpty) {
             // Empty todo → exit to a plain <p>
@@ -964,12 +1019,12 @@ export function attachEditor(): void {
             tdSel.removeAllRanges(); tdSel.addRange(r);
           } else {
             const newTodo = document.createElement('div');
-            newTodo.className = 'n365-todo';
+            newTodo.className = 'memola-todo';
             const cb = document.createElement('input');
             cb.type = 'checkbox';
-            cb.className = 'n365-todo-cb';
+            cb.className = 'memola-todo-cb';
             const sp = document.createElement('span');
-            sp.className = 'n365-todo-txt';
+            sp.className = 'memola-todo-txt';
             sp.appendChild(document.createElement('br'));
             newTodo.appendChild(cb);
             newTodo.appendChild(sp);
@@ -1014,7 +1069,7 @@ export function attachEditor(): void {
         const enRng = enSel.getRangeAt(0);
         const callout = findCallout(enRng.startContainer);
         if (callout) {
-          const body = callout.querySelector('.n365-callout-body');
+          const body = callout.querySelector('.memola-callout-body');
           const lastChild = body && (body.lastElementChild as HTMLElement | null);
           if (body && lastChild) {
             const inLast = lastChild === enRng.startContainer || lastChild.contains(enRng.startContainer);
@@ -1110,18 +1165,18 @@ export function attachEditor(): void {
   // explicitly, otherwise the saved markdown will always be `[ ]` regardless of UI state.
   _ed.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
-    if (target.classList.contains('n365-todo-cb')) {
+    if (target.classList.contains('memola-todo-cb')) {
       const cb = target as HTMLInputElement;
       if (cb.checked) cb.setAttribute('checked', 'checked');
       else cb.removeAttribute('checked');
       const txt = cb.nextElementSibling;
-      if (txt && txt.classList.contains('n365-todo-txt')) {
+      if (txt && txt.classList.contains('memola-todo-txt')) {
         txt.classList.toggle('done', cb.checked);
         S.dirty = true; setSave('未保存'); schedSave();
       }
     }
     // Internal page-link → navigate via doSelect.
-    const linkEl = target.closest<HTMLElement>('a.n365-page-link');
+    const linkEl = target.closest<HTMLElement>('a.memola-page-link');
     if (linkEl) {
       e.preventDefault();
       // Daily-note deferred link: find-or-create the row for that date and
@@ -1189,6 +1244,59 @@ export function attachEditor(): void {
     if (sel) { sel.removeAllRanges(); sel.addRange(rng); }
     _ed.focus();
     S.dirty = true; setSave('未保存'); schedSave();
+  });
+
+  // Caret-fixup for todo blocks. When the user navigates with Arrow Up /
+  // Down into a `.memola-todo` row, the browser sometimes parks the caret
+  // BEFORE the checkbox (offset 0 of the todo div) or directly on the
+  // checkbox input. Typing then inserts text outside the editable text
+  // span. Detect any such position and shift the caret to the start of
+  // `.memola-todo-txt` so a single key press lands the user where they can
+  // actually type.
+  function fixTodoCaret(): boolean {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return false;
+    const r = sel.getRangeAt(0);
+    const container = r.startContainer;
+    if (!_ed.contains(container)) return false;
+    // Walk up: if we reach a `.memola-todo` BEFORE reaching its `.memola-todo-txt`
+    // span, we're in the no-edit zone (around the checkbox).
+    let n: Node | null = container;
+    let inSpan = false;
+    let todoEl: HTMLElement | null = null;
+    while (n && n !== _ed) {
+      if (n.nodeType === 1) {
+        const el = n as HTMLElement;
+        if (el.classList?.contains('memola-todo-txt')) { inSpan = true; break; }
+        if (el.classList?.contains('memola-todo')) { todoEl = el; break; }
+      }
+      n = n.parentNode;
+    }
+    if (inSpan || !todoEl) return false;
+    const span = todoEl.querySelector<HTMLElement>('.memola-todo-txt');
+    if (!span) return false;
+    const r2 = document.createRange();
+    const firstText = span.firstChild;
+    if (firstText && firstText.nodeType === 3) {
+      r2.setStart(firstText, 0);
+    } else {
+      r2.setStart(span, 0);
+    }
+    r2.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r2);
+    return true;
+  }
+  // selectionchange catches mouse clicks and direct caret moves
+  document.addEventListener('selectionchange', () => { fixTodoCaret(); });
+  // keyup is needed because in some browsers the arrow-up handler fires
+  // selectionchange BEFORE the visual repaint settles, leaving the caret
+  // fix-up stale. A second pass on keyup catches stragglers.
+  _ed.addEventListener('keyup', (e) => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown' ||
+        e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      fixTodoCaret();
+    }
   });
 
   // Floating selection toolbar

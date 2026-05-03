@@ -1,7 +1,7 @@
 // Linked-DB inline embed.
 //
 // Renders an existing DB inline in a page. The page Markdown only stores
-// the embed reference (`<!-- n365-linkdb dbId="..." view="table" -->`); the
+// the embed reference (`<!-- memola-linkdb dbId="..." view="table" -->`); the
 // actual rows + fields are fetched from SP at view time.
 //
 // Read mostly. Click-through for navigation (open the row as a page, or
@@ -9,14 +9,10 @@
 
 import { S, type ListField, type ListItem } from '../state';
 import { toast } from './ui-helpers';
+import { escapeHtml } from '../lib/html-escape';
 
 const MAX_ROWS_INLINE = 50;     // hard cap so embedding a huge DB stays usable
 const VISIBLE_COLS = 4;         // Title + first 3 user columns
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
 
 /** Format a single cell value for display. Mirrors a subset of the main DB
  *  table renderer — kept simple to avoid pulling in heavy dependencies. */
@@ -45,7 +41,7 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
   const meta = S.meta.pages.find((p) => p.id === dbId);
   if (!meta || meta.type !== 'database' || !meta.list) {
     blockEl.innerHTML =
-      '<div class="n365-linkdb-broken">⚠ DB が見つかりません'
+      '<div class="memola-linkdb-broken">⚠ DB が見つかりません'
       + (dbId ? ' (id=' + escapeHtml(dbId) + ')' : '')
       + '</div>';
     return;
@@ -53,7 +49,7 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
   const listTitle = meta.list;
 
   // Skeleton while loading
-  blockEl.innerHTML = '<div class="n365-linkdb-loading">読み込み中…</div>';
+  blockEl.innerHTML = '<div class="memola-linkdb-loading">読み込み中…</div>';
 
   let fields: ListField[] = [];
   let items: ListItem[] = [];
@@ -65,15 +61,20 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
     ]);
   } catch (e) {
     blockEl.innerHTML =
-      '<div class="n365-linkdb-error">読み込み失敗: '
+      '<div class="memola-linkdb-error">読み込み失敗: '
       + escapeHtml((e as Error).message) + '</div>';
     return;
   }
 
-  // Pick columns: Title + first N user fields (skip system / hidden)
-  const sysFields = new Set(['Title', 'ContentType', 'Attachments', '_n365_body']);
+  // Pick columns: Title + first N user fields (skip Title-the-column since
+  // it's rendered separately, plus a few SP-built-ins).
+  // NOTE: Don't filter by `startsWith('_')` — SP encodes Japanese (and any
+  // non-ASCII) field titles into InternalNames like `_x65e5__x4ed8_` for
+  // 「日付」, so a blanket underscore-prefix filter silently hides every
+  // Japanese-named user column (the bug that left only Title visible).
+  const sysFields = new Set(['Title', 'ContentType', 'Attachments', '_memola_body']);
   const userFields = fields.filter(
-    (f) => !sysFields.has(f.InternalName) && !f.InternalName.startsWith('_'),
+    (f) => !sysFields.has(f.InternalName) && !sysFields.has(f.Title),
   );
   const cols: Array<{ field: ListField | null; label: string; key: string }> = [
     { field: null, label: 'タイトル', key: 'Title' },
@@ -94,7 +95,7 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
     + items.slice(0, shown).map((it) => {
       const cells = cols.map((c) => {
         if (c.key === 'Title') {
-          return '<td class="n365-linkdb-title-cell" data-row-id="'
+          return '<td class="memola-linkdb-title-cell" data-row-id="'
             + (it.Id) + '">'
             + escapeHtml(String(it.Title || '無題'))
             + '</td>';
@@ -108,30 +109,30 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
 
   const icon = meta.icon || '🗃';
   const header =
-    '<div class="n365-linkdb-header">'
-    + '<span class="n365-linkdb-icon">' + escapeHtml(icon) + '</span>'
-    + '<span class="n365-linkdb-name">' + escapeHtml(meta.title) + '</span>'
-    + '<span class="n365-linkdb-count">' + total + ' 件'
+    '<div class="memola-linkdb-header">'
+    + '<span class="memola-linkdb-icon">' + escapeHtml(icon) + '</span>'
+    + '<span class="memola-linkdb-name">' + escapeHtml(meta.title) + '</span>'
+    + '<span class="memola-linkdb-count">' + total + ' 件'
     + (truncated ? ' (上位 ' + shown + ' 件を表示)' : '')
     + '</span>'
-    + '<button class="n365-linkdb-open" type="button" title="DB を開く">↗ 開く</button>'
+    + '<button class="memola-linkdb-open" type="button" title="DB を開く">↗ 開く</button>'
     + '</div>';
 
   blockEl.innerHTML = header
-    + '<div class="n365-linkdb-tablewrap"><table class="n365-linkdb-table">'
+    + '<div class="memola-linkdb-tablewrap"><table class="memola-linkdb-table">'
     + head + body
     + '</table></div>';
 
   // ── Wire interactions
   // 1) ↗ button → navigate to the full DB
-  const openBtn = blockEl.querySelector<HTMLElement>('.n365-linkdb-open');
+  const openBtn = blockEl.querySelector<HTMLElement>('.memola-linkdb-open');
   openBtn?.addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation();
     void import('./views').then((m) => m.doSelect(dbId));
   });
 
   // 2) Title cell click → open the row as a page
-  blockEl.querySelectorAll<HTMLElement>('.n365-linkdb-title-cell').forEach((td) => {
+  blockEl.querySelectorAll<HTMLElement>('.memola-linkdb-title-cell').forEach((td) => {
     td.addEventListener('click', async (e) => {
       e.preventDefault(); e.stopPropagation();
       const rowId = parseInt(td.dataset.rowId || '0', 10);
@@ -159,7 +160,7 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
  *  Called from doSelect after `apiLoadContent` returns. Idempotent — calling
  *  twice on the same DOM just re-fetches and re-renders. */
 export function renderAllLinkedDbs(root: Element): void {
-  const blocks = root.querySelectorAll<HTMLElement>('.n365-linkdb');
+  const blocks = root.querySelectorAll<HTMLElement>('.memola-linkdb');
   blocks.forEach((b) => { void renderOne(b); });
 }
 
@@ -169,7 +170,7 @@ export function insertLinkedDb(dbId: string, view: 'table' = 'table'): void {
   const sel = window.getSelection();
   if (!sel || !sel.rangeCount) return;
   const wrap = document.createElement('div');
-  wrap.className = 'n365-linkdb';
+  wrap.className = 'memola-linkdb';
   wrap.setAttribute('contenteditable', 'false');
   wrap.setAttribute('data-db-id', dbId);
   wrap.setAttribute('data-view', view);

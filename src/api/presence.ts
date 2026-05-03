@@ -1,6 +1,6 @@
 // Lightweight presence: who's looking at this page right now?
 //
-// Implementation: a dedicated SP list `n365-presence` with one row per
+// Implementation: a dedicated SP list `memola-presence` with one row per
 // (page, user, sessionId). Each tab pings every PING_MS to refresh its
 // row's `LastSeen`. Other tabs poll the list and surface aliases of
 // active users (LastSeen within STALE_MS).
@@ -14,7 +14,7 @@ import { createList, addListField, getListItems, createListItem, updateListItem,
 import { spListUrl, spGetD } from './sp-rest';
 import { getCurrentUser } from './sync';
 
-export const PRESENCE_LIST = 'n365-presence';
+export const PRESENCE_LIST = 'memola-presence';
 export const PING_MS = 30_000;
 export const STALE_MS = 90_000;       // older than this → user has left
 
@@ -46,6 +46,14 @@ const _sessionId = 'sess-' + Math.random().toString(36).slice(2, 12) + '-' + Dat
 let _myRowId: number | null = null;          // SP item id for this session's row
 let _currentPageId: string | null = null;
 let _userName = '';
+
+/** Reset cached state (used on workspace switch — presence list lives
+ *  in the now-stale site). */
+export function clearPresenceCache(): void {
+  _ensurePromise = null;
+  _myRowId = null;
+  _currentPageId = null;
+}
 
 export async function startPresence(pageId: string): Promise<void> {
   await ensurePresenceList();

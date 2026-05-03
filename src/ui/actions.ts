@@ -78,28 +78,33 @@ export async function doSave(): Promise<void> {
     return;
   }
   if (!S.currentId || !S.dirty || S.saving || S.currentType === 'database') return;
+  // Capture the page id we're saving so any post-save state writes (etag,
+  // title) target THIS page even if the user navigated away while the
+  // network round-trip was in flight. Without this, the in-flight save's
+  // completion would smash the new page's title with the old page's text.
+  const savedId = S.currentId;
   S.saving = true; setSave('保存中...');
   try {
     const te = g('ttl') as HTMLTextAreaElement;
     const title = te.value.trim() || '無題';
     const html = getEd().innerHTML;
-    const expectedEtag = S.sync.pageId === S.currentId ? S.sync.loadedEtag : null;
-    const result = await apiSavePage(S.currentId, title, html, expectedEtag || undefined);
+    const expectedEtag = S.sync.pageId === savedId ? S.sync.loadedEtag : null;
+    const result = await apiSavePage(savedId, title, html, expectedEtag || undefined);
     if (!result.ok) {
       // Conflict: another user beat us to it. Surface a 3-button modal —
       // overwrite / reload (auto-draft my edits) / cancel.
       setSave('競合');
-      const page = S.pages.find((x) => x.Id === S.currentId);
+      const page = S.pages.find((x) => x.Id === savedId);
       const pageTitle = page?.Title || title || '無題';
       const { showConflictModal } = await import('./conflict-modal');
       const choice = await showConflictModal({ pageTitle });
       if (choice === 'overwrite') {
         // Force overwrite (no If-Match) — relinquish remote changes,
         // they live on in SP version history if recovery is needed.
-        const force = await apiSavePage(S.currentId, title, html);
+        const force = await apiSavePage(savedId, title, html);
         if (force.ok) {
-          if (S.sync.pageId === S.currentId) S.sync.loadedEtag = force.etag;
-          S.dirty = false; setSave('保存済み');
+          if (S.sync.pageId === savedId) S.sync.loadedEtag = force.etag;
+          if (S.currentId === savedId) { S.dirty = false; setSave('保存済み'); }
           syncPubTag();
           toast('自分の版で上書きしました');
           // Refresh the drafts badge (drafts may have been resolved)
@@ -111,35 +116,40 @@ export async function doSave(): Promise<void> {
         const md = (await import('../lib/markdown')).htmlToMd(html);
         const { saveDraft } = await import('./draft-store');
         saveDraft({
-          pageId: S.currentId,
+          pageId: savedId,
           pageTitle,
           title,
           body: md,
           reason: 'conflict-discarded',
         });
-        S.dirty = false; setSave('');
+        if (S.currentId === savedId) { S.dirty = false; setSave(''); }
         toast('自分の編集は下書きに保存しました（サイドバー「📝 下書き」から復元可）');
         void import('./drafts-modal').then((m) => m.refreshDraftsBadge?.());
         const { doSelect } = await import('./views');
-        await doSelect(S.currentId);
+        await doSelect(savedId);
       } else {
         // 'cancel' — keep editing locally; user will see the conflict
         // again on the next autosave (and can decide later).
-        setSave('未保存');
+        if (S.currentId === savedId) setSave('未保存');
       }
       return;
     }
-    if (S.sync.pageId === S.currentId) {
+    if (S.sync.pageId === savedId) {
       S.sync.loadedEtag = result.etag;
       // Refresh modified timestamp via meta
       const { apiLoadFileMeta } = await import('../api/pages');
-      const fm = await apiLoadFileMeta(S.currentId);
+      const fm = await apiLoadFileMeta(savedId);
       if (fm) S.sync.loadedModified = fm.modified;
     }
-    const p = S.pages.find((x) => x.Id === S.currentId);
+    const p = S.pages.find((x) => x.Id === savedId);
     if (p) p.Title = title;
-    S.dirty = false;
-    setSave('保存済み');
+    // Only flip dirty / save indicator when the user is still on the same
+    // page. If they navigated away, doSelect's flushPendingSave loop
+    // handles dirty for the new context.
+    if (S.currentId === savedId) {
+      S.dirty = false;
+      setSave('保存済み');
+    }
     renderTree();
     syncPubTag();
     // 旧コードはここで 2 秒後に setSave('') してラベルを再描画していたが、
@@ -160,25 +170,57 @@ export function clearSaveTimer(): void {
   clearTimeout(_svT);
 }
 
+/** Robust "save right now and don't lose anything" flush. Used by:
+ *  - page navigation (`doSelect` calls this before swapping the editor DOM)
+ *  - manual save (Ctrl/Cmd+S)
+ *
+ *  Handles the race where an autosave is already in flight when the user
+ *  takes one of those actions. Without this, `doSave()` was silently
+ *  bailing because `S.saving` was true, and any keystrokes typed AFTER
+ *  the in-flight save started were lost when the editor DOM got replaced.
+ *
+ *  The strategy:
+ *    1. Cancel the pending debounced timer (so it can't double-fire).
+ *    2. Wait for the in-flight save (if any) to settle.
+ *    3. If `S.dirty` is still true (i.e. the user typed AFTER the
+ *       in-flight save snapshotted the content), do another save now.
+ *    4. Loop: an autosave can fire DURING our wait — check again.
+ */
+export async function flushPendingSave(): Promise<void> {
+  clearSaveTimer();
+  // Bound the wait so a stuck save doesn't hang navigation forever.
+  const deadline = Date.now() + 5000;
+  for (let i = 0; i < 200 && Date.now() < deadline; i++) {
+    if (!S.saving && !S.dirty) return;     // nothing to do
+    if (S.saving) {
+      await new Promise((r) => setTimeout(r, 30));
+      continue;
+    }
+    // saving=false but dirty=true → flush now
+    if (S.currentType === 'database') return;
+    await doSave();
+  }
+}
+
 // ── DB new row action ─────────────────────────────────
 export function doNewDbRow(): void {
   const tbody = g('dtb');
-  if (tbody.querySelector('.n365-dr-new')) return;
+  if (tbody.querySelector('.memola-dr-new')) return;
   const fields = getDbFields();
   const tr = document.createElement('tr');
-  tr.className = 'n365-dr-new';
+  tr.className = 'memola-dr-new';
   let saved = false;
 
   // Leading checkbox cell — empty placeholder so column alignment matches the
   // existing rows (which now have a checkbox column at the start).
   const cbTd = document.createElement('td');
-  cbTd.className = 'n365-td-cb';
+  cbTd.className = 'memola-td-cb';
   tr.appendChild(cbTd);
 
   fields.forEach((f) => {
     const td = document.createElement('td');
     const span = document.createElement('span');
-    span.className = 'n365-dc';
+    span.className = 'memola-dc';
     span.contentEditable = 'true';
     span.dataset.field = f.InternalName;
     span.addEventListener('keydown', (e) => {
@@ -187,7 +229,7 @@ export function doNewDbRow(): void {
       if (ke.key === 'Escape') { tr.remove(); }
       if (ke.key === 'Tab') {
         e.preventDefault();
-        const cells = Array.from(tr.querySelectorAll<HTMLElement>('.n365-dc'));
+        const cells = Array.from(tr.querySelectorAll<HTMLElement>('.memola-dc'));
         const next = ke.shiftKey ? cells[cells.indexOf(span) - 1] : cells[cells.indexOf(span) + 1];
         if (next) next.focus(); else saveNewRow();
       }
@@ -196,16 +238,16 @@ export function doNewDbRow(): void {
     tr.appendChild(td);
   });
   const emptyTd = document.createElement('td');
-  emptyTd.className = 'n365-td-del';
+  emptyTd.className = 'memola-td-del';
   tr.appendChild(emptyTd);
   tbody.appendChild(tr);
-  const first = tr.querySelector<HTMLElement>('.n365-dc');
+  const first = tr.querySelector<HTMLElement>('.memola-dc');
   if (first) first.focus();
 
   async function saveNewRow(): Promise<void> {
     if (saved) return;
     const data: Record<string, unknown> = {};
-    tr.querySelectorAll<HTMLElement>('.n365-dc').forEach((s) => {
+    tr.querySelectorAll<HTMLElement>('.memola-dc').forEach((s) => {
       const v = (s.textContent || '').trim();
       if (v) data[s.dataset.field as string] = v;
     });
@@ -233,29 +275,54 @@ export function doNewDbRow(): void {
 
 // ── CLOSE ─────────────────────────────────────────────
 export function closeApp(): void {
+  // Always confirm — accidental ESC presses shouldn't blow away the
+  // session. If there are unsaved changes, mention that explicitly.
+  const msg = (S.dirty && S.currentType !== 'database')
+    ? '保存していない変更があります。アプリを閉じますか？\n(OK で保存してから閉じます)'
+    : 'アプリを閉じますか？';
+  if (!confirm(msg)) return;
+  // Best-effort: flush any pending save BEFORE tearing the overlay down.
+  // Async fire-and-forget — the overlay removal below doesn't wait, but
+  // the in-flight network request continues even after the DOM goes.
+  void flushPendingSave();
   clearSaveTimer();
-  if (S.dirty && S.currentType !== 'database' && !confirm('保存していない変更があります。閉じますか？')) return;
   void import('./sync-watch').then((m) => m.stopWatching());
   getOverlay().remove();
-  const st = document.getElementById('n365-style');
+  const st = document.getElementById('memola-style');
   if (st) st.remove();
   document.removeEventListener('keydown', onKey);
 }
 
 export function onKey(e: KeyboardEvent): void {
   const mod = e.ctrlKey || e.metaKey;
-  // ── DB undo / redo ────────────────────────────────────
-  // Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z = redo. Active only while viewing a DB.
-  if (mod && (e.key === 'z' || e.key === 'Z')) {
+  // ── Undo / redo ───────────────────────────────────────
+  // Z/Y mapping: Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z = redo,
+  // Cmd/Ctrl+Y = redo (Windows convention; we also bind it on Mac).
+  const isUndoKey = mod && !e.shiftKey && (e.key === 'z' || e.key === 'Z');
+  const isRedoKey = mod && (
+    (e.shiftKey && (e.key === 'z' || e.key === 'Z')) ||
+    (!e.shiftKey && (e.key === 'y' || e.key === 'Y'))
+  );
+  if (isUndoKey || isRedoKey) {
+    // DB view → custom undo/redo stack
     if (S.currentType === 'database' && S.dbList && !isEditableTarget(e.target)) {
       e.preventDefault();
-      const isRedo = e.shiftKey;
+      const isRedo = isRedoKey;
       void import('./db-history').then(async (m) => {
         try {
           const r = isRedo ? await m.redoDb(S.dbList) : await m.undoDb(S.dbList);
           if (!r) toast(isRedo ? '再実行できる操作がありません' : '取り消す操作がありません');
         } catch (err) { toast((isRedo ? '再実行' : '取り消し') + '失敗: ' + (err as Error).message, 'err'); }
       });
+      return;
+    }
+    // Editor: Cmd/Ctrl+Y on Mac doesn't bind to redo natively; route it
+    // through `document.execCommand('redo')` so it works the same as
+    // Cmd/Ctrl+Shift+Z. (Cmd+Z and Cmd+Shift+Z are handled natively by
+    // the browser, so don't intercept those.)
+    if (isRedoKey && !e.shiftKey && (e.key === 'y' || e.key === 'Y') && isEditableTarget(e.target)) {
+      e.preventDefault();
+      try { document.execCommand('redo'); } catch { /* ignore */ }
       return;
     }
   }
@@ -271,13 +338,19 @@ export function onKey(e: KeyboardEvent): void {
       return;
     }
   }
-  if (mod && e.key === 's') { e.preventDefault(); clearSaveTimer(); doSave(); return; }
+  if (mod && e.key === 's') {
+    e.preventDefault();
+    // Use the same flush path as page navigation — bails the in-flight
+    // autosave race so Ctrl+S always persists the latest content.
+    void flushPendingSave();
+    return;
+  }
   if (mod && e.key === 'k') { e.preventDefault(); openSearchProxy(); return; }
   if (mod && e.key === 'j') { e.preventDefault(); toggleAiProxy(); return; }
   // ⌘+\ サイドバー切替
   if (mod && (e.key === '\\' || e.code === 'Backslash')) {
     e.preventDefault();
-    document.getElementById('n365-sb-toggle')?.click();
+    document.getElementById('memola-sb-toggle')?.click();
     return;
   }
   // ⌘+[ / ⌘+] 戻る・進む (browser convention)。
@@ -296,7 +369,7 @@ export function onKey(e: KeyboardEvent): void {
     const k = e.key.toLowerCase();
     if (k === 'l') { e.preventDefault(); void import('./outline').then((m) => m.toggleOutline()); return; }
     if (k === 'r') { e.preventDefault(); void import('./properties-panel').then((m) => m.togglePropertiesPanel()); return; }
-    if (k === 'f') { e.preventDefault(); document.getElementById('n365-overlay')?.classList.toggle('focus-mode'); return; }
+    if (k === 'f') { e.preventDefault(); document.getElementById('memola-overlay')?.classList.toggle('focus-mode'); return; }
     if (k === 'a') { e.preventDefault(); toggleAiProxy(); return; }
     if (k === 'n') { e.preventDefault(); /* new DB - left to wiring */ return; }
   }
@@ -308,6 +381,20 @@ export function onKey(e: KeyboardEvent): void {
   if (e.key === 'Escape') {
     if (g('qs').classList.contains('on')) { closeSearch(); return; }
     if (g('emoji').classList.contains('on')) { g('emoji').classList.remove('on'); return; }
+    // Modal popups (drafts / trash / settings / version history / col-add /
+    // create / general): just close the topmost modal, never the whole app.
+    const trashMd = document.getElementById('memola-trash-md');
+    if (trashMd?.classList.contains('on')) { trashMd.classList.remove('on'); return; }
+    const draftsMd = document.getElementById('memola-drafts-md');
+    if (draftsMd && draftsMd.style.display === 'flex') { draftsMd.style.display = 'none'; return; }
+    const setMd = document.getElementById('memola-settings-md');
+    if (setMd?.classList.contains('on')) { setMd.classList.remove('on'); return; }
+    const verMd = document.getElementById('memola-versions-md');
+    if (verMd && verMd.style.display === 'flex') { verMd.style.display = 'none'; return; }
+    const colMd = document.getElementById('memola-col-md');
+    if (colMd?.classList.contains('on')) { colMd.classList.remove('on'); return; }
+    const wsMenu = document.getElementById('memola-ws-menu');
+    if (wsMenu) { wsMenu.remove(); return; }
     if (g('ai-panel').classList.contains('on')) { void import('./ai-chat').then((m) => m.closeAiPanel()); return; }
     if (isSlashActive()) { closeSlashMenu(); return; }
     closeApp();
@@ -359,7 +446,7 @@ export function showEmojiPicker(targetEl: HTMLElement, onSelect: (emoji: string)
   grid.innerHTML = '';
   EMOJIS.forEach((em) => {
     const btn = document.createElement('button');
-    btn.className = 'n365-emoji-btn';
+    btn.className = 'memola-emoji-btn';
     btn.textContent = em;
     btn.addEventListener('click', () => {
       g('emoji').classList.remove('on');
@@ -438,19 +525,19 @@ strong { font-weight: 600; }
 em { font-style: italic; }
 s, del { text-decoration: line-through; opacity: .7; }
 a { color: inherit; text-decoration: underline; opacity: .75; }
-.n365-callout {
+.memola-callout {
   display: flex; gap: 10px; background: rgb(241, 241, 239); border-radius: 4px;
   padding: 12px 16px; margin: .8em 0;
 }
-.n365-callout + .n365-callout { margin-top: .8em; }
-.n365-callout-ic { font-size: 20px; flex-shrink: 0; line-height: 1.5; }
-.n365-callout-body { flex: 1; min-width: 0; }
-.n365-callout-body > p:first-child { margin-top: 0; }
-.n365-callout-body > p:last-child  { margin-bottom: 0; }
-.n365-todo { display: flex; align-items: flex-start; gap: 6px; margin: 4px 0; }
-.n365-todo-cb { margin-top: 5px; width: 14px; height: 14px; flex-shrink: 0; accent-color: rgb(35, 131, 226); }
-.n365-todo-txt { flex: 1; }
-.n365-todo-txt.done { text-decoration: line-through; opacity: .4; }
+.memola-callout + .memola-callout { margin-top: .8em; }
+.memola-callout-ic { font-size: 20px; flex-shrink: 0; line-height: 1.5; }
+.memola-callout-body { flex: 1; min-width: 0; }
+.memola-callout-body > p:first-child { margin-top: 0; }
+.memola-callout-body > p:last-child  { margin-bottom: 0; }
+.memola-todo { display: flex; align-items: flex-start; gap: 6px; margin: 4px 0; }
+.memola-todo-cb { margin-top: 5px; width: 14px; height: 14px; flex-shrink: 0; accent-color: rgb(35, 131, 226); }
+.memola-todo-txt { flex: 1; }
+.memola-todo-txt.done { text-decoration: line-through; opacity: .4; }
 `.replace(/\s+/g, ' ').trim();
 }
 
@@ -519,11 +606,12 @@ export async function duplicateCurrent(): Promise<void> {
     const body = await apiLoadRawBody(page.Id);
     const newTitle = (page.Title || '無題') + ' (コピー)';
     const newPage = await apiCreatePage(newTitle, page.ParentId);
-    // Save the duplicated body via apiSavePage (passes through htmlToMd; pre-escape by mdToHtml round-trip would lose info)
-    // Instead, write raw markdown directly through updateListItem.
-    const { updateListItem } = await import('../api/sp-list');
+    // Write the duplicated body through the unified memola-pages writer so
+    // its ETag is registered in `ourSavedEtags`, matching every other
+    // body-modifying path.
+    const { updatePageRow } = await import('../api/pages');
     const itemId = parseInt(newPage.Id, 10);
-    if (itemId) await updateListItem(PAGES_LIST, itemId, { Body: body });
+    if (itemId) await updatePageRow(itemId, { Body: body });
     S.pages.push(newPage);
     renderTree();
     await doSelect(newPage.Id);
@@ -544,7 +632,7 @@ export async function copyPageLink(): Promise<void> {
     if (!meta || !meta.list) { toast('リンク取得失敗', 'err'); return; }
     url = SITE + '/Lists/' + encodeURIComponent(meta.list);
   } else {
-    // Link to the page row in the n365-pages list
+    // Link to the page row in the memola-pages list
     url = SITE + '/Lists/' + encodeURIComponent(PAGES_LIST) + '/DispForm.aspx?ID=' + encodeURIComponent(page.Id);
   }
   try {
@@ -570,7 +658,7 @@ export function showPageInfo(): void {
   const text = (ed.textContent || '').replace(/\s+/g, ' ').trim();
   const charCount = text.length;
   const wordCount = text ? text.split(/\s+/).length : 0;
-  const blockCount = ed.querySelectorAll('p, h1, h2, h3, li, pre, blockquote, .n365-callout, .n365-todo, hr').length;
+  const blockCount = ed.querySelectorAll('p, h1, h2, h3, li, pre, blockquote, .memola-callout, .memola-todo, hr').length;
   toast(`📄 ${page.Title || '無題'}: ${charCount}文字 / 約${wordCount}語 / ${blockCount}ブロック`);
 }
 

@@ -2,7 +2,7 @@
 // otherwise be lost (currently only on conflict-discard).
 //
 // Storage layout: keys of the form
-//   n365.draft.<pageId>.<unixMs>
+//   memola.draft.<pageId>.<unixMs>
 // each holding a JSON record:
 //   { pageId, pageTitle, title, body, savedAt, reason }
 //
@@ -11,7 +11,9 @@
 //   - drafts older than DRAFT_MAX_AGE_MS auto-purged on access
 //   - drafts for permanently-deleted pages purged on `purgeOrphaned`
 
-const KEY_PREFIX = 'n365.draft.';
+import { DRAFT_KEY_PREFIX } from '../lib/prefs';
+
+const KEY_PREFIX = DRAFT_KEY_PREFIX;
 const PER_PAGE_MAX = 5;
 const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;       // 7 days
 

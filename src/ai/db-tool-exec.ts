@@ -1,8 +1,8 @@
 // Tool Use handlers for database (DB) operations.
 //
-// A "DB" in n365 is an SP custom list backing per-row data, paired with a
-// PageType='database' row in n365-pages. Row body markdown lives in
-// n365-pages keyed by (ListTitle, DbRowId). See api/pages.ts for those.
+// A "DB" in Memola is an SP custom list backing per-row data, paired with a
+// PageType='database' row in memola-pages. Row body markdown lives in
+// memola-pages keyed by (ListTitle, DbRowId). See api/pages.ts for those.
 
 import { S, type ListField, type ListItem } from '../state';
 import {

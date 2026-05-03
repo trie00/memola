@@ -52,7 +52,7 @@ function insertImageAtCursor(src: string, alt: string): void {
   const img = document.createElement('img');
   img.src = src;
   img.alt = alt;
-  img.className = 'n365-img';
+  img.className = 'memola-img';
   const sel = window.getSelection();
   if (sel && sel.rangeCount && ed.contains(sel.anchorNode)) {
     sel.getRangeAt(0).insertNode(img);
