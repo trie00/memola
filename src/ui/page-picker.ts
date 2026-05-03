@@ -30,9 +30,12 @@ interface ActivePicker {
   query: string;
 }
 
-function applyTypeFilter(pages: Page[], opts: PickerOptions): Page[] {
-  if (!opts.dbsOnly) return pages;
-  return pages.filter((p) => p.Type === 'database');
+/** Build the candidate pool for `matchPages` — applied BEFORE the
+ *  first-N result cap so narrow filters (e.g. dbsOnly) don't accidentally
+ *  return an empty set when the matching pages live past the cap. */
+function candidatePool(opts: PickerOptions): Page[] | undefined {
+  if (opts.dbsOnly) return S.pages.filter((p) => p.Type === 'database');
+  return undefined;     // undefined = use S.pages (matchPages default)
 }
 
 let _active: ActivePicker | null = null;
@@ -50,11 +53,14 @@ function ensureContainer(): HTMLElement {
   return el;
 }
 
-function matchPages(query: string): Page[] {
+function matchPages(query: string, pool?: Page[]): Page[] {
   // Search active (non-trashed) pages by title prefix / substring. Up to 8
   // results is enough for an inline autocomplete and avoids overflow.
+  // `pool` lets callers narrow the candidate set (e.g. DBs only) BEFORE the
+  // result limit is applied — otherwise a small filtered subset can fall
+  // outside the first-8 window and the picker shows nothing at all.
   const q = query.trim().toLowerCase();
-  const all = S.pages.filter((p) => {
+  const all = (pool ?? S.pages).filter((p) => {
     const meta = S.meta.pages.find((m) => m.id === p.Id);
     return !meta?.trashed;
   });
@@ -151,11 +157,12 @@ export function showPagePicker(opts: PickerOptions): void {
   hide();
   const el = ensureContainer();
   const query = opts.query || '';
+  const pool = candidatePool(opts);
   _active = {
     el,
     opts,
     query,
-    filtered: applyTypeFilter(matchPages(query), opts),
+    filtered: matchPages(query, pool),
     selIdx: 0,
   };
   render();
@@ -164,7 +171,7 @@ export function showPagePicker(opts: PickerOptions): void {
 export function updatePagePickerQuery(query: string): void {
   if (!_active) return;
   _active.query = query;
-  _active.filtered = applyTypeFilter(matchPages(query), _active.opts);
+  _active.filtered = matchPages(query, candidatePool(_active.opts));
   if (_active.selIdx >= _active.filtered.length) _active.selIdx = 0;
   render();
 }

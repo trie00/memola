@@ -62,6 +62,11 @@ let _slashQuery = '';
 let _slashSel = 0;
 let _slashFiltered: SlashItem[] = [];
 let _slashNode: Node | null = null;
+/** Caret rect captured when the slash menu opened. Reused by command
+ *  handlers that need to position a follow-up popover (page picker, DB
+ *  picker, …) — by then the slash text has been deleted and the caret's
+ *  current bounding rect is collapsed at (0,0). */
+let _slashAnchorRect: { bottom: number; left: number } = { bottom: 0, left: 0 };
 
 // `[[` page-link autocomplete state. Tracked separately from slash so the
 // two trigger modes don't fight each other when both keys appear in
@@ -207,6 +212,12 @@ function showSlashMenu(rect: { bottom: number; left: number }): void {
   el.style.top = top + 'px';
   el.style.left = left + 'px';
 
+  // Stash the caret position so commands that show a *follow-up* popover
+  // (DB picker / page picker) can anchor to the same point — by the time
+  // those handlers run, the typed slash text has been deleted and the
+  // collapsed caret range no longer has usable bounding rects.
+  _slashAnchorRect = { bottom: rect.bottom, left: rect.left };
+
   // Scroll the selected item into view (within the slash-menu's own scroll container)
   if (selEl) {
     requestAnimationFrame(() => {
@@ -351,11 +362,8 @@ function applySlashCmd(cmd: string): void {
     // Open the page picker filtered to DB pages, then insert a linked-DB
     // block at the caret. The block renders asynchronously from the live
     // SP data so it stays in sync with the underlying DB.
-    const sel0 = window.getSelection();
-    if (!sel0 || !sel0.rangeCount) return;
-    const rect = sel0.getRangeAt(0).getBoundingClientRect();
     showPagePicker({
-      anchor: { bottom: rect.bottom, left: rect.left },
+      anchor: _slashAnchorRect,
       dbsOnly: true,
       onSelect: (p) => {
         void import('./linked-db').then((m) => {
@@ -369,11 +377,8 @@ function applySlashCmd(cmd: string): void {
   } else if (cmd === 'page-link') {
     // Open the page picker at the caret. Selection inserts an atomic
     // <a class="n365-page-link"> chip with a trailing space for further typing.
-    const sel0 = window.getSelection();
-    if (!sel0 || !sel0.rangeCount) return;
-    const rect = sel0.getRangeAt(0).getBoundingClientRect();
     showPagePicker({
-      anchor: { bottom: rect.bottom, left: rect.left },
+      anchor: _slashAnchorRect,
       onSelect: (p) => {
         const s2 = window.getSelection();
         if (!s2 || !s2.rangeCount) return;
