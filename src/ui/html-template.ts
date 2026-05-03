@@ -20,6 +20,7 @@ export function buildHtml(): string {
       '<div id="n365-sb-ft">' +
         '<button class="n365-nb" id="n365-settings-btn" title="設定">⚙<span>設定</span></button>' +
         '<button class="n365-nb" id="n365-trash-btn">' + ICONS.trash + '<span>ゴミ箱</span></button>' +
+        '<button class="n365-nb" id="n365-drafts-btn" style="display:none" title="保存衝突時に退避された下書き">📝<span>下書き <span class="n365-drafts-badge-count">0</span></span></button>' +
         '<button class="n365-nb" id="n365-x" title="アプリを閉じる (Esc)">' + ICONS.exit + '<span>閉じる</span></button>' +
       '</div>' +
       '<div id="n365-create-menu">' +
@@ -40,6 +41,7 @@ export function buildHtml(): string {
         '<button id="n365-nav-back" class="n365-nav-btn disabled" title="戻る (Ctrl+[)" disabled>' + ICONS.chevronLeft + '</button>' +
         '<button id="n365-nav-fwd" class="n365-nav-btn disabled" title="進む (Ctrl+])" disabled>' + ICONS.chevronRight + '</button>' +
         '<div id="n365-bc"></div>' +
+        '<div id="n365-presence" class="n365-presence" style="display:none"></div>' +
         '<button id="n365-pub-tag" class="n365-pub-tag" style="display:none" title="公開状態">' +
           '<span class="n365-pub-tag-dot"></span><span class="n365-pub-tag-label">公開中</span>' +
         '</button>' +
@@ -100,6 +102,7 @@ export function buildHtml(): string {
           '</div>' +
         '</div>' +
         '<div id="n365-ct">' +
+          '<div id="n365-draft-banner" style="display:none"></div>' +
           '<div id="n365-pg-hd">' +
             '<div id="n365-icon-wrap">' +
               '<span id="n365-pg-icon"></span>' +
@@ -293,6 +296,8 @@ export function buildHtml(): string {
       '<div class="n365-pgm-item" data-action="export-html">' + ICONS.download + '<span>HTMLでエクスポート</span></div>' +
       '<div class="n365-pgm-sep"></div>' +
       '<div class="n365-pgm-item" data-action="duplicate">' + ICONS.copy + '<span>複製</span></div>' +
+      '<div class="n365-pgm-item" data-action="duplicate-as-draft">✏️<span>下書きとして複製</span></div>' +
+      '<div class="n365-pgm-item" data-action="version-history">📜<span>バージョン履歴</span></div>' +
       '<div class="n365-pgm-item" data-action="copy-link">' + ICONS.link + '<span>リンクをコピー</span></div>' +
       '<div class="n365-pgm-item" data-action="publish">' + ICONS.link + '<span class="n365-pgm-publish-label">Web 公開</span></div>' +
       '<div class="n365-pgm-item" data-action="copy-pub-url" style="display:none">' + ICONS.copy + '<span>公開 URL をコピー</span></div>' +

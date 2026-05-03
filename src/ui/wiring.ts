@@ -21,6 +21,8 @@ import {
 import { toggleOutline, applyOutlineState, attachOutlineWatcher } from './outline';
 import { togglePropertiesPanel, applyPropertiesState } from './properties-panel';
 import { attachPubTag, syncPubTag } from './pub-tag';
+import { attachDraftsSidebar, refreshDraftsBadge, openDraftsModal } from './drafts-modal';
+import { attachPresence } from './presence-ui';
 import { showWorkspaceMenu, getCurrentWorkspaceName } from './workspaces';
 import { openTrash, closeTrash } from './trash';
 import { exportCsv, importCsv } from './csv-io';
@@ -413,6 +415,13 @@ export function attachAll(): void {
   // Publish-status tag in the top bar
   attachPubTag();
 
+  // Drafts sidebar entry (visible only when draft count > 0)
+  attachDraftsSidebar();
+  refreshDraftsBadge();
+
+  // Presence indicator (top bar avatars)
+  attachPresence();
+
   // Page menu (top-right "...")
   g('pgm-btn').addEventListener('click', (e) => {
     e.stopPropagation();
@@ -428,6 +437,8 @@ export function attachAll(): void {
       case 'export-md':   await exportMd(); break;
       case 'export-html': await exportHtml(); break;
       case 'duplicate':   await duplicateCurrent(); break;
+      case 'duplicate-as-draft': await duplicateAsDraftCurrent(); break;
+      case 'version-history': await openVersionHistoryForCurrent(); break;
       case 'copy-link':   await copyPageLink(); break;
       case 'publish':     await togglePublish(); break;
       case 'copy-pub-url': await copyPublishedUrl(); break;
@@ -508,6 +519,43 @@ export function attachAll(): void {
     const url = m.publishedUrlFor(id);
     try { await navigator.clipboard.writeText(url); toast('URL をコピーしました'); }
     catch { toast('コピー失敗', 'err'); }
+  }
+
+  /** Create a draft duplicate of the current page (preserves original's id
+   *  so inbound page-links stay valid). User edits the draft, then hits
+   *  "原本に適用" in the banner to write back. */
+  async function duplicateAsDraftCurrent(): Promise<void> {
+    const id = S.currentId;
+    if (!id) return;
+    if (S.currentType !== 'page' || S.currentRow) {
+      toast('このページは下書き複製に対応していません', 'err');
+      return;
+    }
+    if (S.dirty) {
+      const { doSave } = await import('./actions');
+      await doSave();
+    }
+    try {
+      setLoad(true, '下書きを複製中…');
+      const { apiDuplicateAsDraft, apiGetPages } = await import('../api/pages');
+      const draft = await apiDuplicateAsDraft(id);
+      S.pages = await apiGetPages();
+      renderTree();
+      const { doSelect } = await import('./views');
+      await doSelect(draft.Id);
+      toast('下書きを作成しました。完成したらバナーの「原本に適用」を押してください');
+    } catch (e) {
+      toast('下書き複製失敗: ' + (e as Error).message, 'err');
+    } finally { setLoad(false); }
+  }
+
+  async function openVersionHistoryForCurrent(): Promise<void> {
+    const id = S.currentId;
+    if (!id) return;
+    const page = S.pages.find((p) => p.Id === id);
+    if (!page) return;
+    const { openVersionHistory } = await import('./version-history-modal');
+    await openVersionHistory(id, page.Title || '無題');
   }
 
   /** Restore a converted-from-daily page back to a daily-note row. */

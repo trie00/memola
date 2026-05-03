@@ -37,17 +37,24 @@ async function checkOnce(): Promise<void> {
   try {
     const meta = await apiLoadFileMeta(id);
     if (!meta) return;
-    if (meta.modified === S.sync.loadedModified) return;
-    // Modified advanced — find out who did it. Many local side-channel writers
-    // (icon, pin, Web 公開, AI tools, etc.) update the row without refreshing
-    // S.sync.loadedModified, so a self-echo is common. Filter those out by
-    // comparing the editor against the signed-in user.
+    // ETag-based comparison is more reliable than Modified (string format
+    // can vary). Only fall back to modified if ETag isn't returned.
+    const etagSame = !!meta.etag && meta.etag === S.sync.loadedEtag;
+    const modifiedSame = !!meta.modified && meta.modified === S.sync.loadedModified;
+    if (etagSame || modifiedSame) return;
+    // Row advanced — find out who did it. Watermark-refresh discipline
+    // *should* keep our own writes from getting here, but we have a
+    // backup self-edit filter just in case some path is missing the
+    // refresh call (e.g. another tab of the same user).
     const [editor, me] = await Promise.all([
       getListItemEditor(id).catch(() => ''),
       getCurrentUser(),
     ]);
     if (editor && me && editor === me) {
-      // Silent self-update — sync local watermark and don't bother the user.
+      // Same user — could be: this tab missed a watermark update, OR
+      // another tab/AI tool/side-channel from this user. Silently align
+      // the watermark and don't pop a banner. (Multi-tab notifications
+      // are deferred — same-user activity is usually self-aware.)
       S.sync.loadedModified = meta.modified;
       S.sync.loadedEtag = meta.etag;
       return;

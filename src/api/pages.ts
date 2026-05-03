@@ -37,6 +37,7 @@ interface PageRow {
   PublishedPageId?: number; // SP.Publishing.SitePage Id
   PublishedDirty?: number;  // 0 / 1 — page edited since the last sync to the Site Page
   OriginDailyDate?: string; // for converted pages: the original YYYY-MM-DD
+  OriginPageId?: string;    // for "draft of …" duplicates: id of the origin page
 }
 
 let _ensurePromise: Promise<void> | null = null;
@@ -48,6 +49,7 @@ const REQUIRED_FIELDS: Array<[string, number]> = [
   ['ListTitle', 2], ['DbRowId', 9], ['Body', 3],
   ['Published', 9], ['PublishedUrl', 3], ['PublishedPageId', 9], ['PublishedDirty', 9],
   ['OriginDailyDate', 2],
+  ['OriginPageId', 2],
 ];
 
 /** Idempotently create the n365-pages list and its columns. Resilient to
@@ -111,6 +113,7 @@ function rowToMeta(row: PageRow): PageMeta {
   if (row.PublishedPageId && row.PublishedPageId > 0) m.publishedSitePageId = row.PublishedPageId;
   if (row.PublishedDirty && row.PublishedDirty > 0) m.publishedDirty = true;
   if (row.OriginDailyDate) m.originDailyDate = row.OriginDailyDate;
+  if (row.OriginPageId) m.originPageId = row.OriginPageId;
   return m;
 }
 
@@ -122,7 +125,7 @@ interface FetchedRow {
 }
 
 async function fetchOneRow(itemId: number, select?: string): Promise<FetchedRow | null> {
-  const sel = select || 'Id,Title,ParentId,PageType,Icon,Pinned,Trashed,ListTitle,DbRowId,Body,Published,PublishedUrl,PublishedPageId,PublishedDirty,OriginDailyDate,Modified,Editor/Title';
+  const sel = select || 'Id,Title,ParentId,PageType,Icon,Pinned,Trashed,ListTitle,DbRowId,Body,Published,PublishedUrl,PublishedPageId,PublishedDirty,OriginDailyDate,OriginPageId,Modified,Editor/Title';
   // Only $expand=Editor when an Editor sub-field is in $select; otherwise SP
   // returns 400 (expand without matching select).
   const expandPart = /\bEditor\//.test(sel) ? '&$expand=Editor' : '';
@@ -189,6 +192,24 @@ export async function apiLoadFileMeta(id: string): Promise<{ modified: string; e
   if (!itemId) return null;
   const r = await fetchOneRow(itemId, 'Modified');
   return r ? { modified: r.modified, etag: r.etag } : null;
+}
+
+/** After any SP write that advances the row's Modified/ETag, refresh
+ *  S.sync watermark for the active page so the foreground poller doesn't
+ *  mistake our own write for a remote change.
+ *
+ *  Callers should `void`-call this — failure is non-fatal (the poller's
+ *  own self-edit filter is a backup). Quietly skips when the affected
+ *  page isn't the one currently being watched. */
+export async function refreshSyncWatermark(pageId: string): Promise<void> {
+  if (S.sync.pageId !== pageId) return;
+  try {
+    const fm = await apiLoadFileMeta(pageId);
+    if (fm) {
+      S.sync.loadedEtag = fm.etag;
+      S.sync.loadedModified = fm.modified;
+    }
+  } catch { /* ignore */ }
 }
 
 /** Create a normal page row. */
@@ -285,6 +306,13 @@ async function saveBodyInternal(
   if (p?.published) fields.PublishedDirty = 1;
   await updateListItem(PAGES_LIST, itemId, fields);
   const fresh = await fetchOneRow(itemId, 'Modified');
+  // Refresh the watermark so the foreground poller knows this tab made
+  // the most-recent write. Skips if the saved page is no longer the
+  // active one (refreshSyncWatermark gates on S.sync.pageId).
+  if (fresh && S.sync.pageId === id) {
+    S.sync.loadedEtag = fresh.etag;
+    S.sync.loadedModified = fresh.modified;
+  }
   return { ok: true, etag: fresh?.etag || '' };
 }
 
@@ -334,6 +362,7 @@ export async function apiMovePage(id: string, newParentId: string): Promise<void
   if (itemId) await updateListItem(PAGES_LIST, itemId, { ParentId: newParentId || '' });
   const pg = S.pages.find((x) => x.Id === id);
   if (pg) pg.ParentId = newParentId || '';
+  await refreshSyncWatermark(id);
 }
 
 export async function apiTrashPage(id: string): Promise<void> {
@@ -344,6 +373,7 @@ export async function apiTrashPage(id: string): Promise<void> {
     if (meta) meta.trashed = ts;
     const itemId = parseInt(pid, 10);
     if (itemId) await updateListItem(PAGES_LIST, itemId, { Trashed: ts }).catch(() => undefined);
+    await refreshSyncWatermark(pid);
   }
 }
 
@@ -354,6 +384,7 @@ export async function apiRestorePage(id: string): Promise<void> {
     if (meta) delete meta.trashed;
     const itemId = parseInt(pid, 10);
     if (itemId) await updateListItem(PAGES_LIST, itemId, { Trashed: 0 }).catch(() => undefined);
+    await refreshSyncWatermark(pid);
   }
 }
 
@@ -368,6 +399,7 @@ export async function apiSetPin(id: string, pinned: boolean): Promise<void> {
   else delete meta.pinned;
   const itemId = parseInt(id, 10);
   if (itemId) await updateListItem(PAGES_LIST, itemId, { Pinned: pinned ? 1 : 0 });
+  await refreshSyncWatermark(id);
 }
 
 export async function apiSetIcon(id: string, emoji: string): Promise<void> {
@@ -375,6 +407,7 @@ export async function apiSetIcon(id: string, emoji: string): Promise<void> {
   if (meta) meta.icon = emoji;
   const itemId = parseInt(id, 10);
   if (itemId) await updateListItem(PAGES_LIST, itemId, { Icon: emoji });
+  await refreshSyncWatermark(id);
 }
 
 /** Persist title-only metadata change (used when title is edited live).
@@ -393,6 +426,71 @@ export async function apiSetTitle(id: string, title: string): Promise<void> {
     if (meta?.published) fields.PublishedDirty = 1;
     await updateListItem(PAGES_LIST, itemId, fields);
   }
+  await refreshSyncWatermark(id);
+}
+
+// ── Draft-as-page (duplicate to draft / apply to origin) ──
+//
+// Workflow: user picks 「下書きとして複製」 on a regular page X. We create
+// a new page Y with PageType='page' (regular page so it can be edited
+// normally), but with OriginPageId=X.id stored on it. The editor renders
+// a banner on Y offering 「原本に適用」 — that copies Y's body back into
+// X (preserving X's id, so any [[X]] page-links remain valid) and deletes
+// Y. This is the safer alternative to "duplicate / edit / delete original
+// / swap" which would break inbound page-links.
+
+/** Create a draft duplicate of `originId` for the user to edit safely.
+ *  Returns the new page so the caller can navigate to it immediately. */
+export async function apiDuplicateAsDraft(originId: string): Promise<Page> {
+  await ensurePagesList();
+  const origin = S.meta.pages.find((p) => p.id === originId);
+  if (!origin) throw new Error('原本ページが見つかりません');
+  const body = await apiLoadRawBody(originId);
+  const draftTitle = '[下書き] ' + (origin.title || '無題');
+  const created = await createListItem(PAGES_LIST, {
+    Title: draftTitle,
+    ParentId: origin.parent || '',
+    PageType: 'page',
+    Icon: '✏️',
+    Pinned: 0,
+    Trashed: 0,
+    Body: body,
+    OriginPageId: originId,
+  });
+  const newId = String(created.Id);
+  S.meta.pages.push({
+    id: newId,
+    title: draftTitle,
+    parent: origin.parent || '',
+    type: 'page',
+    icon: '✏️',
+    originPageId: originId,
+  });
+  return { Id: newId, Title: draftTitle, ParentId: origin.parent || '', Type: 'page' };
+}
+
+/** Apply a draft's contents to its origin page, preserving the origin's
+ *  id (so inbound [[..]] page-links remain valid). The draft itself is
+ *  then deleted. Returns the origin id so the caller can navigate. */
+export async function apiApplyDraftToOrigin(draftId: string): Promise<string> {
+  const draftMeta = S.meta.pages.find((p) => p.id === draftId);
+  if (!draftMeta) throw new Error('下書きが見つかりません');
+  if (!draftMeta.originPageId) throw new Error('このページは下書きではありません');
+  const originId = draftMeta.originPageId;
+  const originExists = S.meta.pages.find((p) => p.id === originId && !p.trashed);
+  if (!originExists) throw new Error('原本ページが見つかりません (削除済み?)');
+
+  // Fetch the draft's title + body and write them to the origin in one
+  // shot. Use the Md save path so the published-state machinery (Web 公開
+  // の dirty フラグ等) fires the same as a regular save.
+  const draftBody = await apiLoadRawBody(draftId);
+  const draftTitleRaw = draftMeta.title.replace(/^\[下書き\]\s*/, '');
+  const result = await saveBodyInternal(originId, draftTitleRaw, draftBody);
+  if (!result.ok) throw new Error('原本の更新に失敗しました (競合)');
+
+  // Drop the draft itself
+  await apiDeletePage(draftId).catch(() => undefined);
+  return originId;
 }
 
 // ── DB row-as-page bodies ─────────────────────────────────

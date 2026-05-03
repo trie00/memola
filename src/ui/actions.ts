@@ -86,26 +86,46 @@ export async function doSave(): Promise<void> {
     const expectedEtag = S.sync.pageId === S.currentId ? S.sync.loadedEtag : null;
     const result = await apiSavePage(S.currentId, title, html, expectedEtag || undefined);
     if (!result.ok) {
-      // Conflict: another user beat us to it
+      // Conflict: another user beat us to it. Surface a 3-button modal —
+      // overwrite / reload (auto-draft my edits) / cancel.
       setSave('競合');
-      const want = confirm(
-        '他のユーザーが先にこのページを更新しました。\n' +
-        'OK: 自分の変更で上書き保存\n' +
-        'キャンセル: 自分の変更を破棄して相手の版にリロード',
-      );
-      if (want) {
-        // Force overwrite (no If-Match)
+      const page = S.pages.find((x) => x.Id === S.currentId);
+      const pageTitle = page?.Title || title || '無題';
+      const { showConflictModal } = await import('./conflict-modal');
+      const choice = await showConflictModal({ pageTitle });
+      if (choice === 'overwrite') {
+        // Force overwrite (no If-Match) — relinquish remote changes,
+        // they live on in SP version history if recovery is needed.
         const force = await apiSavePage(S.currentId, title, html);
         if (force.ok) {
           if (S.sync.pageId === S.currentId) S.sync.loadedEtag = force.etag;
           S.dirty = false; setSave('保存済み');
           syncPubTag();
+          toast('自分の版で上書きしました');
+          // Refresh the drafts badge (drafts may have been resolved)
+          void import('./drafts-modal').then((m) => m.refreshDraftsBadge?.());
         }
-      } else {
-        // Reload from server, dropping local edits
+      } else if (choice === 'reload') {
+        // Auto-save the unsaved edit to the draft store, then reload theirs.
+        // The draft is recoverable from the sidebar 「📝 下書き」 entry.
+        const md = (await import('../lib/markdown')).htmlToMd(html);
+        const { saveDraft } = await import('./draft-store');
+        saveDraft({
+          pageId: S.currentId,
+          pageTitle,
+          title,
+          body: md,
+          reason: 'conflict-discarded',
+        });
         S.dirty = false; setSave('');
+        toast('自分の編集は下書きに保存しました（サイドバー「📝 下書き」から復元可）');
+        void import('./drafts-modal').then((m) => m.refreshDraftsBadge?.());
         const { doSelect } = await import('./views');
         await doSelect(S.currentId);
+      } else {
+        // 'cancel' — keep editing locally; user will see the conflict
+        // again on the next autosave (and can decide later).
+        setSave('未保存');
       }
       return;
     }

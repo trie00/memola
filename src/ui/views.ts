@@ -10,6 +10,7 @@ import { applyOutlineState } from './outline';
 import { applyPropertiesState } from './properties-panel';
 import { syncPubTag } from './pub-tag';
 import { pushHistory, refreshButtons as refreshNavButtons } from './nav-history';
+import { syncPresenceForCurrent } from './presence-ui';
 import { apiUpdateDbRow } from '../api/db';
 import { getListFields, getListItems } from '../api/sp-list';
 import { formatDateJST, parseFlexibleDate } from '../lib/date-utils';
@@ -133,13 +134,83 @@ export async function doSelect(id: string): Promise<void> {
     S.dirty = false;
     syncPubTag();
     refreshNavButtons();
+    syncDraftBanner();
+    syncPresenceForCurrent();
   }
+}
+
+/** Show the 「下書き」 banner above the title when this page is a draft
+ *  duplicate (originPageId set). The banner offers an "原本に適用" button
+ *  that copies the body back to the origin and deletes the draft. */
+function syncDraftBanner(): void {
+  const bn = document.getElementById('n365-draft-banner');
+  if (!bn) return;
+  const meta = S.currentId ? S.meta.pages.find((p) => p.id === S.currentId) : null;
+  if (!meta?.originPageId) {
+    bn.style.display = 'none';
+    bn.innerHTML = '';
+    return;
+  }
+  const origin = S.meta.pages.find((p) => p.id === meta.originPageId);
+  const originTitle = origin?.title || '(原本ページが見つかりません)';
+  const exists = !!origin && !origin.trashed;
+  bn.style.display = '';
+  bn.innerHTML =
+    '<span class="n365-draft-banner-icon">✏️</span>' +
+    '<span class="n365-draft-banner-msg">' +
+    '原本: <a class="n365-draft-banner-link" data-origin-id="' + (meta.originPageId || '') + '">' +
+    escapeHtml(originTitle) + '</a> の<b>下書き</b>です' +
+    '</span>' +
+    (exists
+      ? '<button class="n365-draft-banner-apply" type="button">原本に適用</button>'
+      : '<span class="n365-draft-banner-broken">原本が削除されています</span>'
+    );
+  // Click on origin link → navigate to origin
+  bn.querySelector<HTMLElement>('.n365-draft-banner-link')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    const id = (e.target as HTMLElement).dataset.originId;
+    if (id) void doSelect(id);
+  });
+  // Apply button → copy draft body to origin
+  bn.querySelector<HTMLElement>('.n365-draft-banner-apply')?.addEventListener('click', async () => {
+    if (S.dirty) {
+      const m = await import('./actions');
+      await m.doSave();
+    }
+    if (!confirm(
+      '下書きの内容で原本「' + originTitle + '」を上書きします。\n\n' +
+      '・原本の現在の本文は SP のバージョン履歴に残ります\n' +
+      '・この下書きページは削除されます\n' +
+      '・原本へのリンク ([[' + meta.originPageId + ']]) は壊れません\n\n' +
+      '続行しますか？',
+    )) return;
+    try {
+      setLoad(true, '原本に適用中…');
+      const { apiApplyDraftToOrigin, apiGetPages } = await import('../api/pages');
+      const draftId = S.currentId;
+      if (!draftId) return;
+      const originId = await apiApplyDraftToOrigin(draftId);
+      // Reload page tree (draft removed)
+      S.pages = await apiGetPages();
+      const { renderTree } = await import('./tree');
+      renderTree();
+      await doSelect(originId);
+      toast('原本に適用しました');
+    } catch (e) {
+      toast('適用失敗: ' + (e as Error).message, 'err');
+    } finally { setLoad(false); }
+  });
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 export async function doSelectDb(id: string, page: Page): Promise<void> {
   S.currentType = 'database';
   stopWatching();
   syncPubTag();
+  syncPresenceForCurrent();           // DB views have no presence tracking
   setSavedAt(null);                   // DB views have no per-row save time
   applyOutlineState();
   applyPropertiesState();

@@ -19,6 +19,11 @@ export interface PageMeta {
    *  is the YYYY-MM-DD it represented before conversion. Used to expose
    *  「デイリーノートに戻す」 in the page menu. */
   originDailyDate?: string;
+  /** When this page was created via 「下書きとして複製」, holds the id of the
+   *  origin page. The draft page renders an "← 原本に適用" banner that copies
+   *  its body back to the origin (preserving the origin's id so inbound
+   *  links don't break) and then deletes the draft. */
+  originPageId?: string;
 }
 
 export interface Meta {
