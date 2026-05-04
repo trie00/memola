@@ -26,6 +26,7 @@ import { attachScopeTag, syncScopeTag, toggleCurrentPageScope } from './scope-ta
 import { attachDraftsSidebar, refreshDraftsBadge, openDraftsModal } from './drafts-modal';
 import { attachPresence, shutdownPresence } from './presence-ui';
 import { stopWatching, attachStaleBannerSuppressionReset } from './sync-watch';
+import { attachTabRefocusRefresh } from './tab-refocus-refresh';
 import { showWorkspaceMenu, getCurrentWorkspaceName } from './workspaces';
 import { openTrash, closeTrash } from './trash';
 import { exportCsv, importCsv } from './csv-io';
@@ -430,6 +431,7 @@ export function attachAll(): void {
   attachPubTag();
   attachScopeTag();
   attachStaleBannerSuppressionReset();
+  attachTabRefocusRefresh();
 
   // Drafts sidebar entry (visible only when draft count > 0)
   attachDraftsSidebar();
