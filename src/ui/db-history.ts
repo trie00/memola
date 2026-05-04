@@ -193,82 +193,68 @@ async function dbIdForList(listTitle: string): Promise<string> {
   return meta?.id || '';
 }
 
-/** Delete a DB row + cascade body, with undo/redo. Captures snapshot before delete. */
+/** Soft-delete a DB row + cascade body Trashed flag, with undo/redo.
+ *
+ *  Switched from hard delete to soft delete (= sets Trashed/TrashedBy on
+ *  both the DB row and the memola-pages body) so the row is restorable
+ *  from the trash modal even after the user closes the app and the
+ *  in-memory undo stack is gone. Hard deletion now only happens when the
+ *  user explicitly clicks 「完全削除」 in the trash modal. */
 export async function deleteRowWithUndo(listTitle: string, rowId: number): Promise<void> {
   const { S } = await import('../state');
-  // SharePoint Id is per-list, so `S.dbItems` (active-DB cache) only contains
-  // the right row when we're actually viewing the target list. Otherwise we
-  // would either snapshot a totally different DB's row #N or fail to record
-  // any undo at all. Always source the snapshot from the target list itself.
-  const { deleteListItem, getListItemById } = await import('../api/sp-list');
-  const { getRowBody, deleteRowEntry, setRowBody } = await import('../api/pages');
+  const { getListItemById } = await import('../api/sp-list');
+  const { apiTrashRow, apiRestoreRow } = await import('../api/db');
 
-  let snapshot: Record<string, unknown> | null = null;
+  // Verify the row exists before attempting soft-delete. If the row is
+  // already gone (e.g. another tab purged it from trash), there's
+  // nothing to do and recording an undo would dangle.
+  let exists = false;
   if (S.dbList === listTitle) {
-    const cached = S.dbItems.find((i) => i.Id === rowId);
-    if (cached) snapshot = { ...cached };
+    exists = !!S.dbItems.find((i) => i.Id === rowId);
   }
-  if (!snapshot) {
-    // Either viewing a different DB, or the active-DB cache is stale. Pull
-    // a fresh snapshot from SP for the *target* list.
+  if (!exists) {
     const fetched = await getListItemById(listTitle, rowId).catch(() => null);
-    if (fetched) snapshot = { ...fetched };
+    exists = !!fetched;
   }
-  if (!snapshot) {
-    // Row really doesn't exist — still attempt the SP-level delete idempotently
-    // and skip undo recording (no data to restore).
-    await deleteListItem(listTitle, rowId).catch(() => undefined);
-    await deleteRowEntry(listTitle, rowId).catch(() => undefined);
-    return;
-  }
+  if (!exists) return;
 
-  const body = await getRowBody(listTitle, rowId).catch(() => '');
-  const dbId = await dbIdForList(listTitle);
-  await deleteListItem(listTitle, rowId);
-  await deleteRowEntry(listTitle, rowId).catch(() => undefined);
+  // Soft-delete: set Trashed/TrashedBy on body + DB row. Already-trashed
+  // row → no-op (idempotent).
+  await apiTrashRow(listTitle, rowId);
   if (S.dbList === listTitle) {
+    // Filter out the trashed row from the active table view.
     S.dbItems = S.dbItems.filter((i) => i.Id !== rowId);
   }
 
-  // Closure-captured "current Id" — recreate-after-undo gives a new Id.
-  let curId = rowId;
-  let curBody = body;
-  let curSnap = snapshot;
+  // Soft-delete preserves the SP row id across undo/redo cycles, so
+  // we just remember it for the closure.
+  const curId = rowId;
 
   recordDbCommand(listTitle, {
     label: '行削除',
     undo: async () => {
-      const { apiAddDbRow } = await import('../api/db');
-      const payload = await toUserFieldsOnly(listTitle, curSnap);
-      const created = await apiAddDbRow(listTitle, payload);
-      curId = created.Id;
-      if (curBody) await setRowBody(listTitle, curId, dbId, String(curSnap.Title || ''), curBody);
-      // Local cache + render only if user is viewing this DB
+      // Soft-delete kept the row in place — restore = clear Trashed flag.
+      // Daily-note conflict cannot occur here because the same SP row id
+      // (= same NoteDate value) is being un-trashed; the duplicate-row
+      // bug from the old hard-delete-then-recreate path is gone.
+      await apiRestoreRow(listTitle, curId);
       if (!(await isViewing(listTitle))) return;
       const sx = (await import('../state')).S;
-      sx.dbItems.push(created);
+      // Pull the freshly-restored row from SP (its values may have
+      // diverged in the meantime — extremely unlikely but cheap).
+      const fetched = await getListItemById(listTitle, curId).catch(() => null);
+      if (fetched && !sx.dbItems.find((i) => i.Id === curId)) {
+        sx.dbItems.push(fetched);
+      }
       await rerenderActiveDbView();
     },
     redo: async () => {
-      // Snapshot current state (may have been edited since) before deleting.
-      // Always pull from the target list — the active-DB cache may belong to
-      // a different DB at this point.
-      let freshSnap: Record<string, unknown> | null = null;
+      // Re-trash. Same SP row id, no snapshot/body capture required.
+      await apiTrashRow(listTitle, curId);
       const sx = (await import('../state')).S;
       if (sx.dbList === listTitle) {
-        const cur = sx.dbItems.find((i) => i.Id === curId);
-        if (cur) freshSnap = { ...cur };
+        sx.dbItems = sx.dbItems.filter((i) => i.Id !== curId);
       }
-      if (!freshSnap) {
-        const fetched = await getListItemById(listTitle, curId).catch(() => null);
-        if (fetched) freshSnap = { ...fetched };
-      }
-      if (freshSnap) curSnap = freshSnap;
-      curBody = await getRowBody(listTitle, curId).catch(() => curBody);
-      await deleteListItem(listTitle, curId).catch(() => undefined);
-      await deleteRowEntry(listTitle, curId).catch(() => undefined);
-      if (sx.dbList !== listTitle) return;
-      sx.dbItems = sx.dbItems.filter((i) => i.Id !== curId);
       await rerenderActiveDbView();
     },
   });

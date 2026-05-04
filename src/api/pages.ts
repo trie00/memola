@@ -14,6 +14,7 @@ import {
   deleteListItem,
   deleteList,
   getListItems,
+  setColumnIndexed,
 } from './sp-list';
 import { spListUrl, spGetD } from './sp-rest';
 import { mdToHtml, htmlToMd } from '../lib/markdown';
@@ -41,7 +42,18 @@ interface PageRow {
   OriginDailyDate?: string; // for converted pages: the original YYYY-MM-DD
   OriginPageId?: string;    // for "draft of …" duplicates: id of the origin page
   AuthorId?: number;        // SP user id of the row creator (auto-populated)
+  Scope?: string;           // 'org' = 組織共通 / 'user' = 個人 (default 'user' on creation)
+  TrashedBy?: number;       // SP user id of who set the Trashed flag (= deleter)
 }
+
+/** Page-scope discriminator. 'org' = visible to everyone in the workspace,
+ *  'user' = personal to the creator. The current architecture uses one
+ *  shared `memola-pages` list, so this column is metadata only — UI can
+ *  filter on it (`Scope eq 'user' AND AuthorId eq <me>` for "my pages")
+ *  but doesn't yet enforce any permissions at the SP layer. The column
+ *  is in place so that a future Phase 2 (split into `-org` / `-user-{id}`
+ *  lists) can migrate items by reading this flag. */
+export type PageScope = 'org' | 'user';
 
 let _ensurePromise: Promise<void> | null = null;
 
@@ -59,7 +71,15 @@ const REQUIRED_FIELDS: Array<[string, number]> = [
   ['Published', 9], ['PublishedUrl', 3], ['PublishedPageId', 9], ['PublishedDirty', 9],
   ['OriginDailyDate', 2],
   ['OriginPageId', 2],
+  ['Scope', 2],                  // 'org' | 'user' — see PageScope type
+  ['TrashedBy', 9],              // SP user id of who soft-deleted this row
 ];
+
+/** Columns to mark `Indexed=true` after schema provisioning. Indexing the
+ *  filter columns lets `findRowEntries` / `deleteAllRowEntriesForList` etc.
+ *  scale beyond the 5,000-row List View Threshold (LVT). Note (multi-line
+ *  text) columns can't be indexed, so `Body` is intentionally absent. */
+const INDEXED_COLUMNS = ['ListTitle', 'DbRowId', 'PageType', 'Scope', 'Trashed', 'TrashedBy'];
 
 /** Idempotently create the memola-pages list and its columns. Resilient to
  *  transient field-add failures: if any required column is still missing
@@ -87,6 +107,12 @@ async function ensurePagesList(): Promise<void> {
     const missing = REQUIRED_FIELDS.filter(([n]) => !finalTitles.has(n)).map(([n]) => n);
     if (missing.length > 0) {
       throw new Error('memola-pages の必須列が不足しています: ' + missing.join(', '));
+    }
+    // Mark filter-critical columns as indexed so $filter queries scale
+    // past the 5,000-row LVT. Idempotent — SP no-ops on already-indexed
+    // columns. Failures are non-fatal (the app still works at <5K rows).
+    for (const col of INDEXED_COLUMNS) {
+      await setColumnIndexed(PAGES_LIST, col).catch(() => undefined);
     }
   })().catch((e) => {
     // Allow the next caller to retry. Without this, a single transient
@@ -123,6 +149,9 @@ function rowToMeta(row: PageRow): PageMeta {
   if (row.PublishedDirty && row.PublishedDirty > 0) m.publishedDirty = true;
   if (row.OriginDailyDate) m.originDailyDate = row.OriginDailyDate;
   if (row.OriginPageId) m.originPageId = row.OriginPageId;
+  if (row.Scope === 'org' || row.Scope === 'user') m.scope = row.Scope;
+  if (row.AuthorId) m.authorId = row.AuthorId;
+  if (row.TrashedBy) m.trashedBy = row.TrashedBy;
   return m;
 }
 
@@ -134,7 +163,7 @@ interface FetchedRow {
 }
 
 async function fetchOneRow(itemId: number, select?: string): Promise<FetchedRow | null> {
-  const sel = select || 'Id,Title,ParentId,PageType,Icon,Pinned,Trashed,ListTitle,DbRowId,Body,Published,PublishedUrl,PublishedPageId,PublishedDirty,OriginDailyDate,OriginPageId,Modified,Editor/Title';
+  const sel = select || 'Id,Title,ParentId,PageType,Icon,Pinned,Trashed,ListTitle,DbRowId,Body,Published,PublishedUrl,PublishedPageId,PublishedDirty,OriginDailyDate,OriginPageId,Scope,AuthorId,TrashedBy,Modified,Editor/Title';
   // Only $expand=Editor when an Editor sub-field is in $select; otherwise SP
   // returns 400 (expand without matching select).
   const expandPart = /\bEditor\//.test(sel) ? '&$expand=Editor' : '';
@@ -162,6 +191,8 @@ export async function apiGetPages(): Promise<Page[]> {
   // users' drafts from this user's view entirely — they shouldn't appear
   // in the tree, search, or even metadata lookups.
   const myId = await getCurrentUserId().catch(() => 0);
+  // Cache the resolved id for sync writes (TrashedBy etc.)
+  S.meta.myUserId = myId || 0;
   // Keep only top-level entries. Row-as-page (PageType='row') is an internal
   // join with DB rows and is looked up on demand via getRowBody / setRowBody.
   // Other users' drafts are filtered here so they never enter S.meta.pages.
@@ -172,6 +203,13 @@ export async function apiGetPages(): Promise<Page[]> {
     // Show only the current user's drafts.
     const isDraft = it.PageType === 'draft' || !!it.OriginPageId;
     if (isDraft) {
+      if (myId === 0) return true;     // can't resolve self → leak rather than lose
+      return it.AuthorId === myId;
+    }
+    // Privacy filter: pages with `Scope='user'` are visible only to their
+    // creator. Pages with `Scope='org'` (or pre-Scope-column legacy data
+    // where Scope is empty) stay visible to everyone.
+    if (it.Scope === 'user') {
       if (myId === 0) return true;     // can't resolve self → leak rather than lose
       return it.AuthorId === myId;
     }
@@ -219,6 +257,29 @@ export async function apiLoadFileMeta(id: string): Promise<{ modified: string; e
   if (!itemId) return null;
   const r = await fetchOneRow(itemId, 'Modified');
   return r ? { modified: r.modified, etag: r.etag } : null;
+}
+
+/** Atomic Body + Modified + ETag fetch.
+ *
+ *  Use this from page-open paths instead of calling apiLoadContent and then
+ *  apiLoadFileMeta separately. Two separate GETs leave a window where another
+ *  user can write between them, producing a stale-Body / fresh-ETag pair —
+ *  the next save would then pass `If-Match: <fresh ETag>` and silently
+ *  overwrite the foreign edit because SP sees no conflict.
+ *
+ *  Returns null if the row doesn't exist. */
+export async function apiLoadContentMeta(
+  id: string,
+): Promise<{ html: string; modified: string; etag: string } | null> {
+  const itemId = parseInt(id, 10);
+  if (!itemId) return null;
+  const r = await fetchOneRow(itemId, 'Body,Modified');
+  if (!r) return null;
+  return {
+    html: mdToHtml(r.row.Body || ''),
+    modified: r.modified,
+    etag: r.etag,
+  };
 }
 
 /** After any SP write that advances the row's Modified/ETag, refresh
@@ -271,6 +332,14 @@ export async function updatePageRow(
 ): Promise<void> {
   if (!itemId) return;
   await updateListItem(PAGES_LIST, itemId, fields);
+  // Stamp the wall-clock time of the write BEFORE the read-back fetch.
+  // This is the "we just touched this row" signal the poll loop checks
+  // as a defence-in-depth fallback — even if the etag tracking somehow
+  // misses (zombie pre-fix instance, format quirk), the recent-write
+  // timestamp will suppress the phantom banner.
+  if (S.sync.pageId === String(itemId)) {
+    S.sync.lastLocalWriteTs = Date.now();
+  }
   try {
     const fresh = await fetchOneRow(itemId, 'Modified');
     if (fresh) {
@@ -283,8 +352,17 @@ export async function updatePageRow(
   } catch { /* fetch failures are non-fatal — just one phantom risk */ }
 }
 
-/** Create a normal page row. */
-export async function apiCreatePage(title: string, parentId: string): Promise<Page> {
+/** Create a normal page row.
+ *
+ *  `scope` defaults to 'user' (personal). UIs that distinguish
+ *  organisation-shared pages can pass 'org' explicitly. Existing rows
+ *  predating the column have empty Scope, which the UI should treat as
+ *  'user' for safety. */
+export async function apiCreatePage(
+  title: string,
+  parentId: string,
+  scope: PageScope = 'user',
+): Promise<Page> {
   await ensurePagesList();
   const created = await createListItem(PAGES_LIST, {
     Title: title,
@@ -294,11 +372,12 @@ export async function apiCreatePage(title: string, parentId: string): Promise<Pa
     Pinned: 0,
     Trashed: 0,
     Body: '',
+    Scope: scope,
   });
   const id = String(created.Id);
   S.meta.pages.push({
     id, title, parent: parentId || '',
-    type: 'page', icon: '',
+    type: 'page', icon: '', scope,
   });
   return { Id: id, Title: title, ParentId: parentId || '', Type: 'page' };
 }
@@ -308,6 +387,7 @@ export async function apiCreateDbPageRow(
   title: string,
   parentId: string,
   listTitle: string,
+  scope: PageScope = 'user',
 ): Promise<Page> {
   await ensurePagesList();
   const created = await createListItem(PAGES_LIST, {
@@ -319,11 +399,12 @@ export async function apiCreateDbPageRow(
     Trashed: 0,
     ListTitle: listTitle,
     Body: '',
+    Scope: scope,
   });
   const id = String(created.Id);
   S.meta.pages.push({
     id, title, parent: parentId || '',
-    type: 'database', list: listTitle, icon: '',
+    type: 'database', list: listTitle, icon: '', scope,
   });
   return { Id: id, Title: title, ParentId: parentId || '', Type: 'database' };
 }
@@ -387,31 +468,92 @@ async function saveBodyInternal(
 
 const collectIds = (id: string): string[] => collectDescendantIds(S.pages, id);
 
+/** Drop the daily-DB bootstrap cache (`_ensurePromise` in api/daily.ts) when
+ *  any of the given page ids is the daily-DB. Called before / after any
+ *  trash / purge / restore on memola-pages so subsequent
+ *  `getOrCreateNoteForDate` calls re-resolve the (possibly recreated)
+ *  daily DB instead of pointing at a stale id. Dynamic import avoids a
+ *  circular dependency (daily.ts imports plenty from this file). */
+async function maybeInvalidateDailyCache(ids: string[]): Promise<void> {
+  // Hard-coded constant matches DAILY_LIST_TITLE — keeping it in-line
+  // avoids importing daily.ts at module top.
+  for (const id of ids) {
+    const meta = S.meta.pages.find((p) => p.id === id);
+    if (meta?.type === 'database' && meta.list === 'memola-daily') {
+      const { clearDailyCache } = await import('./daily');
+      clearDailyCache();
+      return;
+    }
+  }
+}
+
 /** Hard delete: removes list rows (and the linked DB list, when applicable).
  *  When a page (or descendant) is currently Web-published, the mirrored
  *  Site Page is removed first so we don't leave orphaned `.aspx` files
  *  accessible in SharePoint after the metadata row is gone. */
 export async function apiDeletePage(id: string): Promise<string[]> {
+  // Defence-in-depth: the daily DB cannot be hard-deleted either. (Soft
+  // delete via apiTrashPage is also blocked, so this is unreachable in
+  // normal flow — but a future caller using apiDeletePage directly
+  // shouldn't be able to bypass the guard.)
+  const guardMeta = S.meta.pages.find((p) => p.id === id);
+  if (guardMeta?.type === 'database' && guardMeta.list === 'memola-daily') {
+    throw new Error('デイリーノート DB は削除できません (個人運用に必須)');
+  }
   const ids = collectIds(id);
+  // Drop the daily-DB bootstrap cache BEFORE we delete the SP list and
+  // the meta entry — otherwise `getOrCreateNoteForDate` can still hand
+  // out the deleted dbPageId and subsequent row creates write to a
+  // non-existent SP list (404) or an orphaned memola-pages row.
+  await maybeInvalidateDailyCache(ids);
+  // Delete order is chosen for "**worst-case integrity**": if a process
+  // dies mid-loop or a SP request fails, the remaining state should be
+  // user-INVISIBLE rather than half-broken-and-clickable.
+  //   1. Unpublish first (needs metadata that's still on the registration row)
+  //   2. Delete the memola-pages registration row → page disappears
+  //      from sidebar IMMEDIATELY. Any later step's failure leaves only
+  //      orphan data that the user can't see or interact with.
+  //   3. Cleanup orphan data (per-DB list rows + the SP list itself).
+  // Reverse of the older "rows → list → registration" order, which on
+  // partial failure left a clickable DB whose backing list was gone
+  // (404 toast on click).
   for (const pid of ids) {
     const meta = S.meta.pages.find((p) => p.id === pid);
-    if (meta?.type === 'database' && meta.list) {
-      // Drop every row-as-page entry first, then the backing DB list itself
-      await deleteAllRowEntriesForList(meta.list).catch(() => undefined);
-      await deleteList(meta.list).catch(() => undefined);
-    }
-    // Cleanup published Site Page mirror BEFORE removing the memola-pages row,
-    // because unpublishPage() reads metadata (publishedSitePageId) from it.
+    // Capture cleanup target BEFORE any mutation (we still need the list
+    // name to delete its rows/list AFTER the registration is gone).
+    const dbListToCleanup = (meta?.type === 'database' && meta.list) ? meta.list : null;
+    // 1. Unpublish published mirror — must happen before registration
+    //    deletion because unpublishPage() reads publishedSitePageId off
+    //    the registration row.
     if (meta?.published) {
       const { unpublishPage } = await import('./publish');
       await unpublishPage(pid).catch(() => undefined);
     }
+    // 2. Hide the page from the user by removing its registration. Any
+    //    later step's failure leaves only invisible orphan data.
     const itemId = parseInt(pid, 10);
     if (itemId) {
       await deleteListItem(PAGES_LIST, itemId).catch(() => undefined);
     }
+    // 3. Best-effort cleanup of orphan storage. If we crash here, the
+    //    SP list and row bodies persist as unreachable garbage — they
+    //    no longer break the UI but they consume storage. A future
+    //    "garbage collection" pass could clean these up by scanning
+    //    for memola-db-* lists not referenced by any registration row.
+    if (dbListToCleanup) {
+      await deleteAllRowEntriesForList(dbListToCleanup).catch(() => undefined);
+      await deleteList(dbListToCleanup).catch(() => undefined);
+    }
   }
+  // Drop the purged ids from BOTH state mirrors. Previously only
+  // `S.meta.pages` was filtered; `S.pages` was left to whatever the
+  // caller did next. When the caller forgets (trash modal's empty path
+  // historically did), the tree shows a ghost page whose backing list
+  // has been deleted — clicking it tries to load a non-existent SP list,
+  // and the title→list mapping appears "shifted" against neighbouring
+  // entries. Filtering here keeps both arrays consistent always.
   S.meta.pages = S.meta.pages.filter((p) => ids.indexOf(p.id) < 0);
+  S.pages = S.pages.filter((p) => ids.indexOf(p.Id) < 0);
   return ids;
 }
 
@@ -433,24 +575,67 @@ export async function apiMovePage(id: string, newParentId: string): Promise<void
   if (pg) pg.ParentId = newParentId || '';
 }
 
+/** Compare a candidate child's scope against its proposed parent. Returns
+ *  the parent's scope when they differ (caller can use this as the value
+ *  to migrate the child to), or `null` when no migration is needed.
+ *  - moving to root (no parent): never triggers (root accepts both scopes)
+ *  - parent has no scope set:    treat as same-scope (legacy data) */
+export function scopeMismatchOnMove(
+  childId: string,
+  newParentId: string,
+): PageScope | null {
+  if (!newParentId) return null;
+  const child = S.meta.pages.find((p) => p.id === childId);
+  const parent = S.meta.pages.find((p) => p.id === newParentId);
+  if (!child || !parent) return null;
+  const childScope: PageScope = (child.scope === 'org' || child.scope === 'user') ? child.scope : 'user';
+  const parentScope: PageScope = (parent.scope === 'org' || parent.scope === 'user') ? parent.scope : 'user';
+  return childScope === parentScope ? null : parentScope;
+}
+
 export async function apiTrashPage(id: string): Promise<void> {
+  // The daily DB is treated as undeletable infrastructure — its presence
+  // is what makes 「今日のノート」 work without re-bootstrap. Throwing
+  // here is the API-level guard; UI paths block the action with a toast
+  // upstream so the user never reaches this throw in normal flow.
+  const guardMeta = S.meta.pages.find((p) => p.id === id);
+  if (guardMeta?.type === 'database' && guardMeta.list === 'memola-daily') {
+    throw new Error('デイリーノート DB は削除できません (個人運用に必須)');
+  }
   const ids = collectIds(id);
+  // Capture daily-DB-ness BEFORE we mutate meta.trashed — the
+  // invalidation helper looks at the meta entry to decide.
+  await maybeInvalidateDailyCache(ids);
   const ts = Date.now();
+  // Resolve current user id to record as the deleter. 0 = couldn't
+  // resolve (= anonymous-ish) → leave TrashedBy=0 so empty-trash treats
+  // the entry as belonging to nobody (= won't be hard-deleted by anyone
+  // who isn't them; effectively orphaned but recoverable by manual
+  // restore).
+  const myId = S.meta.myUserId || (await getCurrentUserId().catch(() => 0));
   for (const pid of ids) {
     const meta = S.meta.pages.find((p) => p.id === pid);
-    if (meta) meta.trashed = ts;
+    if (meta) { meta.trashed = ts; meta.trashedBy = myId; }
     const itemId = parseInt(pid, 10);
-    if (itemId) await updatePageRow(itemId, { Trashed: ts }).catch(() => undefined);
+    if (itemId) {
+      await updatePageRow(itemId, { Trashed: ts, TrashedBy: myId }).catch(() => undefined);
+    }
   }
 }
 
 export async function apiRestorePage(id: string): Promise<void> {
   const ids = collectIds(id);
+  // If we just restored the daily DB, drop the cache so the bootstrap
+  // re-resolves the (now-active again) page id instead of falling into
+  // its "create new" branch on the next note open.
+  await maybeInvalidateDailyCache(ids);
   for (const pid of ids) {
     const meta = S.meta.pages.find((p) => p.id === pid);
-    if (meta) delete meta.trashed;
+    if (meta) { delete meta.trashed; delete meta.trashedBy; }
     const itemId = parseInt(pid, 10);
-    if (itemId) await updatePageRow(itemId, { Trashed: 0 }).catch(() => undefined);
+    if (itemId) {
+      await updatePageRow(itemId, { Trashed: 0, TrashedBy: 0 }).catch(() => undefined);
+    }
   }
 }
 
@@ -472,6 +657,41 @@ export async function apiSetIcon(id: string, emoji: string): Promise<void> {
   if (meta) meta.icon = emoji;
   const itemId = parseInt(id, 10);
   if (itemId) await updatePageRow(itemId, { Icon: emoji });
+}
+
+/** Change a page's `Scope` ('user' / 'org'). Cascades to all descendants
+ *  by default so a subtree always belongs to a single scope — a personal
+ *  child under an org parent is the kind of inconsistency the UI's
+ *  cross-scope move dialog is meant to prevent.
+ *
+ *  Refuses to set scope='org' on the daily DB (= the registration row
+ *  whose `list='memola-daily'`). Daily notes are inherently personal
+ *  scratch space — exposing them to the org would leak private notes,
+ *  and the per-user daily DB design (Phase 1) implicitly assumes scope
+ *  stays 'user'. The UI blocks the action upstream, but this API guard
+ *  is the last line of defence (e.g. AI tools, future scripts).
+ *
+ *  Returns the affected ids (caller can use this to re-render or to know
+ *  what was touched). */
+export async function apiSetScope(
+  id: string,
+  scope: PageScope,
+  cascadeChildren = true,
+): Promise<string[]> {
+  if (scope === 'org') {
+    const m = S.meta.pages.find((p) => p.id === id);
+    if (m?.type === 'database' && m.list === 'memola-daily') {
+      throw new Error('デイリーノート DB は組織に公開できません (個人専用)');
+    }
+  }
+  const ids = cascadeChildren ? collectIds(id) : [id];
+  for (const pid of ids) {
+    const meta = S.meta.pages.find((p) => p.id === pid);
+    if (meta) meta.scope = scope;
+    const itemId = parseInt(pid, 10);
+    if (itemId) await updatePageRow(itemId, { Scope: scope }).catch(() => undefined);
+  }
+  return ids;
 }
 
 /** Persist title-only metadata change (used when title is edited live).
@@ -522,6 +742,9 @@ export async function apiDuplicateAsDraft(originId: string): Promise<Page> {
     Trashed: 0,
     Body: body,
     OriginPageId: originId,
+    // Drafts inherit the origin's scope so a personal draft of an org page
+    // doesn't accidentally become globally visible (and vice versa).
+    Scope: origin.scope || 'user',
   });
   const newId = String(created.Id);
   S.meta.pages.push({
@@ -622,6 +845,10 @@ export async function setRowBody(
     }
     return;
   }
+  // DB row body inherits the parent DB's scope so a row in an org DB
+  // is org-scoped, and a row in a personal DB is personal-scoped.
+  const parentMeta = parentDbId ? S.meta.pages.find((p) => p.id === parentDbId) : null;
+  const inheritScope: PageScope = parentMeta?.scope || 'user';
   await createListItem(PAGES_LIST, {
     Title: title,
     ParentId: parentDbId || '',
@@ -629,6 +856,7 @@ export async function setRowBody(
     ListTitle: listTitle,
     DbRowId: dbRowId,
     Body: body,
+    Scope: inheritScope,
   });
   // Post-create reconciliation: if a concurrent caller raced us, multiple
   // entries now exist. Keep the lowest Id (deterministic across tabs) and

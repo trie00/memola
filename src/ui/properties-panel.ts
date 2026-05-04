@@ -67,12 +67,24 @@ export async function renderProperties(): Promise<void> {
 
   if (page.Type !== 'database') {
     try {
-      const fm = await apiLoadFileMeta(id);
-      const editor = await getListItemEditor(id).catch(() => '');
+      // Prefer the IN-MEMORY loadedModified — it's kept in sync with the
+      // editor body across save / sync-watch / accept-banner paths, so
+      // the displayed time always matches what the user actually has on
+      // screen. Falls back to a fresh SP fetch only when we don't have a
+      // cached value (e.g. panel opened before doSelect finished).
+      let modified = '';
+      let editor = '';
+      if (S.sync.pageId === id && S.sync.loadedModified) {
+        modified = S.sync.loadedModified;
+      } else {
+        const fm = await apiLoadFileMeta(id);
+        if (fm) modified = fm.modified;
+      }
+      editor = await getListItemEditor(id).catch(() => '');
       const loading = list.querySelector('.memola-prop-loading');
       if (loading) loading.remove();
-      if (fm) {
-        const time = new Date(fm.modified).toLocaleString('ja-JP');
+      if (modified) {
+        const time = new Date(modified).toLocaleString('ja-JP');
         list.insertAdjacentHTML('beforeend', row('最終更新', time));
         list.insertAdjacentHTML('beforeend', row('編集者', editor || '不明'));
       }

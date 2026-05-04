@@ -7,7 +7,7 @@ import { renderTree } from './tree';
 import { showView, doSelect, renderPageIcon, renderDbTable, renderKanban } from './views';
 import { execCmd, attachEditor } from './editor';
 import {
-  doNew, doDel, doSave, schedSave, doNewDbRow, closeApp, onKey,
+  doNew, doDel, doSave, schedSave, doNewDbRow, closeApp, onKey, clearSaveTimer, teardown,
   showEmojiPicker, attachEmojiPickerOutsideClick,
   exportMd, exportHtml, duplicateCurrent, copyPageLink, printCurrent, showPageInfo,
   togglePageMenu, hidePageMenu, attachPageMenuOutsideClick,
@@ -22,12 +22,18 @@ import { toggleOutline, applyOutlineState, attachOutlineWatcher } from './outlin
 import { getApiKey, setApiKey } from '../api/anthropic';
 import { togglePropertiesPanel, applyPropertiesState } from './properties-panel';
 import { attachPubTag, syncPubTag } from './pub-tag';
+import { attachScopeTag, syncScopeTag, toggleCurrentPageScope } from './scope-tag';
 import { attachDraftsSidebar, refreshDraftsBadge, openDraftsModal } from './drafts-modal';
-import { attachPresence } from './presence-ui';
+import { attachPresence, shutdownPresence } from './presence-ui';
+import { stopWatching, attachStaleBannerSuppressionReset } from './sync-watch';
 import { showWorkspaceMenu, getCurrentWorkspaceName } from './workspaces';
 import { openTrash, closeTrash } from './trash';
 import { exportCsv, importCsv } from './csv-io';
-import { prefFocusMode, prefSidebarState, prefDensity, prefTheme } from '../lib/prefs';
+import {
+  prefFocusMode, prefSidebarState, prefDensity, prefTheme,
+  prefSaveDelayMs, prefSyncPollMs, prefPresenceEnabled,
+} from '../lib/prefs';
+import { openShortcutsModal } from './shortcuts-modal';
 
 function applyFocusMode(): void {
   const ov = document.getElementById('memola-overlay');
@@ -107,6 +113,17 @@ export function attachAll(): void {
   document.getElementById('memola-nav-fwd')?.addEventListener('click', () => {
     void import('./nav-history').then((m) => m.goForward());
   });
+  // Sidebar daily-notes section (between 「+ 新規」 and 「下書き / ゴミ箱」).
+  // 「今日のノート」 = one-click open / create today's note.
+  // 「日付を選んで開く」 = popover date picker for any day.
+  document.getElementById('memola-sb-daily-today')?.addEventListener('click', () => {
+    void openTodayDailyNote();
+  });
+  document.getElementById('memola-sb-daily-pick')?.addEventListener('click', (e) => {
+    // Anchor the date-picker popover to the clicked sidebar entry so it
+    // appears next to the user's mouse rather than at the top-bar default.
+    showDailyPicker(e.currentTarget as HTMLElement);
+  });
   document.getElementById('memola-sb-collapse')?.addEventListener('click', () => {
     g('sb').classList.add('collapsed');
     persistSidebarState();
@@ -147,9 +164,6 @@ export function attachAll(): void {
       if (!item) return;
       createMenu.classList.remove('on');
       switch (item.dataset.cm) {
-        case 'daily-today':
-          void openTodayDailyNote();
-          break;
         case 'new-page':
         case 'tpl-weekly':
         case 'tpl-minutes':
@@ -231,7 +245,8 @@ export function attachAll(): void {
     try {
       await addListField(S.dbList, name, typeKind, choices);
       const results = await Promise.all([getListFields(S.dbList), getListItems(S.dbList)]);
-      S.dbFields = results[0];
+      const { stripInternalDbFields } = await import('../api/db');
+      S.dbFields = stripInternalDbFields(results[0]);
       S.dbItems = results[1];
       renderDbTable();
       toast('列「' + name + '」を追加しました');
@@ -413,6 +428,8 @@ export function attachAll(): void {
 
   // Publish-status tag in the top bar
   attachPubTag();
+  attachScopeTag();
+  attachStaleBannerSuppressionReset();
 
   // Drafts sidebar entry (visible only when draft count > 0)
   attachDraftsSidebar();
@@ -439,13 +456,42 @@ export function attachAll(): void {
       case 'duplicate-as-draft': await duplicateAsDraftCurrent(); break;
       case 'version-history': await openVersionHistoryForCurrent(); break;
       case 'copy-link':   await copyPageLink(); break;
+      case 'toggle-scope': await toggleCurrentPageScope(); break;
       case 'publish':     await togglePublish(); break;
       case 'copy-pub-url': await copyPublishedUrl(); break;
       case 'restore-daily': await restoreToDailyNote(); break;
       case 'print':       printCurrent(); break;
       case 'info':        showPageInfo(); break;
       case 'focus':       toggleFocusMode(); break;
-      case 'delete':      if (S.currentId) await doDel(S.currentId); break;
+      case 'delete':
+        // When viewing a DB row-as-page (incl. daily notes), `S.currentId`
+        // is the DB PAGE — calling doDel on it would trash the entire DB.
+        // Branch to row-deletion so the menu's 🗑 only removes the row.
+        if (S.currentRow) {
+          const row = S.currentRow;
+          if (!confirm('この行を削除しますか？\n(⌘Z で復元可能)')) break;
+          try {
+            setLoad(true, '行を削除中...');
+            const { deleteRowWithUndo } = await import('./db-history');
+            await deleteRowWithUndo(row.listTitle, row.itemId);
+            // Navigate back to the parent DB so the user isn't left on a
+            // blank/stale row page.
+            S.currentRow = null;
+            const dbPage = S.pages.find((p) => p.Id === row.dbId);
+            if (dbPage) {
+              const v = await import('./views');
+              await v.doSelectDb(row.dbId, dbPage);
+            } else {
+              showView('empty');
+            }
+            toast('行を削除しました（⌘Z で復元可能）');
+          } catch (e) {
+            toast('削除失敗: ' + (e as Error).message, 'err');
+          } finally { setLoad(false); }
+          break;
+        }
+        if (S.currentId) await doDel(S.currentId);
+        break;
     }
   });
   attachPageMenuOutsideClick();
@@ -464,6 +510,26 @@ export function attachAll(): void {
         ? S.meta.pages.find((p) => p.id === S.currentId)
         : null;
       restoreItem.style.display = meta?.originDailyDate ? '' : 'none';
+    }
+    // Scope toggle: shown for both regular pages AND DBs (so the DB itself
+    // can be classified as 個人 / 組織). Row-as-page, drafts, trashed,
+    // and the daily DB are all hidden — the daily DB is locked to
+    // personal scope by design.
+    const scopeItem = document.querySelector<HTMLElement>('[data-action="toggle-scope"]');
+    if (scopeItem) {
+      const isScopeable = !!S.currentId
+        && (S.currentType === 'page' || S.currentType === 'database')
+        && !S.currentRow;
+      const meta = isScopeable && S.currentId
+        ? S.meta.pages.find((p) => p.id === S.currentId)
+        : null;
+      const isDailyDb = meta?.type === 'database' && meta.list === 'memola-daily';
+      const showScope = !!meta && !meta.originPageId && !meta.trashed && !isDailyDb;
+      scopeItem.style.display = showScope ? '' : 'none';
+      // syncScopeTag already updates the label via its own DOM lookup,
+      // but we trigger it here to make sure the menu reflects the current
+      // page even if the user opens the menu before any other render hook.
+      void import('./scope-tag').then((m) => m.syncScopeTag());
     }
     if (!isRealPage) {
       if (publishItem) publishItem.style.display = 'none';
@@ -595,13 +661,46 @@ export function attachAll(): void {
    *  reserved daily DB on first invocation. Pinned to the sidebar so the
    *  user can also reach it via the page tree afterwards. */
   async function openTodayDailyNote(): Promise<void> {
+    await openDailyNoteForDate(daily_todayYMD(), { confirmCreate: false });
+  }
+
+  /** Synchronous YYYY-MM-DD for "today" without async-importing daily.ts
+   *  every time the UI needs to default the date picker. Mirrors
+   *  date-utils.todayYMD(). */
+  function daily_todayYMD(): string {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return d.getFullYear() + '-' + m + '-' + day;
+  }
+
+  /** Open the daily note for an arbitrary YYYY-MM-DD. If it doesn't yet
+   *  exist:
+   *    - confirmCreate=false: create silently (used for "今日" — typing
+   *      today's date and being prompted feels redundant).
+   *    - confirmCreate=true:  ask first; cancel = no-op (used for the
+   *      date picker — the user might just be browsing).
+   */
+  async function openDailyNoteForDate(
+    date: string,
+    opts: { confirmCreate: boolean },
+  ): Promise<void> {
     try {
       setLoad(true, 'デイリーノートを開いています...');
       const daily = await import('../api/daily');
-      const date = daily.todayYMD();
-      const ref = await daily.getOrCreateNoteForDate(date);
-      // Make sure the new daily DB shows up in the sidebar (S.pages may be
-      // stale if this is the very first call in the session).
+      // Fast path: already exists → just open it.
+      const existing = await daily.findNoteForDate(date);
+      if (!existing && opts.confirmCreate) {
+        setLoad(false);
+        if (!confirm(date + ' のデイリーノートはまだありません。新しく作成しますか？')) return;
+        setLoad(true, 'デイリーノートを作成しています...');
+      }
+      const ref = existing
+        ? { ...existing, dbPageId: (await daily.ensureDailyDb()).dbPageId }
+        : await daily.getOrCreateNoteForDate(date);
+      // Make sure the daily DB row shows up in the sidebar (S.pages may be
+      // stale if this is the very first call in the session, or if the row
+      // was just created).
       if (!S.pages.some((p) => p.Id === ref.dbPageId)) {
         const { apiGetPages } = await import('../api/pages');
         S.pages = await apiGetPages();
@@ -619,6 +718,90 @@ export function attachAll(): void {
     } catch (e) {
       toast('デイリーノートを開けませんでした: ' + (e as Error).message, 'err');
     } finally { setLoad(false); }
+  }
+
+  /** Show a small popover with a date input + quick-jump buttons. Picking
+   *  a date opens (creates with confirm) the daily note for that date. */
+  function showDailyPicker(anchor: HTMLElement): void {
+    // Tear down any existing popover so re-clicking the menu item just
+    // re-anchors instead of stacking.
+    const prev = document.getElementById('memola-daily-picker');
+    if (prev) prev.remove();
+
+    const today = daily_todayYMD();
+    const pop = document.createElement('div');
+    pop.id = 'memola-daily-picker';
+    pop.innerHTML =
+      '<div class="memola-dp-row">' +
+        '<button class="memola-dp-nav" data-nav="-1" title="前日">‹</button>' +
+        '<input type="date" id="memola-dp-input" value="' + today + '">' +
+        '<button class="memola-dp-nav" data-nav="+1" title="翌日">›</button>' +
+      '</div>' +
+      '<div class="memola-dp-quick">' +
+        '<button data-quick="-7">先週</button>' +
+        '<button data-quick="-1">昨日</button>' +
+        '<button data-quick="0">今日</button>' +
+        '<button data-quick="+1">明日</button>' +
+        '<button data-quick="+7">来週</button>' +
+      '</div>' +
+      '<div class="memola-dp-foot">' +
+        '<button id="memola-dp-cancel">キャンセル</button>' +
+        '<button id="memola-dp-open" class="memola-dp-primary">開く</button>' +
+      '</div>';
+
+    // Anchor near the create button (same screen position as create-menu).
+    const r = anchor.getBoundingClientRect();
+    pop.style.position = 'fixed';
+    pop.style.left = r.left + 'px';
+    pop.style.top = (r.bottom + 4) + 'px';
+
+    (document.getElementById('memola-overlay') || document.body).appendChild(pop);
+
+    const input = pop.querySelector<HTMLInputElement>('#memola-dp-input');
+    if (!input) return;
+    // Delay focus until after appendChild, otherwise some browsers
+    // collapse the just-opened native picker UI.
+    setTimeout(() => input.focus(), 0);
+
+    function shiftDate(days: number, base?: string): string {
+      const d = new Date(((base || input!.value) || today) + 'T00:00:00');
+      d.setDate(d.getDate() + days);
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return d.getFullYear() + '-' + m + '-' + day;
+    }
+
+    pop.querySelectorAll<HTMLButtonElement>('.memola-dp-nav').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const delta = parseInt(btn.dataset.nav || '0', 10);
+        input.value = shiftDate(delta);
+      });
+    });
+    pop.querySelectorAll<HTMLButtonElement>('.memola-dp-quick button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const delta = parseInt(btn.dataset.quick || '0', 10);
+        input.value = shiftDate(delta, today);
+      });
+    });
+
+    function close(): void { pop.remove(); document.removeEventListener('click', outside); }
+    function outside(e: MouseEvent): void {
+      if (!pop.contains(e.target as Node) && !anchor.contains(e.target as Node)) close();
+    }
+    setTimeout(() => document.addEventListener('click', outside), 0);
+
+    pop.querySelector('#memola-dp-cancel')?.addEventListener('click', close);
+    const open = (): void => {
+      const v = input.value;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { toast('日付を選んでください', 'err'); return; }
+      close();
+      void openDailyNoteForDate(v, { confirmCreate: true });
+    };
+    pop.querySelector('#memola-dp-open')?.addEventListener('click', open);
+    input.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Enter') { e.preventDefault(); open(); }
+      else if ((e as KeyboardEvent).key === 'Escape') { e.preventDefault(); close(); }
+    });
   }
 
   // Apply persisted focus mode + viewport-based auto collapse
@@ -650,7 +833,139 @@ export function attachAll(): void {
   const setLocalReasoning = document.getElementById('memola-set-localai-reasoning') as HTMLInputElement | null;
   const setDensity = document.getElementById('memola-set-density') as HTMLSelectElement | null;
   const setTheme = document.getElementById('memola-set-theme') as HTMLSelectElement | null;
-  if (setBtn && setMd && setKey && setProv && setClaudeModel && setCorpModel && setCorpKey && setCorpBaseUrl && setCorpPrefix && setCorpOverrides && setLocalBaseUrl && setLocalKey && setLocalModel && setLocalModels && setLocalReasoning && setDensity && setTheme) {
+  // Save / sync / presence prefs
+  const setSaveDelay = document.getElementById('memola-set-savedelay') as HTMLSelectElement | null;
+  const setSyncPoll = document.getElementById('memola-set-syncpoll') as HTMLSelectElement | null;
+  const setPresence = document.getElementById('memola-set-presence') as HTMLSelectElement | null;
+  // ⌨ Shortcut-list button (anywhere — click handler below is no-op if missing)
+  document.getElementById('memola-set-shortcuts')?.addEventListener('click', () => openShortcutsModal());
+
+  // Debug / reset buttons — each has its own pre-flight count + double
+  // confirm so accidental clicks don't blow away data.
+  async function runReset(
+    mode: 'mine' | 'others' | 'all',
+    label: string,
+  ): Promise<void> {
+    const reset = await import('../api/reset');
+    setLoad(true, '対象を集計中...');
+    let counts: { pages: number; dbs: number; dailyRows: number };
+    try {
+      counts = await reset.countResetTargets(mode);
+    } catch (e) {
+      setLoad(false);
+      toast('集計失敗: ' + (e as Error).message, 'err');
+      return;
+    }
+    setLoad(false);
+    const total = counts.pages + counts.dbs + counts.dailyRows;
+    const detail = mode === 'all'
+      ? '全 memola-* SP リスト + 全 memola.* localStorage キー'
+      : `ページ ${counts.pages} 件 + DB ${counts.dbs} 件` +
+        (counts.dailyRows > 0 ? ` + デイリー ${counts.dailyRows} 件` : '');
+    if (total === 0 && mode !== 'all') {
+      toast('削除対象のデータがありません');
+      return;
+    }
+    if (!confirm(
+      '【' + label + '】\n\n' +
+      '削除対象: ' + detail + '\n\n' +
+      '⚠ 元に戻せません。SP のごみ箱からも復元できません。\n\n' +
+      '本当に実行しますか?',
+    )) return;
+    if (!confirm('最終確認: 実行すると即座に SP からデータが削除されます。よろしいですか?')) return;
+    setLoad(true, '削除中... (時間がかかる場合があります)');
+    try {
+      const sum = mode === 'mine' ? await reset.resetMyPrivateData()
+                : mode === 'others' ? await reset.resetOthersData()
+                : await reset.resetAll();
+      const summary = mode === 'all'
+        ? `SP リスト ${sum.spListsDeleted} 件 / 完全削除 ${sum.recycleBinPurged} 件`
+        : `ページ ${sum.pagesDeleted} / DB ${sum.dbsDeleted} / 完全削除 ${sum.recycleBinPurged} 件`;
+      // Inline the first error in the toast so the user can diagnose at a
+      // glance, AND pop a follow-up alert with the full list — toasts
+      // disappear after a few seconds, alerts stay until dismissed.
+      let errSummary = '';
+      if (sum.errors.length > 0) {
+        const first = sum.errors[0].length > 80 ? sum.errors[0].slice(0, 80) + '…' : sum.errors[0];
+        errSummary = sum.errors.length === 1
+          ? ` (失敗 1 件: ${first})`
+          : ` (失敗 ${sum.errors.length} 件、最初: ${first})`;
+        console.warn('[Memola reset errors]', sum.errors);
+        // Show the full list in a native alert after the toast settles.
+        // Native confirm/alert blocks the loop — schedule asynchronously.
+        setTimeout(() => {
+          const detail = sum.errors.slice(0, 20).join('\n');
+          const more = sum.errors.length > 20 ? `\n…他 ${sum.errors.length - 20} 件 (コンソール参照)` : '';
+          alert(`【リセットの失敗詳細 — ${sum.errors.length} 件】\n\n${detail}${more}`);
+        }, 800);
+      }
+      // Refresh UI for non-full resets; full reset asks user to reload.
+      if (mode !== 'all') {
+        const { renderTree } = await import('./tree');
+        renderTree();
+        // Reconcile the current view with the post-reset state:
+        //   1. row-as-page → if the parent DB or row is gone, fall back
+        //      to the DB view (which re-fetches items); else stay.
+        //   2. DB view → re-call doSelectDb so the table reloads (rows
+        //      removed by the reset disappear).
+        //   3. regular page → if deleted, go to empty view.
+        const v = await import('./views');
+        if (S.currentRow) {
+          const dbId = S.currentRow.dbId;
+          const dbStillExists = S.pages.some((p) => p.Id === dbId);
+          S.currentRow = null;
+          if (dbStillExists) {
+            const dbPage = S.pages.find((p) => p.Id === dbId);
+            if (dbPage) await v.doSelectDb(dbId, dbPage);
+          } else {
+            S.currentId = null;
+            showView('empty');
+          }
+        } else if (S.currentType === 'database' && S.currentId) {
+          const dbPage = S.pages.find((p) => p.Id === S.currentId);
+          if (dbPage) {
+            // Re-select the DB → doSelectDb re-fetches items + re-renders,
+            // so any rows the reset removed disappear immediately.
+            await v.doSelectDb(S.currentId, dbPage);
+          } else {
+            // The DB itself got deleted by the reset
+            S.currentId = null;
+            showView('empty');
+          }
+        } else {
+          const stillExists = S.currentId && S.pages.some((p) => p.Id === S.currentId);
+          if (!stillExists) {
+            S.currentId = null;
+            showView('empty');
+          }
+        }
+      }
+      toast(label + ' 完了: ' + summary + errSummary,
+        sum.errors.length > 0 ? 'err' : 'ok');
+      // Close settings modal (may be null if user closed it during the
+      // run; resolve fresh from DOM rather than capturing in closure).
+      document.getElementById('memola-settings-md')?.classList.remove('on');
+      // For full reset, prompt reload
+      if (mode === 'all') {
+        setTimeout(() => {
+          if (confirm('完全リセットが完了しました。SP ページを今すぐリロードしますか?')) {
+            location.reload();
+          }
+        }, 500);
+      }
+    } catch (e) {
+      toast('リセット失敗: ' + (e as Error).message, 'err');
+    } finally {
+      setLoad(false);
+    }
+  }
+  document.getElementById('memola-set-reset-mine')?.addEventListener('click', () =>
+    runReset('mine', '自分のプライベートのみ削除'));
+  document.getElementById('memola-set-reset-others')?.addEventListener('click', () =>
+    runReset('others', '組織+他人のデータを削除'));
+  document.getElementById('memola-set-reset-all')?.addEventListener('click', () =>
+    runReset('all', '全データ + 設定を初期化'));
+  if (setBtn && setMd && setKey && setProv && setClaudeModel && setCorpModel && setCorpKey && setCorpBaseUrl && setCorpPrefix && setCorpOverrides && setLocalBaseUrl && setLocalKey && setLocalModel && setLocalModels && setLocalReasoning && setDensity && setTheme && setSaveDelay && setSyncPoll && setPresence) {
     // Populate model dropdowns once.
     void import('../api/ai-settings').then((ai) => {
       ai.CLAUDE_MODELS.forEach((m) => {
@@ -676,7 +991,25 @@ export function attachAll(): void {
     }
     setProv.addEventListener('change', syncProviderRows);
 
+    // Sidebar nav inside the settings modal — tabs switch panes.
+    document.querySelectorAll<HTMLElement>('.memola-set-tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.tab;
+        if (!target) return;
+        document.querySelectorAll<HTMLElement>('.memola-set-tab')
+          .forEach((t) => t.classList.toggle('on', t === tab));
+        document.querySelectorAll<HTMLElement>('.memola-set-pane')
+          .forEach((p) => p.classList.toggle('on', p.dataset.pane === target));
+      });
+    });
+
     setBtn.addEventListener('click', () => {
+      // Always reset to the first pane on open so the user has a
+      // predictable starting point.
+      document.querySelectorAll<HTMLElement>('.memola-set-tab')
+        .forEach((t) => t.classList.toggle('on', t.dataset.tab === 'ai'));
+      document.querySelectorAll<HTMLElement>('.memola-set-pane')
+        .forEach((p) => p.classList.toggle('on', p.dataset.pane === 'ai'));
       void import('../api/ai-settings').then((ai) => {
         try {
           setProv.value = ai.getProvider();
@@ -698,6 +1031,10 @@ export function attachAll(): void {
           setLocalReasoning.value = ai.getLocalAiReasoningModels().join(' ');
           setDensity.value = prefDensity.get();
           setTheme.value = prefTheme.get();
+          // Save / sync / presence
+          setSaveDelay.value = prefSaveDelayMs.get();
+          setSyncPoll.value = prefSyncPollMs.get();
+          setPresence.value = prefPresenceEnabled.get();
         } catch { /* ignore */ }
         syncProviderRows();
         setMd.classList.add('on');
@@ -743,6 +1080,26 @@ export function attachAll(): void {
           ai.setLocalAiReasoningModels(setLocalReasoning.value);
           prefDensity.set(setDensity.value);
           prefTheme.set(setTheme.value);
+          // Save / sync / presence
+          prefSaveDelayMs.set(setSaveDelay.value);
+          prefSyncPollMs.set(setSyncPoll.value);
+          const prevPresence = prefPresenceEnabled.get();
+          prefPresenceEnabled.set(setPresence.value);
+          // Re-apply sync-watch + presence so the new pref takes effect
+          // immediately without a reload.
+          if (S.sync.pageId && S.sync.loadedModified && S.sync.loadedEtag) {
+            void import('./sync-watch').then((m) => {
+              m.startWatching(S.sync.pageId!, S.sync.loadedModified!, S.sync.loadedEtag!);
+            });
+          }
+          // Presence: if turned off, drop our SP row + stop pinging now.
+          // If turned on, syncPresenceForCurrent will (re-)register us.
+          if (prevPresence !== setPresence.value) {
+            void import('./presence-ui').then((m) => {
+              if (setPresence.value === '0') m.shutdownPresence();
+              else m.syncPresenceForCurrent();
+            });
+          }
         } catch { /* ignore */ }
         const ov = document.getElementById('memola-overlay');
         if (ov) {
@@ -851,7 +1208,31 @@ export function attachAll(): void {
 }
 
 // ── INIT ─────────────────────────────────────────────
+/** Tear down everything that lives outside the DOM (intervals, listeners,
+ *  presence row). Called when the user re-presses the bookmarklet to
+ *  "close" the app — without this, the OLD instance's sync poller keeps
+ *  running invisibly and would later flash a phantom "別のタブ (あなた)"
+ *  banner against the NEXT instance's saves (its etag isn't in the OLD
+ *  ourSavedEtags). Stored on the overlay element so the new IIFE can
+ *  reach it across closure boundaries. */
+function memolaShutdown(): void {
+  // Bookmarklet re-press is the user's "close + reopen" gesture. We
+  // share the same teardown as the in-app 「閉じる」 button so behaviour
+  // is identical across paths (timers stopped, presence row deleted,
+  // pending autosave flushed, keydown listener removed). The overlay
+  // itself is removed by main.ts immediately after this returns, so we
+  // tell teardown to leave the DOM alone.
+  teardown({ flushSave: true, removeOverlay: false });
+}
+
 export async function init(): Promise<void> {
+  // Expose shutdown on the overlay element so a subsequent bookmarklet
+  // press (which runs in a separate IIFE / closure) can reach it.
+  const ov = document.getElementById('memola-overlay') as (HTMLElement & {
+    __memolaShutdown?: () => void;
+  }) | null;
+  if (ov) ov.__memolaShutdown = memolaShutdown;
+
   setLoad(true);
   try {
     // Resolve workspace selection before touching SP — drops a stale

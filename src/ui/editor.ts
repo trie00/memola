@@ -194,7 +194,7 @@ function filterSlashItems(): SlashItem[] {
   );
 }
 
-function showSlashMenu(rect: { bottom: number; left: number }): void {
+function showSlashMenu(rect: { top: number; bottom: number; left: number }): void {
   const el = g('slash');
   _slashFiltered = filterSlashItems();
   if (_slashFiltered.length === 0) { closeSlashMenu(); return; }
@@ -225,12 +225,36 @@ function showSlashMenu(rect: { bottom: number; left: number }): void {
     if (idx === _slashSel) selEl = div;
   });
 
-  const top = rect.bottom + window.scrollY + 4;
+  // Position horizontally first (always anchored to the caret column)
   let left = rect.left + window.scrollX;
   const vpW = window.innerWidth;
   if (left + 260 > vpW) left = vpW - 264;
-  el.style.top = top + 'px';
   el.style.left = left + 'px';
+
+  // Vertical placement: prefer below the caret (default Notion behaviour),
+  // but flip above when the menu would otherwise extend past the viewport
+  // bottom. Measure after a single layout pass — `display:block` happens
+  // via the .on class, so add it before measuring height.
+  el.classList.add('on');
+  const menuH = el.getBoundingClientRect().height || 320;
+  const vpH = window.innerHeight;
+  const spaceBelow = vpH - rect.bottom;
+  const spaceAbove = rect.top;
+  // Use "below" only when it fits, OR when below has more room than above
+  // (avoids flipping into a tiny window if the caret is near the middle).
+  const placeBelow = spaceBelow >= menuH + 12 || spaceBelow >= spaceAbove;
+  let top: number;
+  if (placeBelow) {
+    top = rect.bottom + window.scrollY + 4;
+    // Cap so the bottom of the menu doesn't run past the viewport even
+    // when it's the better of the two options.
+    const maxTop = window.scrollY + vpH - menuH - 8;
+    if (top > maxTop) top = maxTop;
+  } else {
+    top = rect.top + window.scrollY - menuH - 4;
+    if (top < window.scrollY + 8) top = window.scrollY + 8;
+  }
+  el.style.top = top + 'px';
 
   // Stash the caret position so commands that show a *follow-up* popover
   // (DB picker / page picker) can anchor to the same point — by the time
@@ -1179,20 +1203,32 @@ export function attachEditor(): void {
     const linkEl = target.closest<HTMLElement>('a.memola-page-link');
     if (linkEl) {
       e.preventDefault();
-      // Daily-note deferred link: find-or-create the row for that date and
-      // open it as a row-page. This is what lets prev/next links work even
-      // when the target hasn't been written yet.
+      // Daily-note deferred link. If a row for that date EXISTS, open it.
+      // If it doesn't, ASK the user before auto-creating — silently
+      // creating notes from speculative prev/next links surprised users.
       const dailyDate = linkEl.getAttribute('data-daily-date') || '';
       if (dailyDate) {
         void (async () => {
           try {
             const daily = await import('../api/daily');
+            const existing = await daily.findNoteForDate(dailyDate);
+            const v = await import('./views');
+            const r = await import('./row-page');
+            if (existing) {
+              const db = await daily.ensureDailyDb();
+              const dbPage = S.pages.find((p) => p.Id === db.dbPageId);
+              if (!dbPage) return;
+              await v.doSelectDb(db.dbPageId, dbPage);
+              const item = S.dbItems.find((i) => i.Id === existing.rowId);
+              if (item) await r.openRowAsPage(db.dbPageId, item);
+              return;
+            }
+            // Doesn't exist — confirm before creating
+            if (!confirm(dailyDate + ' のデイリーノートはまだありません。新しく作成しますか？')) return;
             const ref = await daily.getOrCreateNoteForDate(dailyDate);
             const dbPage = S.pages.find((p) => p.Id === ref.dbPageId);
             if (!dbPage) return;
-            const v = await import('./views');
             await v.doSelectDb(ref.dbPageId, dbPage);
-            const r = await import('./row-page');
             const item = S.dbItems.find((i) => i.Id === ref.rowId);
             if (item) await r.openRowAsPage(ref.dbPageId, item);
           } catch (err) {

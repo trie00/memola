@@ -13,6 +13,7 @@
 import { S, type Page } from '../state';
 import {
   createList, addListField, getListFields, getListItems, deleteListItem,
+  setColumnIndexed, deleteListField,
 } from './sp-list';
 import { spListUrl, spGetD } from './sp-rest';
 import {
@@ -20,11 +21,16 @@ import {
   setRowBody, getRowBody, deleteRowEntry, PAGES_LIST, updatePageRow,
 } from './pages';
 import { apiAddDbRow } from './db';
-import { todayYMD, addDaysYMD, formatDailyTitle, isDailyTitleFormat } from '../lib/date-utils';
+import { todayYMD, formatDailyTitle, isDailyTitleFormat } from '../lib/date-utils';
 
 export const DAILY_LIST_TITLE = 'memola-daily';
-export const DAILY_DATE_FIELD = '日付';
-export const DAILY_TAG_FIELD = 'タグ';
+// English internal names — Japanese-titled DateTime columns occasionally
+// fail to provision via the SP REST `fields` endpoint on some tenants
+// (silent 400 with no obvious cause), so we use ASCII names. SP shows
+// these in the UI as-is; users who care about Japanese display names can
+// rename them in 「リストの設定 → 列」 — internalName stays English.
+export const DAILY_DATE_FIELD = 'NoteDate';
+export const DAILY_TAG_FIELD = 'NoteTag';
 
 interface DailyDb {
   dbPageId: string;          // memola-pages id of the database page
@@ -55,10 +61,90 @@ async function resolveDateInternalName(): Promise<string> {
   }
 }
 
+/** Idempotently make sure the `日付` column exists on the daily list.
+ *  Tries up to 3 times — the first call right after `createList` can
+ *  hit a 400 because SP hasn't fully provisioned the list yet, and the
+ *  retry-after-200ms pattern usually clears it.
+ *
+ *  Throws (with the last SP error) if the column still isn't present
+ *  after the retries — without this throw the user would see the cryptic
+ *  「列 '日付' が存在しません」 error from validateUpdateListItem on
+ *  every subsequent daily-note write attempt. */
+async function ensureDateField(): Promise<void> {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    // Check whether the column already exists
+    try {
+      const fields = await getListFields(DAILY_LIST_TITLE);
+      if (fields.some((f) => f.Title === DAILY_DATE_FIELD || f.InternalName === DAILY_DATE_FIELD)) {
+        // Mark the date column as indexed so `findNoteForDate` can scale
+        // past 5,000 rows (= ~13.7 years of daily notes) without LVT errors.
+        // Idempotent + non-fatal.
+        await setColumnIndexed(DAILY_LIST_TITLE, DAILY_DATE_FIELD).catch(() => undefined);
+        return;                                   // already there — done
+      }
+    } catch (e) { lastErr = e; }
+    // Try to add it
+    try {
+      await addListField(DAILY_LIST_TITLE, DAILY_DATE_FIELD, 4);
+      // Re-verify — SP sometimes accepts the POST but doesn't surface
+      // the column for a moment.
+      const fieldsAfter = await getListFields(DAILY_LIST_TITLE).catch(() => []);
+      if (fieldsAfter.some((f) => f.Title === DAILY_DATE_FIELD || f.InternalName === DAILY_DATE_FIELD)) {
+        await setColumnIndexed(DAILY_LIST_TITLE, DAILY_DATE_FIELD).catch(() => undefined);
+        return;
+      }
+    } catch (e) { lastErr = e; }
+    // Brief pause before retrying — SP list provisioning is async
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  const detail = lastErr instanceof Error ? ': ' + lastErr.message : '';
+  throw new Error('デイリーノート用「日付」列を準備できませんでした' + detail);
+}
+
 /** True if the given list title is the daily-notes list. Used elsewhere
  *  (e.g. row-page title-rename detection) to gate daily-specific behavior. */
 export function isDailyList(listTitle: string | null | undefined): boolean {
   return listTitle === DAILY_LIST_TITLE;
+}
+
+/** Idempotently provision the optional `NoteTag` (Choice) column.
+ *  The earlier code unconditionally `addListField`'d this every time the
+ *  list was newly provisioned, and SP REST allows multiple columns with
+ *  the same display name (each gets an auto-numbered InternalName like
+ *  `NoteTag1`, `NoteTag2` …). Past duplicate-DB races therefore left
+ *  some users with 2-3 NoteTag columns showing in the row-props panel.
+ *
+ *  This helper:
+ *    1. Reads current schema.
+ *    2. Adds NoteTag iff it's missing.
+ *    3. If multiple columns share the display name "NoteTag", keeps the
+ *       FIRST (lowest-numbered InternalName usually = oldest) and
+ *       deletes the rest. Self-healing on every ensureDailyDb call. */
+async function ensureTagFieldUnique(): Promise<void> {
+  const fields = await getListFields(DAILY_LIST_TITLE).catch(() => []);
+  const tagFields = fields.filter((f) =>
+    f.Title === DAILY_TAG_FIELD || f.InternalName === DAILY_TAG_FIELD ||
+    /^NoteTag\d*$/.test(f.InternalName)
+  );
+  if (tagFields.length === 0) {
+    // None present — add a fresh one
+    try {
+      await addListField(DAILY_LIST_TITLE, DAILY_TAG_FIELD, 6,
+        ['仕事', '個人', '会議', '家族', 'その他']);
+    } catch { /* tag is optional, tolerate */ }
+    return;
+  }
+  if (tagFields.length === 1) return;       // exactly one — already correct
+  // Multiple — keep the first, delete the rest. Sort by InternalName so
+  // the choice is deterministic across runs (the auto-numbered ones come
+  // after the unsuffixed one in lexicographic order: 'NoteTag' <
+  // 'NoteTag1' < 'NoteTag2').
+  tagFields.sort((a, b) => a.InternalName.localeCompare(b.InternalName));
+  for (let i = 1; i < tagFields.length; i++) {
+    await deleteListField(DAILY_LIST_TITLE, tagFields[i].InternalName)
+      .catch(() => undefined);
+  }
 }
 
 /** Idempotently create the daily DB list + its memola-pages registration row.
@@ -74,6 +160,14 @@ export async function ensureDailyDb(): Promise<DailyDb> {
       // Verify the SP list still exists. If not, fall through to create.
       const listExists = (await spGetD<unknown>(spListUrl(DAILY_LIST_TITLE))) != null;
       if (listExists) {
+        // The list may have been created in a previous session that
+        // failed to add the date column (silent catch in the old code
+        // path). Verify + heal here so the user doesn't have to delete
+        // the list manually.
+        await ensureDateField();
+        // Self-heal duplicate NoteTag columns (legacy bug — see
+        // ensureTagFieldUnique header). Idempotent + non-fatal.
+        await ensureTagFieldUnique();
         return {
           dbPageId: cachedMeta.id,
           listTitle: DAILY_LIST_TITLE,
@@ -87,13 +181,16 @@ export async function ensureDailyDb(): Promise<DailyDb> {
     if (!listExists) {
       await createList(DAILY_LIST_TITLE);
     }
-    // Idempotent column adds — failures are tolerated (column may already exist
-    // or have been renamed; we just want to ensure the canonical names).
-    try { await addListField(DAILY_LIST_TITLE, DAILY_DATE_FIELD, 4); } catch { /* ignore */ }
-    try {
-      await addListField(DAILY_LIST_TITLE, DAILY_TAG_FIELD, 6,
-        ['仕事', '個人', '会議', '家族', 'その他']);
-    } catch { /* ignore */ }
+    // Idempotent column adds + verification. addListField throws when the
+    // column already exists, which is harmless — but we previously
+    // SWALLOWED every error including "real" failures (e.g. timing race
+    // right after createList where SP returns 400 because the list isn't
+    // queryable yet). When the date column is missing, every subsequent
+    // row insert fails with `列 '日付' が存在しません`, so verify
+    // explicitly and retry once.
+    await ensureDateField();
+    // Add NoteTag once (or dedupe if past races created multiple).
+    await ensureTagFieldUnique();
 
     // 3. Make sure memola-pages has a row pointing at this list. Reuse cached
     //    meta if present, else create + pin.
@@ -137,19 +234,18 @@ export async function findNoteForDate(date: string): Promise<DailyRowRef | null>
   return { rowId: hit.Id, title: hit.Title || '', body };
 }
 
-/** Default body inserted into a freshly-created daily note. */
-function buildDefaultDailyBody(date: string): string {
-  const prev = addDaysYMD(date, -1);
-  const next = addDaysYMD(date, 1);
+/** Default body inserted into a freshly-created daily note. Intentionally
+ *  does NOT pre-populate prev/next-day links — those were misleading
+ *  (they always rendered even when the target note didn't exist) and
+ *  worse, clicking one auto-created a new note for that date. Users who
+ *  want jumps can type `[[daily:YYYY-MM-DD]]` themselves; the default
+ *  body stays neutral. */
+function buildDefaultDailyBody(_date: string): string {
   return [
     '## タスク',
     '- [ ] ',
     '',
     '## メモ',
-    '',
-    '',
-    '---',
-    '昨日: [[daily:' + prev + ']] / 明日: [[daily:' + next + ']]',
     '',
   ].join('\n');
 }

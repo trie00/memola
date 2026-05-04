@@ -73,6 +73,17 @@ export async function openRowAsPage(dbId: string, item: ListItem): Promise<void>
   const rowMod = (item.Modified as string | undefined) || null;
   setSavedAt(rowMod);
   S.dirty = false;
+
+  // Clear / hide the backlinks panel. The panel DOM lives inside the page
+  // view (`#memola-ct`), so when we switch from a regular page (which
+  // populated it) to a row-as-page (which doesn't get backlinks), the
+  // panel keeps showing the previous page's entries until something
+  // re-renders. Without this, opening today's daily note right after
+  // viewing a hub page makes it look like the brand-new daily note
+  // already has backlinks pointing to it.
+  // renderBacklinks() itself respects S.currentRow (set just above) and
+  // will hide+empty the container in that case.
+  void import('./backlinks').then((m) => m.renderBacklinks());
 }
 
 /** Save the row's title (DB list) + body (memola-pages). */

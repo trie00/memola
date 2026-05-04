@@ -1,12 +1,21 @@
 // Sidebar tree + breadcrumb rendering.
 
-import { S, type Page } from '../state';
+import { S, type Page, type PageMeta } from '../state';
 import { g } from './dom';
 import { doSelect } from './views';
 import { doNew, doDel } from './actions';
-import { apiMovePage, apiSetPin } from '../api/pages';
+import { apiMovePage, apiSetPin, apiSetScope, scopeMismatchOnMove, type PageScope } from '../api/pages';
 import { toast } from './ui-helpers';
 import { applySiblingOrder, saveSiblingOrder, computeReorder } from '../lib/page-tree';
+
+/** Resolve a page's effective scope. Pre-`Scope`-column rows have no
+ *  value — treat as 'user' (private) by default for safety. */
+function pageScope(p: Page | PageMeta | undefined): PageScope {
+  if (!p) return 'user';
+  const id = 'Id' in p ? p.Id : p.id;
+  const meta = S.meta.pages.find((m) => m.id === id);
+  return meta?.scope === 'org' ? 'org' : 'user';
+}
 
 export function kidsOf(pid: string): Page[] {
   // Default natural order (creation = ascending Id) then apply any user-saved
@@ -16,6 +25,52 @@ export function kidsOf(pid: string): Page[] {
     .filter((p) => !p.IsDraft && (p.ParentId || '') === (pid || ''))
     .sort((a, b) => (a.Id < b.Id ? -1 : 1));
   return applySiblingOrder(pid || '', natural);
+}
+
+/** Top-level pages of a given scope. Pages without an explicit scope are
+ *  treated as 'user' (private). */
+function rootKidsOfScope(scope: PageScope): Page[] {
+  return kidsOf('').filter((p) => pageScope(p) === scope);
+}
+
+/** Confirm with the user when a move would put a page under a parent of
+ *  a different scope. If they accept, migrate the dragged subtree to the
+ *  parent's scope. Returns true if the move should proceed. */
+async function confirmAndMaybeMigrateScope(
+  dragId: string, newParentId: string,
+): Promise<boolean> {
+  const target = scopeMismatchOnMove(dragId, newParentId);
+  if (target === null) return true;
+  const dragMeta = S.meta.pages.find((p) => p.id === dragId);
+  // Daily DB is locked to personal scope. Refuse cross-scope moves
+  // outright instead of asking for confirmation.
+  if (target === 'org' && dragMeta?.type === 'database' && dragMeta.list === 'memola-daily') {
+    toast('デイリーノート DB は組織に公開できません', 'err');
+    return false;
+  }
+  const parentMeta = S.meta.pages.find((p) => p.id === newParentId);
+  const childCount = countDescendantsLocal(dragId);
+  const targetLabel = target === 'org' ? '組織' : 'プライベート';
+  const sourceLabel = target === 'org' ? 'プライベート' : '組織';
+  const ok = window.confirm(
+    '⚠ スコープが異なります。\n\n' +
+    '「' + (dragMeta?.title || '無題') + '」(' + sourceLabel + ') を\n' +
+    '「' + (parentMeta?.title || '無題') + '」(' + targetLabel + ') の配下に移動します。\n\n' +
+    '配下の ' + childCount + ' ページも一緒に「' + targetLabel + '」になります。\n\n' +
+    '続行しますか?',
+  );
+  if (!ok) return false;
+  await apiSetScope(dragId, target).catch(() => undefined);
+  return true;
+}
+
+function countDescendantsLocal(rootId: string): number {
+  let n = 0;
+  const walk = (pid: string): void => {
+    S.pages.filter((p) => p.ParentId === pid).forEach((c) => { n++; walk(c.Id); });
+  };
+  walk(rootId);
+  return n;
 }
 
 /** Given a Y offset within a row, decide whether the drop is ABOVE / INTO /
@@ -237,6 +292,7 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
     const z = zoneFor(e.clientY - r.top, r.height);
     try {
       if (z === 'into') {
+        if (!await confirmAndMaybeMigrateScope(dragId, page.Id)) return;
         await apiMovePage(dragId, page.Id);
         S.expanded.add(page.Id);
         renderTree();
@@ -249,6 +305,7 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
       const dragPage = S.pages.find((p) => p.Id === dragId);
       if (!dragPage) return;
       if ((dragPage.ParentId || '') !== newParent) {
+        if (!await confirmAndMaybeMigrateScope(dragId, newParent)) return;
         await apiMovePage(dragId, newParent);
       }
       // Determine the *anchor* in the new parent's siblings.
@@ -280,37 +337,46 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
 }
 
 export function renderTree(): void {
-  const w = g('tree');
-  w.innerHTML = '';
+  const wPin = document.getElementById('memola-tree-pinned');
+  const wPriv = document.getElementById('memola-tree-private');
+  const wOrg = document.getElementById('memola-tree-org');
+  const lblPin = document.getElementById('memola-tree-pinned-lbl');
+  if (!wPin || !wPriv || !wOrg) return;
 
-  // Pinned section at the top
+  // Wipe all sections
+  wPin.innerHTML = '';
+  wPriv.innerHTML = '';
+  wOrg.innerHTML = '';
+
+  // ── Pinned section: flat list, all scopes, no nesting (a quick-jump
+  // band that sits above the tree). The pinned page also still appears
+  // in its scope's tree below (Notion / Bear convention). Hide the
+  // section header when nothing is pinned to save vertical space.
   const pinned = S.pages.filter((p) => {
     if (p.IsDraft) return false;
     const m = S.meta.pages.find((mp) => mp.id === p.Id);
     return m?.pinned;
   });
-  if (pinned.length > 0) {
-    const lbl = document.createElement('div');
-    lbl.className = 'memola-sl-label';
-    lbl.textContent = 'ピン留め';
-    w.appendChild(lbl);
-    pinned.forEach((p) => { w.appendChild(mkNode(p, 0)); });
-    const sep = document.createElement('div');
-    sep.style.height = '8px';
-    w.appendChild(sep);
-    const lbl2 = document.createElement('div');
-    lbl2.className = 'memola-sl-label';
-    lbl2.textContent = 'ページ';
-    w.appendChild(lbl2);
-  }
+  if (lblPin) lblPin.style.display = pinned.length > 0 ? '' : 'none';
+  pinned.forEach((p) => { wPin.appendChild(mkNode(p, 0)); });
 
-  kidsOf('').forEach((p) => { w.appendChild(mkNode(p, 0)); });
+  // ── Private section (scope='user' / undefined)
+  rootKidsOfScope('user').forEach((p) => { wPriv.appendChild(mkNode(p, 0)); });
 
-  // Drops on whitespace above the first row / below the last row → root top / bottom.
-  // Helper: decide whether the cursor is in the top half of the tree pane or
-  // the bottom half (rounded to nearest row edge).
+  // ── Org section (scope='org')
+  rootKidsOfScope('org').forEach((p) => { wOrg.appendChild(mkNode(p, 0)); });
+
+  // Wire empty-area drops on each scope section so dropping into the
+  // section's whitespace moves the dragged page to that scope's root.
+  wireSectionDrop(wPriv, 'user');
+  wireSectionDrop(wOrg, 'org');
+}
+
+/** Empty-area drop on a scope section: move the dragged page to root and
+ *  switch its scope to match this section. */
+function wireSectionDrop(container: HTMLElement, sectionScope: PageScope): void {
   function emptyDropPos(clientY: number): 'top' | 'bottom' | null {
-    const rows = w.querySelectorAll<HTMLElement>('.memola-tr');
+    const rows = container.querySelectorAll<HTMLElement>('.memola-tr');
     if (rows.length === 0) return 'bottom';
     const first = rows[0].getBoundingClientRect();
     const last = rows[rows.length - 1].getBoundingClientRect();
@@ -318,24 +384,31 @@ export function renderTree(): void {
     if (clientY > last.bottom - last.height / 2) return 'bottom';
     return null;
   }
-
-  w.ondragover = (e) => {
+  container.ondragover = (e) => {
     e.preventDefault();
     const target = e.target as HTMLElement;
-    if (target.closest('.memola-tr')) return;     // per-row handler is active
-    const rows = w.querySelectorAll<HTMLElement>('.memola-tr');
+    if (target.closest('.memola-tr')) return;     // per-row handler active
+    const rows = container.querySelectorAll<HTMLElement>('.memola-tr');
+    if (rows.length === 0) {
+      // Empty section — show indicator at the section's top edge
+      const r = container.getBoundingClientRect();
+      const ind = document.createElement('div');     // (no-op; rely on visual hover)
+      void ind;
+      // We don't have a custom indicator for empty sections — accept the drop silently
+      return;
+    }
     const pos = emptyDropPos(e.clientY);
     if (pos === 'top' && rows[0]) {
-      showDropIndicator(rows[0], /* after */ false, 0);
+      showDropIndicator(rows[0], false, 0);
     } else if (rows.length > 0) {
-      showDropIndicator(rows[rows.length - 1], /* after */ true, 0);
+      showDropIndicator(rows[rows.length - 1], true, 0);
     }
   };
-  w.addEventListener('dragleave', (e) => {
+  container.addEventListener('dragleave', (e) => {
     const rt = (e as DragEvent).relatedTarget as Node | null;
-    if (!rt || !w.contains(rt)) hideDropIndicator();
+    if (!rt || !container.contains(rt)) hideDropIndicator();
   });
-  w.ondrop = async (e) => {
+  container.ondrop = async (e) => {
     e.preventDefault();
     hideDropIndicator();
     const target = e.target as HTMLElement;
@@ -346,15 +419,39 @@ export function renderTree(): void {
     try {
       const dragPage = S.pages.find((p) => p.Id === dragId);
       if (!dragPage) return;
-      // Move to root if not already
+      // Cross-scope drop on empty area: migrate scope before moving.
+      const dragScope = pageScope(dragPage);
+      if (dragScope !== sectionScope) {
+        // Daily DB is locked to personal — refuse drops onto the org section.
+        const dragMeta = S.meta.pages.find((p) => p.id === dragId);
+        if (sectionScope === 'org' && dragMeta?.type === 'database' && dragMeta.list === 'memola-daily') {
+          toast('デイリーノート DB は組織に公開できません', 'err');
+          return;
+        }
+        const childCount = countDescendantsLocal(dragId);
+        const ok = window.confirm(
+          '⚠ スコープが異なります。\n\n' +
+          '「' + (dragPage.Title || '無題') + '」(' +
+          (dragScope === 'org' ? '組織' : 'プライベート') + ') を' +
+          '「' + (sectionScope === 'org' ? '🌐 組織' : '🔒 プライベート') + '」' +
+          'セクションに移動します。\n\n' +
+          (childCount > 0
+            ? '配下の ' + childCount + ' ページも同じ分類になります。\n\n'
+            : '') +
+          '続行しますか?',
+        );
+        if (!ok) return;
+        await apiSetScope(dragId, sectionScope).catch(() => undefined);
+      }
+      // Move to root if not already there
       if ((dragPage.ParentId || '') !== '') {
         await apiMovePage(dragId, '');
       }
-      // Insert at top or end of root order
-      const siblings = S.pages
+      // Reorder: insert at top or end of root list among same-scope siblings.
+      const allRoot = S.pages
         .filter((p) => (p.ParentId || '') === '')
         .sort((a, b) => (a.Id < b.Id ? -1 : 1));
-      const reordered = applySiblingOrder('', siblings);
+      const reordered = applySiblingOrder('', allRoot);
       const order = reordered.map((p) => p.Id).filter((id) => id !== dragId);
       if (pos === 'top') order.unshift(dragId);
       else order.push(dragId);

@@ -45,3 +45,30 @@ export function getCurrentUserId(): Promise<number> {
   })().catch(() => 0);
   return _currentUserIdPromise;
 }
+
+/** Cache user-id → display-name lookups so the trash modal can show
+ *  「○○ さんが削除」 without a round-trip per row. */
+const _userNameCache = new Map<number, string>();
+const _userNameInflight = new Map<number, Promise<string>>();
+
+/** Look up an SP user's display Title by their numeric Id. Returns ''
+ *  on failure (= user removed, no permission, network blip).
+ *  Session-cached + de-duplicated across concurrent callers. */
+export function getUserNameById(userId: number): Promise<string> {
+  if (!userId) return Promise.resolve('');
+  const cached = _userNameCache.get(userId);
+  if (cached !== undefined) return Promise.resolve(cached);
+  const inflight = _userNameInflight.get(userId);
+  if (inflight) return inflight;
+  const p = (async (): Promise<string> => {
+    const d = await spGetD<{ Title?: string }>(
+      SITE + '/_api/web/getuserbyid(' + userId + ')?$select=Title',
+    ).catch(() => null);
+    const name = d?.Title || '';
+    _userNameCache.set(userId, name);
+    _userNameInflight.delete(userId);
+    return name;
+  })();
+  _userNameInflight.set(userId, p);
+  return p;
+}

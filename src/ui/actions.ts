@@ -2,7 +2,8 @@
 
 import { S } from '../state';
 import { SAVE_MS, SITE } from '../config';
-import { g, getEd, getOverlay } from './dom';
+import { prefSaveDelayMs } from '../lib/prefs';
+import { g, getEd } from './dom';
 import { setLoad, setSave, toast } from './ui-helpers';
 import { renderTree } from './tree';
 import { showView, doSelect } from './views';
@@ -40,7 +41,22 @@ export async function doDel(id: string): Promise<void> {
   const page = S.pages.find((p) => p.Id === id);
   const name = page ? (page.Title || '無題') : '無題';
   const hasK = S.pages.some((p) => p.ParentId === id);
-  if (!confirm(hasK ? '「' + name + '」と子ページをゴミ箱へ移動しますか？' : '「' + name + '」をゴミ箱へ移動しますか？')) return;
+  // Hard block: the daily DB is treated as undeletable infrastructure.
+  // Showing the user a "delete?" confirm here even with strong warnings
+  // turned out to invite accidental loss + reproduce the duplicate-DB
+  // bug on restore. Just refuse outright.
+  const meta = S.meta.pages.find((p) => p.id === id);
+  const isDailyDb = meta?.type === 'database' && meta.list === 'memola-daily';
+  if (isDailyDb) {
+    toast(
+      'デイリーノート DB は削除できません (個人運用に必須)',
+      'err',
+    );
+    return;
+  }
+  if (!confirm(hasK ? '「' + name + '」と子ページをゴミ箱へ移動しますか？' : '「' + name + '」をゴミ箱へ移動しますか？')) {
+    return;
+  }
   try {
     setLoad(true, '移動中...');
     await apiTrashPage(id);
@@ -140,6 +156,12 @@ export async function doSave(): Promise<void> {
       const { apiLoadFileMeta } = await import('../api/pages');
       const fm = await apiLoadFileMeta(savedId);
       if (fm) S.sync.loadedModified = fm.modified;
+      // Properties panel caches Modified/Editor from a one-shot fetch at
+      // open time. Without this re-render, the panel keeps showing the
+      // pre-save timestamp until the user toggles it. Two-tab scenarios
+      // then diverge: the editor tab shows the OLD time, the viewer tab
+      // (after accepting the sync banner) shows the new one.
+      void import('./properties-panel').then((m) => m.renderProperties());
     }
     const p = S.pages.find((x) => x.Id === savedId);
     if (p) p.Title = title;
@@ -163,7 +185,13 @@ export async function doSave(): Promise<void> {
 
 export function schedSave(): void {
   clearTimeout(_svT);
-  _svT = setTimeout(doSave, SAVE_MS);
+  // Pref overrides the SAVE_MS default. '0' = "manual save only" — don't
+  // schedule anything; the user will hit Ctrl/Cmd+S when they want to save.
+  // The "未保存" indicator stays visible so they don't lose track.
+  const raw = prefSaveDelayMs.get();
+  const ms = raw ? parseInt(raw, 10) : SAVE_MS;
+  if (!isFinite(ms) || ms <= 0) return;          // manual mode
+  _svT = setTimeout(doSave, ms);
 }
 
 export function clearSaveTimer(): void {
@@ -274,23 +302,59 @@ export function doNewDbRow(): void {
 }
 
 // ── CLOSE ─────────────────────────────────────────────
-export function closeApp(): void {
-  // Always confirm — accidental ESC presses shouldn't blow away the
-  // session. If there are unsaved changes, mention that explicitly.
+/** Single tear-down used by every close path:
+ *    ① 「閉じる」 button (`closeApp`)
+ *    ② ESC key (also via `closeApp`)
+ *    ③ Bookmarklet re-press (`memolaShutdown` in wiring.ts → calls this)
+ *    ④ Browser-tab close / browser quit (beforeunload — best-effort,
+ *       async work won't always complete but we attempt the same steps)
+ *
+ *  All paths share:
+ *    - flushPendingSave (fire-and-forget — overlay removal doesn't wait
+ *      because the network request itself continues even after the DOM
+ *      is detached, and we want UI feedback to be instant).
+ *    - clearSaveTimer (cancel debounced autosave; nothing to do anyway
+ *      after flushPendingSave fires).
+ *    - stopWatching (sync-poll timer).
+ *    - shutdownPresence (delete this tab's presence row + stop pinging
+ *      so other users see us go away immediately, not after STALE_MS).
+ *    - removeEventListener('keydown', onKey) so a re-injected
+ *      bookmarklet starts with a clean listener count.
+ *
+ *  `removeOverlay=true` is for closeApp (the user expects the UI gone);
+ *  bookmarklet-shutdown sets it false because main.ts removes the
+ *  overlay itself just after calling shutdown. */
+export function teardown(opts: { flushSave: boolean; removeOverlay: boolean }): void {
+  if (opts.flushSave) {
+    void flushPendingSave().catch(() => undefined);
+  }
+  clearSaveTimer();
+  void import('./sync-watch').then((m) => m.stopWatching()).catch(() => undefined);
+  void import('./presence-ui').then((m) => m.shutdownPresence()).catch(() => undefined);
+  document.removeEventListener('keydown', onKey);
+  if (opts.removeOverlay) {
+    const overlay = document.getElementById('memola-overlay');
+    if (overlay) overlay.remove();
+    const st = document.getElementById('memola-style');
+    if (st) st.remove();
+  }
+}
+
+/** Close the app with a confirmation dialog. Uses the custom modal
+ *  (close-confirm-modal.ts) instead of native `window.confirm()` so the
+ *  ESC handling is fully under our control and doesn't bounce back to
+ *  zombie keydown listeners.
+ *
+ *  Marked async because the custom modal is Promise-based. Callers can
+ *  `void closeApp()` if they don't care about the resolution. */
+export async function closeApp(): Promise<void> {
   const msg = (S.dirty && S.currentType !== 'database')
     ? '保存していない変更があります。アプリを閉じますか？\n(OK で保存してから閉じます)'
     : 'アプリを閉じますか？';
-  if (!confirm(msg)) return;
-  // Best-effort: flush any pending save BEFORE tearing the overlay down.
-  // Async fire-and-forget — the overlay removal below doesn't wait, but
-  // the in-flight network request continues even after the DOM goes.
-  void flushPendingSave();
-  clearSaveTimer();
-  void import('./sync-watch').then((m) => m.stopWatching());
-  getOverlay().remove();
-  const st = document.getElementById('memola-style');
-  if (st) st.remove();
-  document.removeEventListener('keydown', onKey);
+  const { confirmClose } = await import('./close-confirm-modal');
+  const proceed = await confirmClose(msg);
+  if (!proceed) return;
+  teardown({ flushSave: true, removeOverlay: true });
 }
 
 export function onKey(e: KeyboardEvent): void {
@@ -347,6 +411,14 @@ export function onKey(e: KeyboardEvent): void {
   }
   if (mod && e.key === 'k') { e.preventDefault(); openSearchProxy(); return; }
   if (mod && e.key === 'j') { e.preventDefault(); toggleAiProxy(); return; }
+  // ? (any platform — Shift+/) outside a contenteditable opens the
+  // shortcut cheatsheet. Editing context is excluded so users typing a
+  // literal "?" in their notes don't get a popup.
+  if (e.key === '?' && !mod && !isEditableTarget(e.target)) {
+    e.preventDefault();
+    void import('./shortcuts-modal').then((m) => m.openShortcutsModal());
+    return;
+  }
   // ⌘+\ サイドバー切替
   if (mod && (e.key === '\\' || e.code === 'Backslash')) {
     e.preventDefault();
@@ -379,6 +451,10 @@ export function onKey(e: KeyboardEvent): void {
     return;
   }
   if (e.key === 'Escape') {
+    // Auto-repeat (OS keyboard repeat while ESC is held) would re-fire
+    // the close-confirm dialog after each cycle. Ignore repeats — user
+    // has to release + press ESC again to trigger another close attempt.
+    if (e.repeat) return;
     if (g('qs').classList.contains('on')) { closeSearch(); return; }
     if (g('emoji').classList.contains('on')) { g('emoji').classList.remove('on'); return; }
     // Modal popups (drafts / trash / settings / version history / col-add /
@@ -389,6 +465,8 @@ export function onKey(e: KeyboardEvent): void {
     if (draftsMd && draftsMd.style.display === 'flex') { draftsMd.style.display = 'none'; return; }
     const setMd = document.getElementById('memola-settings-md');
     if (setMd?.classList.contains('on')) { setMd.classList.remove('on'); return; }
+    const scMd = document.getElementById('memola-shortcuts-md');
+    if (scMd) { scMd.remove(); return; }
     const verMd = document.getElementById('memola-versions-md');
     if (verMd && verMd.style.display === 'flex') { verMd.style.display = 'none'; return; }
     const colMd = document.getElementById('memola-col-md');

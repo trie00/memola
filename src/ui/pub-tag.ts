@@ -18,8 +18,13 @@ let _outsideHandler: ((e: MouseEvent) => void) | null = null;
 
 /** Reflect current page's publish state on the tag button.
  *  Hides the tag (and any open popover) when the active context isn't a
- *  publishable page. */
+ *  publishable page. Also re-syncs the scope tag — they're paired
+ *  top-bar indicators that always update together when the active page
+ *  changes. */
 export function syncPubTag(): void {
+  // Side-effect: keep the scope tag in sync. Lazy import avoids a cycle
+  // with scope-tag.ts (which doesn't import pub-tag.ts).
+  void import('./scope-tag').then((m) => m.syncScopeTag());
   const tag = document.getElementById('memola-pub-tag');
   if (!tag) return;
   const labelEl = tag.querySelector<HTMLElement>('.memola-pub-tag-label');

@@ -7,6 +7,13 @@ import {
   attachUnloadCleanup, PING_MS, type PresenceUser,
 } from '../api/presence';
 import { escapeHtml } from '../lib/html-escape';
+import { prefPresenceEnabled } from '../lib/prefs';
+
+/** Read the on/off pref. Default '1' (on) preserves prior behaviour. */
+function isPresenceEnabled(): boolean {
+  const v = prefPresenceEnabled.get();
+  return v !== '0';
+}
 
 let _timer: ReturnType<typeof setInterval> | null = null;
 let _currentPageId: string | null = null;
@@ -66,12 +73,19 @@ export async function setPresencePage(pageId: string | null): Promise<void> {
   if (_currentPageId === pageId) return;
 
   if (_currentPageId) {
-    // Best-effort leave the previous page's row
+    // Best-effort leave the previous page's row even when presence is now
+    // disabled — we want OUR row (from when it was enabled) to disappear
+    // for other viewers, not linger until STALE_MS expires.
     void leavePresence();
   }
   _currentPageId = pageId;
   if (_timer) { clearInterval(_timer); _timer = null; }
   if (!pageId) {
+    renderAvatars([]);
+    return;
+  }
+  // Pref off → don't write to SP, don't read avatars. Hide the strip.
+  if (!isPresenceEnabled()) {
     renderAvatars([]);
     return;
   }
@@ -94,8 +108,8 @@ export function attachPresence(): void {
       // Don't actively leave on hide — just stop pinging.
       // Other clients will see us go stale within STALE_MS.
       if (_timer) { clearInterval(_timer); _timer = null; }
-    } else if (!document.hidden && _currentPageId && !_timer) {
-      // Resume pings on visible
+    } else if (!document.hidden && _currentPageId && !_timer && isPresenceEnabled()) {
+      // Resume pings on visible (pref still on)
       void pingPresence();
       void refresh();
       _timer = setInterval(() => {
@@ -104,6 +118,17 @@ export function attachPresence(): void {
       }, PING_MS);
     }
   });
+}
+
+/** Tear down presence state. Called when the bookmarklet is pressed
+ *  again to "close" the app — without this, the OLD module's _timer
+ *  keeps pinging SP from the now-detached instance. We also synchronously
+ *  best-effort delete the presence row via sendBeacon so other users
+ *  don't see a phantom "viewing" entry until STALE_MS expires. */
+export function shutdownPresence(): void {
+  if (_timer) { clearInterval(_timer); _timer = null; }
+  _currentPageId = null;
+  void leavePresence();
 }
 
 /** Update presence whenever the active page changes. Hook this from

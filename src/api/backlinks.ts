@@ -110,21 +110,51 @@ export async function getBacklinksFor(
 }
 
 /** Pull a short context window around the first occurrence so the user
- *  can see WHY this page links back. Stripped of the wiki-link syntax
- *  itself for readability. */
+ *  can see WHY this page links back. Strips wiki-link syntax, raw HTML
+ *  tags, HTML comments (Memola uses them as embed markers like
+ *  `<!--linkdb …-->`), and common Markdown structural markers so the
+ *  preview reads like prose, not source. */
 function extractSnippet(body: string, re: RegExp): string {
   re.lastIndex = 0;
   const m = re.exec(body);
   if (!m) return '';
   const idx = m.index;
-  const start = Math.max(0, idx - 30);
-  const end = Math.min(body.length, idx + 50);
-  let snip = body.substring(start, end)
-    .replace(/\s+/g, ' ')
-    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
-    .replace(/\[\[([^\]]+)\]\]/g, '$1')
-    .trim();
+  // Pull a wider raw window before stripping — markup eats characters,
+  // and we want the final snippet to still have ~80 chars of real text.
+  const start = Math.max(0, idx - 80);
+  const end = Math.min(body.length, idx + 120);
+  let snip = body.substring(start, end);
+
+  // 1. Drop HTML comments first (often multi-line; would leak `<!--…`).
+  snip = snip.replace(/<!--[\s\S]*?-->/g, '');
+  // 2. Drop fenced/inline code DELIMITERS (keep the content).
+  snip = snip.replace(/`{1,3}/g, '');
+  // 3. Strip every HTML tag — `<br>`, `<div style="…">`, `</span>`, etc.
+  snip = snip.replace(/<\/?[a-zA-Z][^>]*>/g, ' ');
+  // 4. Wiki-links: keep the alias / page id only.
+  snip = snip.replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
+             .replace(/\[\[([^\]]+)\]\]/g, '$1');
+  // 5. Markdown links `[text](url)` → just `text`.
+  snip = snip.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+  // 6. Leading-of-line markers (heading hashes, list bullets, blockquote,
+  //    table pipes, definition-list colons, hr lines). These are noise
+  //    inside a one-line preview.
+  snip = snip.replace(/^\s*#{1,6}\s+/gm, '')        // ## heading
+             .replace(/^\s*[-*+]\s+/gm, '')          // - list
+             .replace(/^\s*\d+\.\s+/gm, '')          // 1. list
+             .replace(/^\s*>\s?/gm, '')              // > quote
+             .replace(/^\s*[:|]\s?/gm, '')           // : def-list / | table
+             .replace(/^\s*-{3,}\s*$/gm, '');        // ---
+  // 7. Inline emphasis markers (** __ ~~). Keep content.
+  snip = snip.replace(/\*{1,3}|_{1,3}|~{1,2}/g, '');
+  // 8. Collapse whitespace, trim.
+  snip = snip.replace(/\s+/g, ' ').trim();
+
+  // 9. Limit final length so a marker-rich source can't blow past the
+  //    one-line panel even after stripping.
+  if (snip.length > 100) snip = snip.substring(0, 100).trimEnd() + '…';
+
   if (start > 0) snip = '… ' + snip;
-  if (end < body.length) snip = snip + ' …';
+  if (end < body.length && !snip.endsWith('…')) snip = snip + ' …';
   return snip;
 }

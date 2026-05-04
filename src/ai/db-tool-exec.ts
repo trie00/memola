@@ -214,7 +214,8 @@ export async function handleAddDbField(input: {
   // If the user is currently viewing this DB, refresh its schema cache so the
   // new column shows up without reload.
   if (S.dbList === db.listTitle) {
-    S.dbFields = await getListFields(db.listTitle);
+    const { stripInternalDbFields } = await import('../api/db');
+    S.dbFields = stripInternalDbFields(await getListFields(db.listTitle));
     void import('../ui/views').then((m) => m.renderDbTable());
   }
   return ok({ db_id: input.db_id, name: input.name, type: input.type });

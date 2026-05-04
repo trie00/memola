@@ -123,13 +123,60 @@ export async function listPresence(pageId: string): Promise<PresenceUser[]> {
   return out;
 }
 
-/** Convenience: tear down on browser unload. Called by presence-ui. */
+/** Tear down on browser unload (tab close, browser quit, navigation away).
+ *
+ *  Two responsibilities:
+ *    1. **Warn the user** if there are unsaved edits. Without this, tab
+ *       close silently drops anything typed since the last autosave
+ *       (default 2 s window).
+ *    2. **Best-effort presence-row cleanup**. We use `keepalive: true`
+ *       so the request continues after the page unloads; SP custom
+ *       lists need `X-HTTP-Method: DELETE` to actually delete, which
+ *       `sendBeacon` can't send (POST/GET only). If digest expired or
+ *       the request fails, no big deal — STALE_MS (90 s) self-heals
+ *       on the SP side.
+ *
+ *  Note: a process-kill (force-quit, browser crash) bypasses both — no
+ *  JS runs at all. STALE_MS handles cleanup; the in-flight typing is
+ *  lost. By design (per the simplification request: no local-snapshot
+ *  crash backup). */
 export function attachUnloadCleanup(): void {
-  window.addEventListener('beforeunload', () => {
-    // Synchronous-ish best effort; can't await on unload
+  window.addEventListener('beforeunload', (e) => {
+    // 1. Warn about unsaved changes. Browsers ignore the message text
+    //    in modern Chrome/Firefox/Safari and show a generic dialog —
+    //    setting returnValue is what matters.
+    //    Lazy-import the state module to avoid a hard cycle.
+    void import('../state').then(({ S }) => {
+      if (S.dirty && S.currentType !== 'database') {
+        e.preventDefault();
+        // Older browsers used returnValue as the message; modern ones
+        // ignore the string but require it to be set to ANY value.
+        e.returnValue = '';
+      }
+    }).catch(() => undefined);
+
+    // 2. Try to delete the presence row before the tab dies.
+    //    `keepalive: true` lets the request continue after unload.
     if (_myRowId) {
       try {
+        // sendBeacon as a fallback ping (won't actually DELETE, but at
+        // least signals SP that we touched the row — most useful as a
+        // best-effort "I'm leaving" hint). Real cleanup happens via the
+        // keepalive fetch below.
         navigator.sendBeacon?.(spListUrl(PRESENCE_LIST, '/items(' + _myRowId + ')'));
+      } catch { /* ignore */ }
+      // Keepalive DELETE — best-effort. If digest is missing/expired
+      // this 401/403s silently and STALE_MS does the cleanup.
+      try {
+        fetch(spListUrl(PRESENCE_LIST, '/items(' + _myRowId + ')'), {
+          method: 'POST',
+          headers: {
+            'X-HTTP-Method': 'DELETE',
+            'IF-MATCH': '*',
+          },
+          credentials: 'include',
+          keepalive: true,
+        }).catch(() => undefined);
       } catch { /* ignore */ }
     }
   });

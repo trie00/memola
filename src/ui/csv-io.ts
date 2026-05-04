@@ -82,7 +82,8 @@ export function importCsv(): void {
         }
       }
       // Refresh fields to get InternalName mapping for the new columns
-      S.dbFields = await getListFields(S.dbList);
+      const { stripInternalDbFields } = await import('../api/db');
+      S.dbFields = stripInternalDbFields(await getListFields(S.dbList));
       const titleToInternal: Record<string, string> = {};
       S.dbFields.forEach((f) => { titleToInternal[f.Title] = f.InternalName; });
 

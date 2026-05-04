@@ -5,7 +5,7 @@ import { SITE } from '../config';
 import { g, getEd } from './dom';
 import { setLoad, setSave, setSavedAt, toast, autoR } from './ui-helpers';
 import { renderTree, ancs, renderBc } from './tree';
-import { apiLoadContent, apiLoadFileMeta } from '../api/pages';
+import { apiLoadContentMeta } from '../api/pages';
 import { escapeHtml } from '../lib/html-escape';
 import { startWatching, stopWatching } from './sync-watch';
 import { applyOutlineState } from './outline';
@@ -123,19 +123,33 @@ export async function doSelect(id: string): Promise<void> {
     setSavedAt(null);
     setLoad(true, 'ページを読み込み中...');
     try {
-      getEd().innerHTML = await apiLoadContent(id);
+      // Atomic Body + Modified + ETag in one SP GET. If we did two separate
+      // fetches, another user's write between them would leave us with
+      // stale-Body / fresh-ETag, and our next save would silently overwrite
+      // their edit (SP sees no conflict because our If-Match matches).
+      const meta = await apiLoadContentMeta(id);
+      getEd().innerHTML = meta ? meta.html : '';
       // Re-bind inline-table cell handlers (Tab nav, hover buttons) after load
       void import('./inline-table').then((m) => m.reattachInlineTables(getEd()));
       // Mark page-link chips whose target page is missing (broken-link visual)
       void import('./page-picker').then((m) => m.markBrokenPageLinks(getEd()));
       // Populate any inline linked-DB embeds with live data from SP
       void import('./linked-db').then((m) => m.renderAllLinkedDbs(getEd()));
-      // Track file meta so we can detect remote updates and conflicts on save
-      const fm = await apiLoadFileMeta(id);
-      if (fm) {
-        startWatching(id, fm.modified, fm.etag);
+      // Track file meta so we can detect remote updates and conflicts on save.
+      // The modified/etag we hand to startWatching are guaranteed to belong
+      // to the same SP version as the Body we just rendered.
+      if (meta) {
+        startWatching(id, meta.modified, meta.etag);
         // Show the page's actual last-saved time, not the wall clock.
-        setSavedAt(fm.modified);
+        setSavedAt(meta.modified);
+        // Compare the just-loaded etag against the one the user last saw
+        // for THIS page. If they differ, someone (a tab / another user)
+        // edited the page while it was closed — the user is now silently
+        // looking at new content. Surface a passive "前回の表示以降に
+        // 更新されました" banner so the change isn't invisible.
+        void import('./since-last-view-banner').then(
+          (m) => m.maybeShowSinceLastView(id, meta.modified, meta.etag),
+        );
       } else {
         stopWatching();
         setSavedAt(null);
@@ -272,8 +286,22 @@ export async function doSelectDb(id: string, page: Page): Promise<void> {
   try {
     // Bodies live in memola-pages; nothing to provision on the DB list itself.
     const results = await Promise.all([getListFields(meta.list), getListItems(meta.list)]);
-    S.dbFields = results[0];
-    S.dbItems  = results[1];
+    // Drop infrastructure columns (Trashed/TrashedBy) so they don't leak
+    // into the table view, row-props panel, filter picker, or column-add UI.
+    const { stripInternalDbFields } = await import('../api/db');
+    S.dbFields = stripInternalDbFields(results[0]);
+    // Filter out soft-deleted rows. Pre-Trashed-column DBs simply
+    // return rows without that field — `i.Trashed` is undefined → falsy
+    // → not filtered, so the legacy data path stays correct.
+    const allItems = results[1] as ListItem[];
+    const trashed: ListItem[] = [];
+    const active: ListItem[] = [];
+    for (const it of allItems) {
+      const t = it.Trashed;
+      if (typeof t === 'number' && t > 0) trashed.push(it);
+      else active.push(it);
+    }
+    S.dbItems  = active;
     S.dbList   = meta.list;
     S.dbFilters = [];
     S.dbSelected.clear();
@@ -281,6 +309,13 @@ export async function doSelectDb(id: string, page: Page): Promise<void> {
     S.dbSort   = { field: null, asc: true };
     void import('./filter-ui').then((m) => m.renderFilterChips());
     renderDbTable();
+    // Self-heal: if any rows were trashed in memola-pages but missed the
+    // DB-row write (= process kill mid-soft-delete), the Trashed flag is
+    // now visible only via memola-pages. Reconcile by re-applying the
+    // trash to the DB row. Fire-and-forget — failure is non-fatal.
+    void import('../api/db').then((m) => m.reconcileTrashedRows(meta.list!, allItems))
+      .catch(() => undefined);
+    void trashed;            // currently unused locally; reconcile path uses SP-side query
   } catch (e) { toast('DB読み込み失敗: ' + (e as Error).message, 'err'); }
   finally { setLoad(false); }
 }
@@ -667,7 +702,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
               recordCellChange(S.dbList, item.Id, f.InternalName, f.Title, oldRaw, '');
             })
             .catch((e: Error) => {
-              toast('更新失敗: ' + e.message, 'err');
+              toast(e.message, 'err');
               raw = oldRaw; item[f.InternalName] = oldRaw; renderText();
             });
         }
@@ -684,7 +719,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
               recordCellChange(S.dbList, item.Id, f.InternalName, f.Title, oldRaw, norm);
             })
             .catch((e: Error) => {
-              toast('更新失敗: ' + e.message, 'err');
+              toast(e.message, 'err');
               raw = oldRaw; item[f.InternalName] = oldRaw; renderText();
             });
         }
@@ -769,7 +804,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
             renderChip(nv);
             recordCellChange(S.dbList, item.Id, f.InternalName, f.Title, oldVal, nv);
           })
-          .catch((e: Error) => { toast('更新失敗: ' + e.message, 'err'); });
+          .catch((e: Error) => { toast(e.message, 'err'); });
       });
       sel.addEventListener('blur', () => { renderChip(sel.value); });
 
@@ -812,7 +847,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
             setSave('');
             recordCellChange(S.dbList, item.Id, f.InternalName, f.Title, oldVal, nv);
           })
-          .catch((e: Error) => { toast('更新失敗: ' + e.message, 'err'); span.textContent = orig; });
+          .catch((e: Error) => { toast(e.message, 'err'); span.textContent = orig; });
       });
       td.appendChild(span);
       // タイトル列にホバー時「↗」を表示し、行をページとして開く

@@ -6,9 +6,16 @@ import { attachAll, init } from './ui/wiring';
 import css from './styles/app.css';
 
 (function () {
-  // 多重起動防止
-  const existing = document.getElementById('memola-overlay');
+  // 多重起動防止 — 2 度目の押下は「閉じる」操作。
+  // 旧インスタンスのバックグラウンド処理 (sync 監視ポール / presence ping /
+  // autosave timer) は別 IIFE のクロージャに閉じ込められているので、ここで
+  // 明示的に呼ばないと止まらない。残っていると、次に開いたときに OLD 側の
+  // poller が NEW 側の保存 ETag を見て「別のタブ (あなた) が更新」を誤発火
+  // させる。OLD 側の init() がオーバーレイ要素にハンドラを貼ってある。
+  const existing = document.getElementById('memola-overlay') as
+    (HTMLElement & { __memolaShutdown?: () => void }) | null;
   if (existing) {
+    try { existing.__memolaShutdown?.(); } catch { /* best-effort */ }
     existing.remove();
     const es = document.getElementById('memola-style');
     if (es) es.remove();
