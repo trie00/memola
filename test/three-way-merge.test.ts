@@ -85,6 +85,48 @@ describe('threeWayMerge', () => {
     expect(r.merged).toContain('yours-tail');
     expect(r.merged).toContain('theirs-tail');
   });
+
+  // Markdown hard breaks (= shift+Enter in the editor → `  \n` after
+  // serialisation) should NOT introduce a logical-line boundary. The
+  // whole paragraph is one editable unit from the user's POV.
+  it('treats hard-break (shift+Enter) lines as a single logical line', () => {
+    // Both sides edit DIFFERENT paragraphs. Each paragraph contains a
+    // hard break inside (= "  \n"). The diff should see 2 logical
+    // lines per side, not 4, and auto-merge the two non-overlapping edits.
+    const base = 'p1-line1  \np1-line2\n\np2-line1  \np2-line2';
+    const yours = 'p1-EDITED  \np1-line2\n\np2-line1  \np2-line2';
+    const theirs = 'p1-line1  \np1-line2\n\np2-line1  \np2-EDITED';
+    const r = threeWayMerge(base, yours, theirs);
+    // Both edits should auto-merge — different paragraphs touched.
+    expect(r.conflicts).toHaveLength(0);
+    expect(r.merged).toContain('p1-EDITED');
+    expect(r.merged).toContain('p2-EDITED');
+  });
+
+  it('reports a conflict when both sides change WITHIN the same hard-break paragraph', () => {
+    // Both sides edit different halves of a single paragraph (one with
+    // a hard break inside). At the logical-line level, that's still
+    // ONE block edited by both sides → a real conflict.
+    const base = 'first  \nsecond';
+    const yours = 'FIRST-edit  \nsecond';
+    const theirs = 'first  \nSECOND-edit';
+    const r = threeWayMerge(base, yours, theirs);
+    expect(r.conflicts).toHaveLength(1);
+    // The hard break must be preserved in the conflict-hunk strings so
+    // the user sees the full block content for both sides.
+    expect(r.conflicts[0].yours[0]).toContain('FIRST-edit');
+    expect(r.conflicts[0].theirs[0]).toContain('SECOND-edit');
+  });
+
+  it('preserves the hard-break separator when re-joining merged output', () => {
+    const base = 'a  \nb\n\nc';        // p1 = "a  \nb", p2 = "c"
+    const yours = 'a  \nb\n\nC-EDIT';
+    const theirs = base;
+    const r = threeWayMerge(base, yours, theirs);
+    expect(r.conflicts).toHaveLength(0);
+    // The '  \n' inside the first paragraph must survive the merge.
+    expect(r.merged).toBe('a  \nb\n\nC-EDIT');
+  });
 });
 
 describe('resolveConflict', () => {

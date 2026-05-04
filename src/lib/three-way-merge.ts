@@ -47,15 +47,44 @@ const MARK_BASE = '||||||| 元の状態';
 const MARK_SEP = '=======';
 const MARK_THEIRS = '>>>>>>> SP 最新';
 
+/** Split markdown text into "logical lines" — i.e. units that the user
+ *  perceives as one editable line. Specifically, **shift+Enter** in the
+ *  Memola editor produces `<br>`, which `htmlToMd` serialises as a
+ *  markdown hard-break (`  \n` — two trailing spaces + newline). To
+ *  the user, that's still ONE block (a paragraph with a soft line
+ *  break inside), so the diff should treat it as one unit. We coalesce
+ *  any line that ends with two trailing spaces with its successor,
+ *  preserving the embedded `\n` so re-joining yields valid markdown. */
+function splitLogicalLines(text: string): string[] {
+  const raw = text.split('\n');
+  const out: string[] = [];
+  let buffer = '';
+  for (const line of raw) {
+    if (buffer) {
+      buffer += '\n' + line;
+      if (!line.endsWith('  ')) {
+        out.push(buffer);
+        buffer = '';
+      }
+    } else if (line.endsWith('  ')) {
+      buffer = line;
+    } else {
+      out.push(line);
+    }
+  }
+  if (buffer) out.push(buffer);
+  return out;
+}
+
 /** Public entry point. Returns merged text + structured conflict hunks. */
 export function threeWayMerge(
   baseText: string,
   yoursText: string,
   theirsText: string,
 ): MergeResult {
-  const base = baseText.split('\n');
-  const yours = yoursText.split('\n');
-  const theirs = theirsText.split('\n');
+  const base = splitLogicalLines(baseText);
+  const yours = splitLogicalLines(yoursText);
+  const theirs = splitLogicalLines(theirsText);
 
   // Compute LCS of (base, yours) and (base, theirs). The diff yields a
   // sequence of base-line dispositions: kept-by-yours, kept-by-theirs,
