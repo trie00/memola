@@ -1261,8 +1261,12 @@ export function attachEditor(): void {
     }
   });
 
-  // Notion-style: clicking on the empty area below the last block adds
-  // a new <p> at the end and focuses it.
+  // Notion-style: clicking on the empty area below the last block puts
+  // the caret at a place to start typing.
+  //   - If the last block is already empty (= textContent is whitespace
+  //     only), just focus it. Repeated clicks don't stack up multiple
+  //     empty paragraphs.
+  //   - Otherwise, append a fresh empty <p><br></p> and focus that.
   _ed.addEventListener('mousedown', (e) => {
     if (e.target !== _ed) return;        // clicked on a child block — let default handle
     const last = _ed.lastElementChild as HTMLElement | null;
@@ -1271,12 +1275,23 @@ export function attachEditor(): void {
       if (e.clientY < r.bottom) return;  // not below the last block
     }
     e.preventDefault();
+    const sel = window.getSelection();
+    // Already-empty trailing block → just focus it, no DOM change, no
+    // dirty flag (= clicking below to position cursor without typing
+    // shouldn't create a phantom "unsaved" state).
+    if (last && (last.textContent || '').trim() === '') {
+      const rng = document.createRange();
+      rng.setStart(last, 0); rng.collapse(true);
+      if (sel) { sel.removeAllRanges(); sel.addRange(rng); }
+      _ed.focus();
+      return;
+    }
+    // Otherwise append a new empty paragraph
     const p = document.createElement('p');
     p.appendChild(document.createElement('br'));
     _ed.appendChild(p);
     const rng = document.createRange();
     rng.setStart(p, 0); rng.collapse(true);
-    const sel = window.getSelection();
     if (sel) { sel.removeAllRanges(); sel.addRange(rng); }
     _ed.focus();
     S.dirty = true; setSave('未保存'); schedSave();
