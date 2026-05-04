@@ -116,6 +116,12 @@ export interface AppState {
      *  を離れるまで通知しない" button on the banner. Reset on
      *  visibilitychange (tab regains focus). */
     suppressBannerUntilFocus?: boolean;
+    /** Raw markdown body of the watched page at the moment we last
+     *  fetched it from SP (= our "common ancestor" for 3-way merge).
+     *  Refreshed on every page load AND on every successful save (= the
+     *  body we just wrote becomes the new base). When a save conflict
+     *  surfaces, this is the `base` input to threeWayMerge. */
+    baseBody?: string;
   };
   expanded: Set<string>;
   dirty: boolean;

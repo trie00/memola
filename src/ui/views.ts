@@ -140,6 +140,10 @@ export async function doSelect(id: string): Promise<void> {
       // to the same SP version as the Body we just rendered.
       if (meta) {
         startWatching(id, meta.modified, meta.etag);
+        // Capture the raw markdown body as our 3-way-merge base. The
+        // user's edits will diverge from this; on a save conflict we
+        // compare base ↔ yours ↔ SP-current to merge cleanly.
+        S.sync.baseBody = meta.body;
         // Show the page's actual last-saved time, not the wall clock.
         setSavedAt(meta.modified);
         // Compare the just-loaded etag against the one the user last saw
@@ -152,6 +156,7 @@ export async function doSelect(id: string): Promise<void> {
         );
       } else {
         stopWatching();
+        S.sync.baseBody = undefined;
         setSavedAt(null);
       }
       applyOutlineState();

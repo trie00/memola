@@ -36,6 +36,10 @@ interface MergeState {
   conflicts: ConflictHunk[];
   /** id → resolution decision so we can disable buttons after pick. */
   resolved: Map<number, 'yours' | 'theirs' | 'both' | 'manual'>;
+  /** When true, this MergeState was created from a live save-conflict
+   *  (NOT a saved draft), so successful apply must NOT delete a draft
+   *  (there is no real draft entry — `draft.key === '__direct__'`). */
+  isDirect?: boolean;
 }
 
 let _state: MergeState | null = null;
@@ -73,6 +77,64 @@ export async function openMergeModal(draft: Draft): Promise<void> {
     merged: result.merged,
     conflicts: result.conflicts,
     resolved: new Map(),
+  };
+  render();
+}
+
+/** Direct entry from a live save-conflict (= the user clicked
+ *  「統合する」 on the conflict modal). No draft is created — we go
+ *  straight from the user's in-editor markdown + the captured base
+ *  body to the merge UI. On apply, the merged content is saved to SP
+ *  and the editor is refreshed; no draft cleanup needed.
+ *
+ *  Falls back to 2-way diff when `baseBody` is empty (e.g. legacy data
+ *  predating S.sync.baseBody capture, or an edge case where the page
+ *  load happened before this code shipped). */
+export async function openMergeModalDirect(opts: {
+  pageId: string;
+  pageTitle: string;
+  title: string;
+  yoursBody: string;
+  baseBody: string;
+}): Promise<void> {
+  setLoad(true, '統合の準備中...');
+  let currentBody = '';
+  let currentEtag = '';
+  try {
+    currentBody = await apiLoadRawBody(opts.pageId);
+    const fm = await apiLoadFileMeta(opts.pageId);
+    currentEtag = fm?.etag || '';
+  } catch (e) {
+    setLoad(false);
+    toast('原本の読み込みに失敗: ' + (e as Error).message, 'err');
+    return;
+  }
+  setLoad(false);
+
+  const baseForMerge = opts.baseBody || currentBody;     // 2-way fallback
+  const result = threeWayMerge(baseForMerge, opts.yoursBody, currentBody);
+
+  // Build a synthetic Draft so the existing render logic works unchanged.
+  // The key='__direct__' marker is checked on apply to skip draft deletion.
+  const synthDraft: Draft = {
+    key: '__direct__',
+    pageId: opts.pageId,
+    pageTitle: opts.pageTitle,
+    title: opts.title,
+    body: opts.yoursBody,
+    savedAt: Date.now(),
+    reason: 'conflict-discarded',
+    baseBody: opts.baseBody,
+  };
+
+  _state = {
+    draft: synthDraft,
+    currentBody,
+    currentEtag,
+    merged: result.merged,
+    conflicts: result.conflicts,
+    resolved: new Map(),
+    isDirect: true,
   };
   render();
 }
@@ -265,8 +327,11 @@ async function applyMerge(): Promise<void> {
       toast('保存中にさらに競合が発生しました — 再度ページを開いて確認してください', 'err');
       return;
     }
-    // Clean up: drop the draft now that it's been integrated.
-    deleteDraft(_state.draft.key);
+    // Clean up: drop the saved draft now that it's been integrated.
+    // Skip in direct mode — the synthetic draft was never persisted.
+    if (!_state.isDirect) {
+      deleteDraft(_state.draft.key);
+    }
     // If currently viewing this page, refresh editor body from the new save.
     if (S.currentId === pageId) {
       const { doSelect } = await import('./views');

@@ -12,7 +12,7 @@
 
 import { escapeHtml } from '../lib/html-escape';
 
-export type ConflictChoice = 'overwrite' | 'reload' | 'cancel';
+export type ConflictChoice = 'overwrite' | 'merge' | 'reload' | 'cancel';
 
 export function showConflictModal(opts: {
   pageTitle: string;
@@ -31,11 +31,14 @@ export function showConflictModal(opts: {
           'どう扱いますか？' +
         '</div>' +
         '<div class="memola-conflict-btns">' +
-          '<button class="memola-btn p" data-choice="overwrite" title="自分の編集内容で SP の版を上書きします (相手の変更は SP の履歴から復元できます)">' +
-            '上書きで保存' +
+          '<button class="memola-btn p" data-choice="merge" title="自分の編集と相手の編集を 3-way マージで結合します。同じ箇所が両方変更されてた場合のみ選択を求められます">' +
+            '🔀 統合する <span class="memola-conflict-sub">(推奨 — 双方の編集を融合)</span>' +
+          '</button>' +
+          '<button class="memola-btn s" data-choice="overwrite" title="自分の編集内容で SP の版を上書きします (相手の変更は SP の履歴から復元できます)">' +
+            '上書きで保存 <span class="memola-conflict-sub">(相手の編集は破棄)</span>' +
           '</button>' +
           '<button class="memola-btn s" data-choice="reload" title="自分の編集内容を下書きに保存してから、相手の最新版を読み込みます">' +
-            '相手の版を表示<br><span class="memola-conflict-sub">(自分の編集は下書きに保存)</span>' +
+            '相手の版を表示 <span class="memola-conflict-sub">(自分の編集は下書きに保存)</span>' +
           '</button>' +
           '<button class="memola-btn ghost" data-choice="cancel" title="ダイアログを閉じます。あとで判断できます">' +
             'このままにする' +

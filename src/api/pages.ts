@@ -267,16 +267,21 @@ export async function apiLoadFileMeta(id: string): Promise<{ modified: string; e
  *  the next save would then pass `If-Match: <fresh ETag>` and silently
  *  overwrite the foreign edit because SP sees no conflict.
  *
+ *  Returns the raw markdown body in `body` so callers can capture it as
+ *  the `base` input for 3-way merge on later conflicts.
+ *
  *  Returns null if the row doesn't exist. */
 export async function apiLoadContentMeta(
   id: string,
-): Promise<{ html: string; modified: string; etag: string } | null> {
+): Promise<{ html: string; body: string; modified: string; etag: string } | null> {
   const itemId = parseInt(id, 10);
   if (!itemId) return null;
   const r = await fetchOneRow(itemId, 'Body,Modified');
   if (!r) return null;
+  const md = r.row.Body || '';
   return {
-    html: mdToHtml(r.row.Body || ''),
+    html: mdToHtml(md),
+    body: md,
     modified: r.modified,
     etag: r.etag,
   };
@@ -460,6 +465,13 @@ async function saveBodyInternal(
   // ETag tracking + watermark refresh in one place.
   await updatePageRow(itemId, fields);
   const fresh = await fetchOneRow(itemId, 'Modified');
+  // The body we just wrote becomes the new common ancestor for any
+  // future conflict on this page. Without this, subsequent saves
+  // would diff against the body that was on SP when we OPENED the
+  // page — wildly stale after even one edit cycle.
+  if (S.sync.pageId === String(itemId)) {
+    S.sync.baseBody = bodyMd;
+  }
   // Body changed — drop the backlinks cache so the next "リンク元" panel
   // render reflects newly-added / removed `[[..]]` references.
   invalidateBacklinkCache();

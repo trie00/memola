@@ -114,6 +114,24 @@ export async function doSave(): Promise<void> {
       const pageTitle = page?.Title || title || '無題';
       const { showConflictModal } = await import('./conflict-modal');
       const choice = await showConflictModal({ pageTitle });
+      if (choice === 'merge') {
+        // Direct route to the 3-way merge UI — no draft detour. Pass
+        // the captured base body (from S.sync.baseBody, populated on
+        // page load) as the common ancestor; the merge modal fetches
+        // the current SP body itself for the "theirs" side and writes
+        // back the resolved content using its own If-Match guard.
+        const md = (await import('../lib/markdown')).htmlToMd(html);
+        const { openMergeModalDirect } = await import('./merge-modal');
+        await openMergeModalDirect({
+          pageId: savedId,
+          pageTitle,
+          title,
+          yoursBody: md,
+          baseBody: S.sync.baseBody || '',
+        });
+        if (S.currentId === savedId) setSave('未保存');
+        return;
+      }
       if (choice === 'overwrite') {
         // Force overwrite (no If-Match) — relinquish remote changes,
         // they live on in SP version history if recovery is needed.
