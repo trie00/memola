@@ -3249,6 +3249,128 @@
   display: flex; justify-content: flex-end; gap: 10px;
 }
 
+/* ── 3-way merge modal ─────────────────────────────────── */
+#memola-overlay #memola-merge-md {
+  position: fixed; inset: 0; background: rgba(15, 15, 15, .35);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2147483647; backdrop-filter: blur(2px);
+  padding: 16px; font-family: var(--font-ui);
+}
+#memola-overlay .memola-merge-box {
+  background: var(--paper); border-radius: var(--r-3); box-shadow: var(--sh-modal);
+  width: 100%; max-width: 1200px; max-height: 92vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  color: var(--ink);
+}
+#memola-overlay .memola-merge-header {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 14px 18px; border-bottom: 1px solid var(--paper-3);
+}
+#memola-overlay .memola-merge-title { font-size: var(--fs-md); font-weight: 600; flex: 0 0 auto; }
+#memola-overlay .memola-merge-status {
+  flex: 1; display: flex; flex-direction: column; gap: 2px;
+  font-size: var(--fs-sm);
+}
+#memola-overlay .memola-merge-meta { color: var(--ink-3); font-size: var(--fs-xs); }
+#memola-overlay .memola-merge-ok { color: #2f6f5e; font-weight: 500; }
+#memola-overlay .memola-merge-warn { color: #c47f1c; font-weight: 500; }
+#memola-overlay .memola-merge-close {
+  background: transparent; border: none; cursor: pointer;
+  padding: 2px 8px; font-size: 18px; color: var(--ink-3);
+  border-radius: 4px; line-height: 1;
+}
+#memola-overlay .memola-merge-close:hover { background: var(--paper-2); color: var(--ink); }
+#memola-overlay .memola-merge-body {
+  flex: 1; display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(360px, 1.4fr);
+  gap: 0; overflow: hidden; min-height: 0;
+}
+#memola-overlay .memola-merge-conflicts {
+  overflow-y: auto; padding: 12px 14px;
+  border-right: 1px solid var(--paper-3);
+  background: var(--paper-2);
+}
+#memola-overlay .memola-merge-empty {
+  padding: 24px 16px; text-align: center; color: var(--ink-3);
+  font-size: var(--fs-sm); line-height: 1.6;
+}
+#memola-overlay .memola-merge-conflict {
+  margin-bottom: 14px; padding: 10px 12px;
+  background: var(--paper); border: 1px solid var(--paper-3);
+  border-left: 3px solid #c47f1c;
+  border-radius: var(--r-2);
+}
+#memola-overlay .memola-merge-conflict.resolved {
+  border-left-color: #2f6f5e; opacity: 0.75;
+}
+#memola-overlay .memola-merge-conflict-hd {
+  font-size: var(--fs-sm); font-weight: 600; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 8px;
+}
+#memola-overlay .memola-merge-decided {
+  font-size: var(--fs-xs); font-weight: 500;
+  color: #2f6f5e; background: rgba(47, 111, 94, 0.10);
+  padding: 1px 6px; border-radius: 3px;
+}
+#memola-overlay .memola-merge-side { margin-bottom: 6px; }
+#memola-overlay .memola-merge-side-hd {
+  font-size: var(--fs-xs); color: var(--ink-3); font-weight: 500;
+  margin-bottom: 2px;
+}
+#memola-overlay .memola-merge-side pre {
+  margin: 0; padding: 6px 8px; border-radius: 3px;
+  font: 12px var(--font-mono, monospace); white-space: pre-wrap;
+  word-break: break-word; line-height: 1.4;
+}
+#memola-overlay .memola-merge-yours pre { background: rgba(47, 111, 94, 0.08); }
+#memola-overlay .memola-merge-theirs pre { background: rgba(196, 127, 28, 0.08); }
+#memola-overlay .memola-merge-base { margin-top: 6px; }
+#memola-overlay .memola-merge-base summary {
+  font-size: var(--fs-xs); color: var(--ink-3); cursor: pointer;
+}
+#memola-overlay .memola-merge-base pre {
+  margin: 4px 0 0; padding: 6px 8px; border-radius: 3px;
+  background: var(--paper-2); font: 12px var(--font-mono, monospace);
+  white-space: pre-wrap; word-break: break-word; line-height: 1.4;
+  color: var(--ink-3);
+}
+#memola-overlay .memola-merge-buttons {
+  display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap;
+}
+#memola-overlay .memola-merge-buttons button {
+  flex: 1; min-width: 90px; padding: 4px 10px;
+  font-size: var(--fs-xs);
+}
+#memola-overlay .memola-merge-editor {
+  display: flex; flex-direction: column; min-height: 0;
+}
+#memola-overlay .memola-merge-editor-label {
+  font-size: var(--fs-xs); color: var(--ink-3);
+  padding: 10px 14px 6px;
+}
+#memola-overlay .memola-merge-editor textarea {
+  flex: 1; margin: 0 14px 14px;
+  border: 1px solid var(--paper-3); border-radius: var(--r-2);
+  padding: 10px 12px; font: 13px var(--font-mono, monospace);
+  resize: none; outline: none;
+  background: var(--paper); color: var(--ink);
+  line-height: 1.5;
+}
+#memola-overlay .memola-merge-editor textarea:focus {
+  border-color: var(--accent);
+}
+#memola-overlay .memola-merge-foot {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 18px; border-top: 1px solid var(--paper-3);
+}
+#memola-overlay .memola-merge-help {
+  flex: 1; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.4;
+}
+#memola-overlay .memola-merge-foot button { min-width: 110px; }
+#memola-overlay .memola-merge-foot button[disabled] {
+  opacity: 0.5; cursor: not-allowed;
+}
+
 /* ── Keyboard shortcut cheatsheet modal ────────────────── */
 #memola-overlay #memola-shortcuts-md {
   position: fixed; inset: 0; background: rgba(15, 15, 15, .35);

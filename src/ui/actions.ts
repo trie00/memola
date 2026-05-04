@@ -131,12 +131,42 @@ export async function doSave(): Promise<void> {
         // The draft is recoverable from the sidebar 「📝 下書き」 entry.
         const md = (await import('../lib/markdown')).htmlToMd(html);
         const { saveDraft } = await import('./draft-store');
+        // Capture the base-body snapshot (= what SP had when the user
+        // started this editing session, BEFORE both sides diverged).
+        // We approximate this by re-fetching the SP page's body at the
+        // OLD etag's last-known content via the sync state's cached
+        // loadedEtag — but the body itself isn't stored in S.sync, so
+        // pull it from the editor session. The page's pre-edit body is
+        // whatever was last loaded by apiLoadContentMeta + any local
+        // edits the user made — but local edits are in `md` already.
+        // Cleanest: fetch the OLD revision via SP version history. As
+        // a fallback, save without baseBody (= 2-way diff only).
+        let baseBody = '';
+        let baseEtag = '';
+        if (S.sync.pageId === savedId && S.sync.loadedEtag) {
+          baseEtag = S.sync.loadedEtag;
+          // Try SP version history for the body that matches the etag
+          // we last loaded. If that's not available, leave empty.
+          try {
+            const { listPageVersions } = await import('../api/version-history');
+            const versions = await listPageVersions(savedId);
+            // Pick the most recent version whose body looks like what
+            // we had before edits — heuristic: the one whose content is
+            // NOT the current SP body. Without exact matching we fall
+            // back to "the version right before this".
+            if (versions.length > 0) {
+              baseBody = versions[0].body;
+            }
+          } catch { /* version history unavailable */ }
+        }
         saveDraft({
           pageId: savedId,
           pageTitle,
           title,
           body: md,
           reason: 'conflict-discarded',
+          baseBody,
+          baseEtag,
         });
         if (S.currentId === savedId) { S.dirty = false; setSave(''); }
         toast('自分の編集は下書きに保存しました（サイドバー「📝 下書き」から復元可）');

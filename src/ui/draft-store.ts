@@ -30,6 +30,17 @@ export interface Draft {
   body: string;
   savedAt: number;
   reason: DraftReason;
+  /** SP body at the moment the user STARTED their edit session — i.e.
+   *  the common ancestor of [`body` (= user's edits)] and [the current
+   *  SP page (= remote edits)]. Persisting it enables 3-way merge:
+   *  hunks where only one side changed auto-merge, only true conflicts
+   *  surface for the user. May be undefined for legacy drafts saved
+   *  before this column existed. */
+  baseBody?: string;
+  /** Etag of the page at the moment the draft snapshot was taken — used
+   *  to detect when the SP page has advanced since the draft was made,
+   *  i.e. whether a 3-way merge is necessary at all. */
+  baseEtag?: string;
 }
 
 function readJSON<T>(key: string): T | null {
@@ -95,17 +106,25 @@ export function saveDraft(input: {
   title: string;
   body: string;
   reason?: DraftReason;
+  /** Optional: base-body snapshot for 3-way merge. Strongly recommended
+   *  for `conflict-discarded` drafts — without it, "原本に適用" can
+   *  only do a 2-way diff which forces the user to manually
+   *  reconcile every line that changed on either side. */
+  baseBody?: string;
+  baseEtag?: string;
 }): string {
   reapStale();
   const ts = Date.now();
   const key = KEY_PREFIX + input.pageId + '.' + ts;
-  const rec = {
+  const rec: Omit<Draft, 'key'> = {
     pageId: input.pageId,
     pageTitle: input.pageTitle,
     title: input.title,
     body: input.body,
     savedAt: ts,
     reason: input.reason || 'conflict-discarded',
+    baseBody: input.baseBody,
+    baseEtag: input.baseEtag,
   };
   writeJSON(key, rec);
   // Enforce per-page cap (keep newest)

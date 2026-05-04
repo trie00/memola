@@ -192,7 +192,12 @@ function renderModalBody(el: HTMLElement): void {
           '</div>' +
           '<div class="memola-drafts-itemprev">' + escapeHtml(preview || '(本文なし)') + '</div>' +
           '<div class="memola-drafts-itemactions">' +
-            (grp.exists ? '<button class="memola-btn p" data-act="restore">復元</button>' : '') +
+            // Merge UI is only meaningful when the origin page still exists.
+            // Without it, "統合" is the recommended path — the user gets a
+            // 3-way diff with auto-merge instead of having to manually
+            // copy-paste between two windows.
+            (grp.exists ? '<button class="memola-btn p" data-act="merge">統合 (3-way)</button>' : '') +
+            (grp.exists ? '<button class="memola-btn s" data-act="restore">そのまま復元</button>' : '') +
             '<button class="memola-btn s" data-act="preview">プレビュー</button>' +
             '<button class="memola-btn ghost" data-act="delete">削除</button>' +
           '</div>' +
@@ -271,6 +276,12 @@ function renderModalBody(el: HTMLElement): void {
         toast('下書きを削除しました');
       } else if (act === 'restore') {
         await restoreDraft(draft);
+      } else if (act === 'merge') {
+        // 3-way merge UI — close drafts modal so the merge modal has
+        // the user's full attention.
+        closeDraftsModal();
+        const { openMergeModal } = await import('./merge-modal');
+        await openMergeModal(draft);
       }
     });
   });
