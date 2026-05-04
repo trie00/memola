@@ -171,3 +171,40 @@ describe('hasUnresolvedConflicts', () => {
     expect(hasUnresolvedConflicts('a\nb\nc')).toBe(false);
   });
 });
+
+// Regression: the merge modal must allow the user to flip their decision
+// freely. Earlier the modal applied resolveConflict on top of the
+// already-resolved text, which silently no-op'd because the conflict
+// markers were gone after the first click. Re-resolving from the
+// IMMUTABLE rawMerged via map replay (the new approach) handles the flip
+// correctly.
+describe('flipping a resolution by replaying from rawMerged', () => {
+  const base = 'a\nb\nc';
+  const yours = 'a\nb-yours\nc';
+  const theirs = 'a\nb-theirs\nc';
+  const r = threeWayMerge(base, yours, theirs);
+  const raw = r.merged;
+
+  function applyResolutions(map: Map<number, 'yours' | 'theirs' | 'both'>): string {
+    let m = raw;
+    for (const [id, choice] of map) m = resolveConflict(m, id, choice);
+    return m;
+  }
+
+  it('first picks yours', () => {
+    const m = applyResolutions(new Map([[0, 'yours']]));
+    expect(m).toBe('a\nb-yours\nc');
+  });
+
+  it('flipping the same conflict to theirs yields theirs', () => {
+    // Earlier bug: applying theirs to the already-yours-resolved text
+    // would silently keep yours. Replaying from raw fixes this.
+    const m = applyResolutions(new Map([[0, 'theirs']]));
+    expect(m).toBe('a\nb-theirs\nc');
+  });
+
+  it('flipping back to both yields concatenation', () => {
+    const m = applyResolutions(new Map([[0, 'both']]));
+    expect(m).toBe('a\nb-yours\nb-theirs\nc');
+  });
+});

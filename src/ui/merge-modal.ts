@@ -32,15 +32,37 @@ interface MergeState {
   currentBody: string;
   /** Current SP etag — used for optimistic concurrency on final save. */
   currentEtag: string;
-  /** The merged text (with conflict markers if any unresolved). */
+  /** Original merge output with EVERY conflict marker intact —
+   *  immutable for the lifetime of the modal. Each render recomputes
+   *  the displayed `merged` by replaying `resolved` on this raw form,
+   *  so the user can flip a decision (yours → theirs → both) freely
+   *  without losing the original marker block. */
+  rawMerged: string;
+  /** Currently-displayed merged text (= rawMerged with `resolved`
+   *  applied). Lazily recomputed on every state change. */
   merged: string;
   conflicts: ConflictHunk[];
-  /** id → resolution decision so we can disable buttons after pick. */
-  resolved: Map<number, 'yours' | 'theirs' | 'both' | 'manual'>;
+  /** id → resolution decision. Drives both card-badge display AND
+   *  the recomputation of `merged` from `rawMerged`. */
+  resolved: Map<number, 'yours' | 'theirs' | 'both'>;
   /** When true, this MergeState was created from a live save-conflict
    *  (NOT a saved draft), so successful apply must NOT delete a draft
    *  (there is no real draft entry — `draft.key === '__direct__'`). */
   isDirect?: boolean;
+}
+
+/** Replay every recorded resolution on top of the raw merge output.
+ *  Order doesn't matter because each conflict id has unique markers
+ *  and `resolveConflict` only touches the matching block. */
+function computeMerged(
+  rawMerged: string,
+  resolved: Map<number, 'yours' | 'theirs' | 'both'>,
+): string {
+  let m = rawMerged;
+  for (const [id, choice] of resolved) {
+    m = resolveConflict(m, id, choice);
+  }
+  return m;
 }
 
 let _state: MergeState | null = null;
@@ -75,6 +97,7 @@ export async function openMergeModal(draft: Draft): Promise<void> {
     draft,
     currentBody,
     currentEtag,
+    rawMerged: result.merged,
     merged: result.merged,
     conflicts: result.conflicts,
     resolved: new Map(),
@@ -133,6 +156,7 @@ export async function openMergeModalDirect(opts: {
     draft: synthDraft,
     currentBody,
     currentEtag,
+    rawMerged: result.merged,
     merged: result.merged,
     conflicts: result.conflicts,
     resolved: new Map(),
@@ -200,15 +224,22 @@ function render(): void {
   `;
   overlay.appendChild(md);
 
-  // Wire conflict buttons
+  // Wire conflict buttons. Each click updates the resolved map and
+  // recomputes merged from the IMMUTABLE rawMerged — so flipping a
+  // decision (yours → theirs, etc.) works correctly. The previous
+  // approach of `resolveConflict(_state.merged, ...)` lost the conflict
+  // markers on first apply, so subsequent clicks couldn't find them
+  // and silently kept the original choice's content (= the bug the
+  // user was hitting where the displayed "✓ 採用" badge didn't match
+  // the actual saved content).
   md.querySelectorAll<HTMLButtonElement>('[data-conflict-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = parseInt(btn.dataset.conflictId || '0', 10);
       const choice = btn.dataset.choice as 'yours' | 'theirs' | 'both';
       if (!_state) return;
-      _state.merged = resolveConflict(_state.merged, id, choice);
       _state.resolved.set(id, choice);
-      render();        // re-render so the textarea + status update
+      _state.merged = computeMerged(_state.rawMerged, _state.resolved);
+      render();
     });
   });
 
@@ -279,6 +310,12 @@ function renderConflictsHtml(): string {
     const decidedLabel = decided
       ? `<span class="memola-merge-decided">✓ ${decided === 'yours' ? 'あなた' : decided === 'theirs' ? 'SP' : '両方'} を採用</span>`
       : '';
+    // Highlight the active choice's button so the user can see at a
+    // glance which version is currently in the merged result, AND can
+    // change their mind by clicking a different button (= the recompute
+    // path picks up the new choice cleanly).
+    const cls2 = (k: 'yours' | 'theirs' | 'both'): string =>
+      decided === k ? 'memola-btn p' : 'memola-btn s';
     return `
       <div class="${cls}" data-cid="${c.id}">
         <div class="memola-merge-conflict-hd">
@@ -297,9 +334,9 @@ function renderConflictsHtml(): string {
           <pre>${basePreview}</pre>
         </details>
         <div class="memola-merge-buttons">
-          <button class="memola-btn s" data-conflict-id="${c.id}" data-choice="yours">← あなたを採用</button>
-          <button class="memola-btn s" data-conflict-id="${c.id}" data-choice="theirs">SP を採用 →</button>
-          <button class="memola-btn s" data-conflict-id="${c.id}" data-choice="both">両方残す</button>
+          <button class="${cls2('yours')}" data-conflict-id="${c.id}" data-choice="yours">← あなたを採用</button>
+          <button class="${cls2('theirs')}" data-conflict-id="${c.id}" data-choice="theirs">SP を採用 →</button>
+          <button class="${cls2('both')}" data-conflict-id="${c.id}" data-choice="both">両方残す</button>
         </div>
       </div>
     `;
