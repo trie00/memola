@@ -122,6 +122,11 @@ export interface AppState {
      *  body we just wrote becomes the new base). When a save conflict
      *  surfaces, this is the `base` input to threeWayMerge. */
     baseBody?: string;
+    /** True while the user is in the merge UI resolving a conflict.
+     *  doSave / schedSave bail when this is set so the autosave timer
+     *  doesn't keep re-firing the conflict modal on top of the merge
+     *  modal. Reset when the merge modal closes (any path). */
+    mergeInProgress?: boolean;
   };
   expanded: Set<string>;
   dirty: boolean;

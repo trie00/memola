@@ -84,6 +84,12 @@ export async function doPurge(id: string): Promise<void> {
 }
 
 export async function doSave(): Promise<void> {
+  // While the user is resolving a save-conflict in the merge UI, the
+  // autosave timer must NOT fire — otherwise it'd re-detect the same
+  // conflict and pop a second conflict modal on top of the merge
+  // modal. The merge modal owns the save flow; it'll write to SP via
+  // its own apiSavePageMd call when the user clicks「保存」.
+  if (S.sync.mergeInProgress) return;
   // DB行ページ編集中は専用 saveCurrentRow へ委譲
   if (S.currentRow && S.dirty && !S.saving) {
     S.saving = true;
@@ -233,6 +239,8 @@ export async function doSave(): Promise<void> {
 
 export function schedSave(): void {
   clearTimeout(_svT);
+  // Don't queue a save while the merge UI owns this page's save flow.
+  if (S.sync.mergeInProgress) return;
   // Pref overrides the SAVE_MS default. '0' = "manual save only" — don't
   // schedule anything; the user will hit Ctrl/Cmd+S when they want to save.
   // The "未保存" indicator stays visible so they don't lose track.

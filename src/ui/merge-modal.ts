@@ -21,6 +21,7 @@ import { apiLoadRawBody, apiSavePageMd, apiLoadFileMeta } from '../api/pages';
 import type { Draft } from './draft-store';
 import { deleteDraft } from './draft-store';
 import { escapeHtml } from '../lib/html-escape';
+import { mdToHtml } from '../lib/markdown';
 import { toast, setLoad } from './ui-helpers';
 
 const MODAL_ID = 'memola-merge-md';
@@ -78,6 +79,7 @@ export async function openMergeModal(draft: Draft): Promise<void> {
     conflicts: result.conflicts,
     resolved: new Map(),
   };
+  S.sync.mergeInProgress = true;
   render();
 }
 
@@ -136,6 +138,7 @@ export async function openMergeModalDirect(opts: {
     resolved: new Map(),
     isDirect: true,
   };
+  S.sync.mergeInProgress = true;
   render();
 }
 
@@ -172,14 +175,21 @@ function render(): void {
         <div class="memola-merge-conflicts">
           ${renderConflictsHtml()}
         </div>
-        <div class="memola-merge-editor">
+        <div class="memola-merge-preview">
           <div class="memola-merge-editor-label">統合後のページ内容 (= 保存される内容):</div>
-          <textarea id="memola-merge-textarea" spellcheck="false">${escapeHtml(_state.merged)}</textarea>
+          <div class="memola-merge-preview-content">
+            ${remaining > 0
+              ? '<div class="memola-merge-preview-pending">' +
+                '⚠ 残り ' + remaining + ' 件の競合を左ペインで解決すると、ここに最終的な内容が表示されます。' +
+                '</div>'
+              : mdToHtml(_state.merged)
+            }
+          </div>
         </div>
       </div>
       <div class="memola-merge-foot">
         <div class="memola-merge-help">
-          競合は自動でマージできなかった箇所のみ表示。各ボタンで決着、または右側で手動編集も可。
+          競合は自動でマージできなかった箇所のみ表示。各ボタンで採用する版を選んでください。
         </div>
         <button class="memola-btn s" data-merge-act="cancel">キャンセル</button>
         <button class="memola-btn p" data-merge-act="apply" ${remaining > 0 ? 'disabled' : ''}>
@@ -201,20 +211,6 @@ function render(): void {
       render();        // re-render so the textarea + status update
     });
   });
-
-  // Free-edit textarea — user can fine-tune merged text by hand.
-  // Update _state.merged on every keystroke so saves capture latest.
-  const ta = md.querySelector<HTMLTextAreaElement>('#memola-merge-textarea');
-  if (ta) {
-    ta.addEventListener('input', () => {
-      if (_state) _state.merged = ta.value;
-      // Don't full-render on each keystroke — just update the apply
-      // button's disabled state when conflicts get resolved by typing.
-      const stillUnresolved = hasUnresolvedConflicts(ta.value);
-      const applyBtn = md.querySelector<HTMLButtonElement>('[data-merge-act="apply"]');
-      if (applyBtn) applyBtn.disabled = stillUnresolved;
-    });
-  }
 
   // Footer buttons
   md.querySelectorAll<HTMLElement>('[data-merge-act]').forEach((el) => {
@@ -246,6 +242,9 @@ export function closeMergeModal(): void {
   const md = document.getElementById(MODAL_ID);
   if (md) md.remove();
   document.removeEventListener('keydown', escHandler, true);
+  // Always clear the autosave-suppression flag — applies whether the
+  // close came from a successful apply, cancel, ESC, or backdrop click.
+  S.sync.mergeInProgress = false;
 }
 
 function countUnresolved(): number {

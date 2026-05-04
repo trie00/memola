@@ -3341,23 +3341,28 @@
   flex: 1; min-width: 90px; padding: 4px 10px;
   font-size: var(--fs-xs);
 }
-#memola-overlay .memola-merge-editor {
+#memola-overlay .memola-merge-preview {
   display: flex; flex-direction: column; min-height: 0;
 }
 #memola-overlay .memola-merge-editor-label {
   font-size: var(--fs-xs); color: var(--ink-3);
   padding: 10px 14px 6px;
 }
-#memola-overlay .memola-merge-editor textarea {
+#memola-overlay .memola-merge-preview-content {
   flex: 1; margin: 0 14px 14px;
   border: 1px solid var(--paper-3); border-radius: var(--r-2);
-  padding: 10px 12px; font: 13px var(--font-mono, monospace);
-  resize: none; outline: none;
+  padding: 14px 16px;
   background: var(--paper); color: var(--ink);
-  line-height: 1.5;
+  line-height: 1.65; font-size: var(--fs-sm);
+  overflow-y: auto;
 }
-#memola-overlay .memola-merge-editor textarea:focus {
-  border-color: var(--accent);
+#memola-overlay .memola-merge-preview-content > *:first-child { margin-top: 0; }
+#memola-overlay .memola-merge-preview-content > *:last-child { margin-bottom: 0; }
+#memola-overlay .memola-merge-preview-pending {
+  color: var(--ink-3); font-style: italic; padding: 12px;
+  background: rgba(196, 127, 28, 0.08);
+  border-left: 3px solid rgba(196, 127, 28, 0.5);
+  border-radius: 3px;
 }
 #memola-overlay .memola-merge-foot {
   display: flex; align-items: center; gap: 12px;
