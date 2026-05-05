@@ -2,12 +2,12 @@
 // All operate on S.dbItems / S.dbFields and reuse the existing data flow.
 
 import { S } from '../state';
-import type { ListItem, ListField } from '../state';
+import type { ListItem } from '../state';
 import { g } from './dom';
 import {
   doSelect, mkOpenRowBtn, reorderRows, isManualRowOrderActive,
   attachCardSelectionHandlers, attachCardDragHandlers,
-  hideCardDropLine, getSortedFilteredItems,
+  getSortedFilteredItems,
 } from './views';
 import { apiUpdateDbRow } from '../api/db';
 import { recordCellChange } from './db-history';
@@ -19,10 +19,6 @@ import { prefCalDateField } from '../lib/prefs';
 function getProp(item: ListItem, name: string): string {
   const v = item[name];
   return v == null ? '' : String(v);
-}
-
-function findField(kind: number): ListField | undefined {
-  return S.dbFields.find((f) => f.FieldTypeKind === kind);
 }
 
 /** Wire a vertical/horizontal drag-reorder onto a card/row element.

@@ -341,7 +341,19 @@ export function resolveConflict(
   if (Array.isArray(chosen)) pick = chosen;
   else if (chosen === 'yours') pick = yoursLines;
   else if (chosen === 'theirs') pick = theirsLines;
-  else /* both */ pick = [...yoursLines, ...theirsLines];
+  else /* both */ {
+    // Insert a blank line between yours and theirs so that markdown
+    // treats them as two separate paragraphs. Without this, the last
+    // line of yours and the first line of theirs would fuse into one
+    // paragraph on render — and any inline-`<br>` artefact in either
+    // half would surface as a literal `<br>` text node (because the
+    // paragraph builder folds it inline rather than treating the empty-
+    // paragraph marker as a break). The blank separator is dropped if
+    // either side is empty (= deletion conflict on that side).
+    if (yoursLines.length === 0) pick = theirsLines;
+    else if (theirsLines.length === 0) pick = yoursLines;
+    else pick = [...yoursLines, '', ...theirsLines];
+  }
   const before = lines.slice(0, sIdx);
   const after = lines.slice(eIdx + 1);
   return [...before, ...pick, ...after].join('\n');

@@ -73,6 +73,251 @@ export async function deleteList(listTitle: string): Promise<void> {
   });
 }
 
+/** Look up the SP role definition id for a role.
+ *
+ *  Resolution order:
+ *    1. By `RoleTypeKind` (language-independent SP enum). This is the
+ *       canonical / stable way: 5 = Administrator (= Full Control),
+ *       4 = Editor (= Edit), 3 = Contributor (= Contribute),
+ *       2 = Reader (= Read). The display Name is localized per
+ *       tenant ("フル コントロール" on Japanese SP), so name matching
+ *       fails on non-English tenants — we hit RoleTypeKind first.
+ *    2. By Name across a list of candidate strings (= per-language
+ *       aliases). Tenants with custom roles whose RoleTypeKind is 0
+ *       (= None) fall through to this branch.
+ *
+ *  Cached per-session by the resolved role id. */
+const _roleDefCache: Record<string, number> = {};
+
+/** Mapping from canonical role token → SP `RoleTypeKind` enum value
+ *  + per-language candidate display names. The `kind` field is what
+ *  makes this work on Japanese / French / etc. tenants. */
+const ROLE_SPEC: Record<string, { kind: number; names: string[] }> = {
+  'Full Control': { kind: 5, names: ['Full Control', 'フル コントロール', 'フルコントロール'] },
+  'Edit':         { kind: 4, names: ['Edit', '編集'] },
+  'Contribute':   { kind: 3, names: ['Contribute', '投稿', 'コントリビュート'] },
+  'Read':         { kind: 2, names: ['Read', '読み取り', '読取り'] },
+};
+
+export async function resolveRoleDefId(name: string): Promise<number> {
+  if (_roleDefCache[name]) return _roleDefCache[name];
+  const spec = ROLE_SPEC[name];
+
+  // Path 1: RoleTypeKind lookup (language-independent).
+  if (spec) {
+    const url = SITE + "/_api/web/roledefinitions?$select=Id,Name,RoleTypeKind&$filter=" +
+      encodeURIComponent('RoleTypeKind eq ' + spec.kind);
+    try {
+      const d = await spGetD<{ results: Array<{ Id: number; Name: string; RoleTypeKind: number }> }>(url);
+      const id = d?.results?.[0]?.Id;
+      if (id) {
+        _roleDefCache[name] = id;
+        return id;
+      }
+    } catch { /* fall through to name lookup */ }
+  }
+
+  // Path 2: name lookup, trying each candidate (= per-language alias).
+  const candidates = spec?.names ?? [name];
+  for (const candidate of candidates) {
+    const url = SITE + "/_api/web/roledefinitions?$select=Id,Name&$filter=" +
+      encodeURIComponent("Name eq '" + candidate.replace(/'/g, "''") + "'");
+    try {
+      const d = await spGetD<{ results: Array<{ Id: number; Name: string }> }>(url);
+      const id = d?.results?.[0]?.Id;
+      if (id) {
+        _roleDefCache[name] = id;
+        return id;
+      }
+    } catch { /* try the next candidate */ }
+  }
+
+  throw new Error('ロール定義が見つかりません: ' + name +
+    ' (試した候補: RoleTypeKind=' + (spec?.kind ?? 'なし') +
+    ', Name=' + candidates.join(' / ') + ')');
+}
+
+/** Lock down a list so only one principal (= the given SP user id)
+ *  can read or write it. Used by the per-user pages list to enforce
+ *  Phase 3 privacy at the SP layer (defence-in-depth on top of the
+ *  client-side `filterVisiblePages` filter).
+ *
+ *  Sequence:
+ *    1. `breakroleinheritance(false, true)` — clear inherited perms,
+ *       AND clear sub-scope perms so item-level inheritance also
+ *       starts fresh. `false` = don't copy the parent's role
+ *       assignments, so the list starts with NO permissions.
+ *    2. Grant `principalId` Full Control via
+ *       `roleassignments/addroleassignment`.
+ *
+ *  Idempotent: if the list already has broken inheritance and the
+ *  principal already has the role assignment, both calls succeed
+ *  with no-op semantics on SP. */
+export async function applyOwnerOnlyAcl(
+  listTitle: string,
+  principalId: number,
+): Promise<void> {
+  if (!principalId) throw new Error('principalId が解決できません — ACL 設定中止');
+  const fullControlId = await resolveRoleDefId('Full Control');
+  // Codex review PS3: pre-flight check. If the list already has
+  // unique role assignments AND `principalId` already has Full
+  // Control, both API calls would no-op; skip them entirely. Keeps
+  // the per-ensure-pass call count low without sacrificing safety
+  // (= when something is off, we still re-apply).
+  const verified = await isOwnerOnlyAclApplied(listTitle, principalId, fullControlId)
+    .catch(() => false);
+  if (verified) return;
+  const d = await getDigest();
+  // Step 1: break inheritance, clearing copies and sub-scopes.
+  // copyRoleAssignments=false → start with empty ACL
+  // clearSubscopes=true → cascade to any item-level perms
+  const breakUrl = spListUrl(listTitle,
+    '/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=true)');
+  const breakRes = await fetch(breakUrl, {
+    method: 'POST',
+    headers: { ...ODATA_POST_HEADERS, 'X-RequestDigest': d },
+    credentials: 'include',
+  });
+  // 200/204 are OK; 400 with "already broken" is also fine — SP
+  // returns 400 when called twice. Surface other failures so the
+  // caller can retry on the next ensure pass.
+  if (!breakRes.ok && breakRes.status !== 400) {
+    throw new Error('権限継承の切断に失敗: ' + breakRes.status);
+  }
+  // Step 2: grant the principal Full Control. We want the user to
+  // be able to add items / edit fields / etc., not just read.
+  const grantUrl = spListUrl(listTitle,
+    '/roleassignments/addroleassignment(principalid=' + principalId +
+    ',roledefid=' + fullControlId + ')');
+  const grantRes = await fetch(grantUrl, {
+    method: 'POST',
+    headers: { ...ODATA_POST_HEADERS, 'X-RequestDigest': d },
+    credentials: 'include',
+  });
+  if (!grantRes.ok) {
+    // If the principal already has this role, SP returns 200 with
+    // no body. A 4xx here means something genuine went wrong.
+    throw new Error('権限付与に失敗: ' + grantRes.status);
+  }
+}
+
+/** Codex review PS3: read SP and decide whether the list already has
+ *  the desired ACL. Returns true iff:
+ *    - the list has unique (= broken) role assignments, AND
+ *    - the principal already holds the given role definition.
+ *  Any other state (inherited perms, missing principal, principal
+ *  with a different role, extra role assignments) returns false so
+ *  the caller re-applies. Throws on REST errors so the caller can
+ *  treat the verification as "unknown" and re-apply. */
+async function isOwnerOnlyAclApplied(
+  listTitle: string,
+  principalId: number,
+  fullControlRoleDefId: number,
+): Promise<boolean> {
+  // Fetch list-level uniqueness flag.
+  const listInfo = await spGetD<{ HasUniqueRoleAssignments?: boolean }>(
+    spListUrl(listTitle, '?$select=HasUniqueRoleAssignments'),
+  );
+  if (!listInfo?.HasUniqueRoleAssignments) return false;
+  // Fetch the existing role assignments and their role-def ids. If the
+  // principal has Full Control AND no other principal has any role,
+  // we're aligned.
+  const ras = await spGetD<{ results: Array<{
+    PrincipalId: number;
+    RoleDefinitionBindings: { results: Array<{ Id: number }> };
+  }> }>(
+    spListUrl(listTitle,
+      '/roleassignments?$expand=RoleDefinitionBindings&$select=PrincipalId,RoleDefinitionBindings/Id'),
+  );
+  const entries = ras?.results ?? [];
+  if (entries.length === 0) return false;
+  // The owner principal needs Full Control. No other principal should
+  // have a role assignment — defence in depth.
+  let principalHasFc = false;
+  for (const ra of entries) {
+    const ids = ra.RoleDefinitionBindings?.results?.map((r) => r.Id) ?? [];
+    if (ra.PrincipalId === principalId) {
+      if (ids.includes(fullControlRoleDefId)) principalHasFc = true;
+      else return false;
+    } else {
+      // Some other principal has access — must re-apply.
+      return false;
+    }
+  }
+  return principalHasFc;
+}
+
+/** Field spec used by ensureList. `kind` matches SP's FieldTypeKind:
+ *  2 = single-line text, 3 = multi-line note, 4 = DateTime,
+ *  6 = Choice, 9 = Boolean (yes/no integer in practice). */
+export interface FieldSpec {
+  name: string;
+  kind: number;
+  choices?: string[];
+  /** When true, mark the column indexed after creation (best effort).
+   *  Use for high-cardinality filter targets (e.g. dates, ids) so the
+   *  list can scale past the 5,000-row LVT. */
+  indexed?: boolean;
+}
+
+export interface ListSpec {
+  /** Title of the SP list. Doubles as the URL identifier. */
+  title: string;
+  /** Required column specs. ensureList adds any missing ones idempotently
+   *  and tolerates failures (silent .catch) — so a partial pre-existing
+   *  list still gets the missing fields filled in on next boot. */
+  fields: FieldSpec[];
+}
+
+/** Soft-delete a row by setting Trashed (ms timestamp) + TrashedBy
+ *  (SP user id). Idempotent — calling twice produces a stable
+ *  Trashed value (the second call's `now` simply overrides the first,
+ *  with no observable effect on the trash UI). Failures are silently
+ *  swallowed because the legacy callers all wrapped this with `.catch`;
+ *  callers that care can drop the catch and the helper will throw. */
+export async function softDelete(
+  listTitle: string,
+  itemId: number,
+  byUserId: number,
+  ts: number = Date.now(),
+): Promise<void> {
+  await updateListItem(listTitle, itemId, { Trashed: ts, TrashedBy: byUserId });
+}
+
+/** Restore a soft-deleted row by clearing Trashed/TrashedBy. */
+export async function restoreSoftDelete(
+  listTitle: string,
+  itemId: number,
+): Promise<void> {
+  await updateListItem(listTitle, itemId, { Trashed: 0, TrashedBy: 0 });
+}
+
+/** Idempotently ensure that an SP list exists with the given fields.
+ *  Replaces the four hand-written ensureXxxList helpers (pages, daily,
+ *  presence, per-DB) and the dozens of `try { addListField ... } catch`
+ *  boilerplate scattered across the API layer.
+ *
+ *  Returns true if the list was newly created, false if it already
+ *  existed. Callers usually don't care, but the daily-DB seed path
+ *  uses this to know whether the new list needs a "first row" template. */
+export async function ensureList(spec: ListSpec): Promise<boolean> {
+  const exists = (await spGetD<unknown>(spListUrl(spec.title))) != null;
+  if (!exists) {
+    await createList(spec.title);
+  }
+  for (const f of spec.fields) {
+    try {
+      await addListField(spec.title, f.name, f.kind, f.choices);
+    } catch {
+      /* idempotent: probably already exists, or first save raced. */
+    }
+    if (f.indexed) {
+      await setColumnIndexed(spec.title, f.name).catch(() => undefined);
+    }
+  }
+  return !exists;
+}
+
 export async function getListEntityType(listTitle: string): Promise<string> {
   if (_etCache[listTitle]) return _etCache[listTitle];
   const d = await spGetD<{ ListItemEntityTypeFullName: string }>(

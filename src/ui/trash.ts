@@ -167,7 +167,7 @@ async function emptyTrash(): Promise<void> {
     } catch { ng++; }
   }
   // Re-fetch memola-pages so S.pages / S.meta.pages match SP truth.
-  try { S.pages = await apiGetPages(); } catch { /* tolerate */ }
+  try { await apiGetPages(); } catch { /* tolerate */ }
   // Refresh the currently-open DB view if any of the purged rows
   // belonged to it.
   for (const lt of touchedDbLists) {
@@ -240,7 +240,7 @@ async function renderTrashList(): Promise<void> {
         } else {
           await apiRestorePage(it.bodyId);
         }
-        S.pages = await apiGetPages();
+        await apiGetPages();
         renderTree();
         await renderTrashList();
         toast('復元しました');
@@ -261,7 +261,7 @@ async function renderTrashList(): Promise<void> {
           } else {
             await apiPurgePage(it.bodyId);
           }
-          try { S.pages = await apiGetPages(); } catch { /* tolerate */ }
+          try { await apiGetPages(); } catch { /* tolerate */ }
           renderTree();
           await renderTrashList();
           toast('完全に削除しました');

@@ -107,7 +107,11 @@ export function rebuildQsDom(): void {
     res.appendChild(hd);
     const helpAction: CmdAction = {
       id: 'help-shortcuts', label: 'キーボードショートカット', icon: '?', key: '',
-      run: () => { /* TODO open shortcuts modal */ },
+      run: () => {
+        // Lazy import — keeps shortcuts-modal out of search-ui's dependency
+        // graph (it's only loaded when this action fires).
+        void import('./shortcuts-modal').then((m) => m.openShortcutsModal());
+      },
     };
     _qsItems.push({ kind: 'action', action: helpAction });
     res.appendChild(buildQsActionItem(helpAction, _qsItems.length - 1));

@@ -9,7 +9,7 @@
 // + Title back via updateListItem.
 
 import { spListUrl, spGetD } from './sp-rest';
-import { PAGES_LIST } from './pages';
+import { listForPageId, pageIdToItemId } from './pages';
 
 export interface PageVersion {
   /** Numeric version label like "1.0", "2.0", "3.0" */
@@ -18,7 +18,8 @@ export interface PageVersion {
   created: string;
   /** Display name of the user who saved this version */
   editor: string;
-  /** Body content (markdown) at this version */
+  /** Body content (block-tree JSON) at this version. Phase 2: stored
+   *  in Body_blocks; markdown is derived on demand at the boundary. */
   body: string;
   /** Title at this version */
   title: string;
@@ -29,18 +30,18 @@ interface SpVersion {
   Created: string;
   CreatedBy?: { Title?: string };
   Editor?: { Title?: string };
-  Body?: string;
+  Body_blocks?: string;
   Title?: string;
 }
 
 export async function listPageVersions(pageId: string): Promise<PageVersion[]> {
-  const itemId = parseInt(pageId, 10);
+  const itemId = pageIdToItemId(pageId);
   if (!itemId) return [];
   // SP versioning REST endpoint. $expand=Editor pulls the user display name
   // — without it we just get a numeric Id which is useless for display.
   const url = spListUrl(
-    PAGES_LIST,
-    '/items(' + itemId + ')/versions?$select=VersionLabel,Created,Editor/Title,Body,Title&$expand=Editor&$orderby=Created desc&$top=50',
+    listForPageId(pageId),
+    '/items(' + itemId + ')/versions?$select=VersionLabel,Created,Editor/Title,Body_blocks,Title&$expand=Editor&$orderby=Created desc&$top=50',
   );
   const d = await spGetD<{ results: SpVersion[] }>(url).catch(() => null);
   if (!d?.results) return [];
@@ -48,7 +49,7 @@ export async function listPageVersions(pageId: string): Promise<PageVersion[]> {
     versionLabel: v.VersionLabel || '',
     created: v.Created || '',
     editor: v.Editor?.Title || v.CreatedBy?.Title || '',
-    body: v.Body || '',
+    body: v.Body_blocks || '',
     title: v.Title || '',
   }));
 }

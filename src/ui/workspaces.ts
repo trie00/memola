@@ -16,7 +16,6 @@ import { clearPagesCache, apiGetPages } from '../api/pages';
 import { escapeHtml } from '../lib/html-escape';
 import { clearDailyCache } from '../api/daily';
 import { clearPresenceCache } from '../api/presence';
-import { spGetD } from '../api/sp-rest';
 import { prefWorkspaces, prefCurrentWsName, prefCurrentWsUrl } from '../lib/prefs';
 
 export interface Workspace {
@@ -108,7 +107,7 @@ export async function switchWorkspace(ws: Workspace): Promise<void> {
     stopWatching();
     showView('empty');
     renderTree();
-    S.pages = await apiGetPages();
+    await apiGetPages();
     renderTree();
     // Update the workspace label in the top bar
     const lbl = document.getElementById('memola-ws-name');

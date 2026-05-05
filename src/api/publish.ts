@@ -17,8 +17,10 @@
 import { S } from '../state';
 import { SITE } from '../config';
 import { getDigest } from './digest';
-import { PAGES_LIST, updatePageRow } from './pages';
-import { mdToHtml } from '../lib/markdown';
+import { updatePageRow } from './pages';
+import { mdToBlocks } from '../lib/blocks-md';
+import { blocksToHtml } from '../lib/blocks-html';
+const mdToHtml = (md: string): string => blocksToHtml(mdToBlocks(md));
 
 interface SitePageRef {
   id: number;
@@ -296,15 +298,12 @@ export async function publishPage(pageId: string, title: string, bodyMd: string)
   } else {
     ref = await createSitePage(title, content);
   }
-  const itemId = parseInt(pageId, 10);
-  if (itemId) {
-    await updatePageRow(itemId, {
-      Published: 1,
-      PublishedUrl: ref.url,
-      PublishedPageId: ref.id,
-      PublishedDirty: 0,
-    });
-  }
+  await updatePageRow(pageId, {
+    Published: 1,
+    PublishedUrl: ref.url,
+    PublishedPageId: ref.id,
+    PublishedDirty: 0,
+  });
   if (meta) {
     meta.published = true;
     meta.publishedUrl = ref.url;
@@ -321,15 +320,12 @@ export async function unpublishPage(pageId: string): Promise<void> {
   if (sitePageId) {
     try { await deleteSitePage(sitePageId); } catch { /* ignore */ }
   }
-  const itemId = parseInt(pageId, 10);
-  if (itemId) {
-    await updatePageRow(itemId, {
-      Published: 0,
-      PublishedUrl: '',
-      PublishedPageId: 0,
-      PublishedDirty: 0,
-    }).catch(() => undefined);
-  }
+  await updatePageRow(pageId, {
+    Published: 0,
+    PublishedUrl: '',
+    PublishedPageId: 0,
+    PublishedDirty: 0,
+  }).catch(() => undefined);
   if (meta) {
     meta.published = false;
     delete meta.publishedUrl;
@@ -353,21 +349,15 @@ export async function syncPublishedPage(pageId: string, title: string, bodyMd: s
     // Flagged as published but no Site Page id (legacy / interrupted publish).
     // Recreate so future syncs have a valid id.
     const ref = await createSitePage(title, content);
-    const itemId = parseInt(pageId, 10);
-    if (itemId) {
-      await updatePageRow(itemId, {
-        PublishedUrl: ref.url,
-        PublishedPageId: ref.id,
-      }).catch(() => undefined);
-    }
+    await updatePageRow(pageId, {
+      PublishedUrl: ref.url,
+      PublishedPageId: ref.id,
+    }).catch(() => undefined);
     meta.publishedUrl = ref.url;
     meta.publishedSitePageId = ref.id;
   }
   // Clear dirty marker on success.
-  const itemId = parseInt(pageId, 10);
-  if (itemId) {
-    await updatePageRow(itemId, { PublishedDirty: 0 }).catch(() => undefined);
-  }
+  await updatePageRow(pageId, { PublishedDirty: 0 }).catch(() => undefined);
   meta.publishedDirty = false;
 }
 

@@ -1,17 +1,37 @@
 // Page version history viewer modal.
 //
-// Lists all SP-side versions of the current page (newest first), with an
-// inline preview and a "この版に戻す" button. Restoration goes through
-// the regular save path so it gets the usual conflict guard and watermark
-// refresh.
+// Lists all SP-side versions of the current page (newest first), with
+// an inline preview and a "この版に戻す" button. Restoration goes
+// through the regular save path so it gets the usual conflict guard +
+// watermark refresh.
+//
+// Built on the shared `subscriberModal` helper for ESC capture +
+// backdrop dismissal — no per-modal listener bookkeeping.
 
 import { S } from '../state';
 import { toast, setLoad } from './ui-helpers';
-import { mdToHtml } from '../lib/markdown';
+import { blocksToHtml } from '../lib/blocks-html';
+import { parseBlocksJson } from '../api/pages';
 import { listPageVersions, type PageVersion } from '../api/version-history';
 import { escapeHtml } from '../lib/html-escape';
+import { subscriberModal } from './lib/modal';
 
 const MODAL_ID = 'memola-versions-md';
+const PREVIEW_ID = 'memola-versions-preview';
+
+const _modal = subscriberModal({
+  id: MODAL_ID,
+  className: 'memola-versions-md',
+  onEscape: () => _modal.close(),
+  onBackdropClick: () => _modal.close(),
+});
+
+const _previewModal = subscriberModal({
+  id: PREVIEW_ID,
+  className: 'memola-versions-md',
+  onEscape: () => _previewModal.close(),
+  onBackdropClick: () => _previewModal.close(),
+});
 
 function formatDateTime(iso: string): string {
   if (!iso) return '';
@@ -25,66 +45,36 @@ function formatDateTime(iso: string): string {
   return `${y}/${mo}/${da} ${hh}:${mm}`;
 }
 
-function ensureModal(): HTMLElement {
-  let el = document.getElementById(MODAL_ID);
-  if (el) return el;
-  el = document.createElement('div');
-  el.id = MODAL_ID;
-  el.className = 'memola-versions-md';
-  el.style.display = 'none';
-  el.innerHTML =
+export async function openVersionHistory(pageId: string, pageTitle: string): Promise<void> {
+  // Open with a loading shell first so the user gets immediate feedback.
+  _modal.render(
     '<div class="memola-versions-box">' +
       '<div class="memola-versions-hd">' +
-        '<span class="memola-versions-title">📜 バージョン履歴</span>' +
+        '<span class="memola-versions-title">📜 バージョン履歴: ' + escapeHtml(pageTitle) + '</span>' +
         '<button class="memola-versions-close" title="閉じる">×</button>' +
       '</div>' +
-      '<div class="memola-versions-body"></div>' +
-    '</div>';
-  (document.getElementById('memola-overlay') || document.body).appendChild(el);
-  el.addEventListener('click', (e) => {
-    if (e.target === el) close();
-  });
-  el.querySelector<HTMLElement>('.memola-versions-close')?.addEventListener('click', close);
-  return el;
-}
-
-function close(): void {
-  const el = document.getElementById(MODAL_ID);
-  if (el) el.style.display = 'none';
-  document.removeEventListener('keydown', onKey, true);
-}
-
-function onKey(e: KeyboardEvent): void {
-  if (e.key === 'Escape') {
-    e.preventDefault();
-    e.stopPropagation();
-    close();
-  }
-}
-
-export async function openVersionHistory(pageId: string, pageTitle: string): Promise<void> {
-  const el = ensureModal();
-  const body = el.querySelector<HTMLElement>('.memola-versions-body');
-  const titleEl = el.querySelector<HTMLElement>('.memola-versions-title');
-  if (titleEl) titleEl.textContent = '📜 バージョン履歴: ' + pageTitle;
-  if (!body) return;
-  body.innerHTML = '<div class="memola-versions-loading">読み込み中…</div>';
-  el.style.display = 'flex';
-  document.addEventListener('keydown', onKey, true);
+      '<div class="memola-versions-body"><div class="memola-versions-loading">読み込み中…</div></div>' +
+    '</div>',
+    (root) => {
+      root.querySelector<HTMLElement>('.memola-versions-close')?.addEventListener('click', () => _modal.close());
+    },
+  );
 
   let versions: PageVersion[] = [];
   try {
     versions = await listPageVersions(pageId);
   } catch (e) {
-    body.innerHTML = '<div class="memola-versions-error">取得失敗: ' + escapeHtml((e as Error).message) + '</div>';
+    rerender(pageTitle, '<div class="memola-versions-error">取得失敗: ' + escapeHtml((e as Error).message) + '</div>');
     return;
   }
   if (versions.length === 0) {
-    body.innerHTML = '<div class="memola-versions-empty">バージョン履歴がありません。<br><span style="font-size:11px;color:var(--ink-3)">SP リストの「バージョン管理設定」がオフの可能性があります。</span></div>';
+    rerender(pageTitle,
+      '<div class="memola-versions-empty">バージョン履歴がありません。<br>' +
+      '<span style="font-size:11px;color:var(--ink-3)">SP リストの「バージョン管理設定」がオフの可能性があります。</span></div>');
     return;
   }
 
-  body.innerHTML = versions.map((v, idx) => {
+  const itemsHtml = versions.map((v, idx) => {
     const preview = (v.body || '').replace(/\s+/g, ' ').slice(0, 120);
     const isCurrent = idx === 0;
     return '<div class="memola-versions-item' + (isCurrent ? ' current' : '') + '" data-idx="' + idx + '">' +
@@ -101,40 +91,59 @@ export async function openVersionHistory(pageId: string, pageTitle: string): Pro
     '</div>';
   }).join('');
 
-  body.querySelectorAll<HTMLElement>('.memola-versions-item').forEach((itemEl) => {
-    const idx = parseInt(itemEl.dataset.idx || '-1', 10);
-    if (idx < 0) return;
-    itemEl.addEventListener('click', async (e) => {
-      const btn = (e.target as HTMLElement).closest<HTMLElement>('button[data-act]');
-      if (!btn) return;
-      const act = btn.dataset.act;
-      const v = versions[idx];
-      if (!v) return;
-      if (act === 'preview') {
-        showPreview(v);
-      } else if (act === 'restore') {
-        await restoreVersion(pageId, v);
-      }
+  rerender(pageTitle, itemsHtml, (root) => {
+    root.querySelectorAll<HTMLElement>('.memola-versions-item').forEach((itemEl) => {
+      const idx = parseInt(itemEl.dataset.idx || '-1', 10);
+      if (idx < 0) return;
+      itemEl.addEventListener('click', async (e) => {
+        const btn = (e.target as HTMLElement).closest<HTMLElement>('button[data-act]');
+        if (!btn) return;
+        const act = btn.dataset.act;
+        const v = versions[idx];
+        if (!v) return;
+        if (act === 'preview') showPreview(v);
+        else if (act === 'restore') await restoreVersion(pageId, v);
+      });
     });
   });
 }
 
+function rerender(
+  pageTitle: string,
+  bodyHtml: string,
+  onMounted?: (root: HTMLElement) => void,
+): void {
+  _modal.render(
+    '<div class="memola-versions-box">' +
+      '<div class="memola-versions-hd">' +
+        '<span class="memola-versions-title">📜 バージョン履歴: ' + escapeHtml(pageTitle) + '</span>' +
+        '<button class="memola-versions-close" title="閉じる">×</button>' +
+      '</div>' +
+      '<div class="memola-versions-body">' + bodyHtml + '</div>' +
+    '</div>',
+    (root) => {
+      root.querySelector<HTMLElement>('.memola-versions-close')?.addEventListener('click', () => _modal.close());
+      if (onMounted) onMounted(root);
+    },
+  );
+}
+
 function showPreview(v: PageVersion): void {
-  const w = document.createElement('div');
-  w.className = 'memola-versions-md on';
-  w.style.zIndex = '2147483649';
-  w.innerHTML =
+  _previewModal.render(
     '<div class="memola-versions-box" style="max-width:760px">' +
       '<div class="memola-versions-hd">' +
-        '<span class="memola-versions-title">v' + v.versionLabel + ' プレビュー</span>' +
+        '<span class="memola-versions-title">v' + escapeHtml(v.versionLabel) + ' プレビュー</span>' +
         '<button class="memola-versions-close">×</button>' +
       '</div>' +
-      '<div class="memola-versions-fullpreview">' + mdToHtml(v.body) + '</div>' +
-    '</div>';
-  (document.getElementById('memola-overlay') || document.body).appendChild(w);
-  const c = (): void => { w.remove(); };
-  w.addEventListener('click', (e) => { if (e.target === w) c(); });
-  w.querySelector<HTMLElement>('.memola-versions-close')?.addEventListener('click', c);
+      // v.body is the block-tree JSON snapshot from the version row.
+      // Convert directly to HTML for the preview pane.
+      '<div class="memola-versions-fullpreview">' + blocksToHtml(parseBlocksJson(v.body)) + '</div>' +
+    '</div>',
+    (root) => {
+      root.querySelector<HTMLElement>('.memola-versions-close')
+        ?.addEventListener('click', () => _previewModal.close());
+    },
+  );
 }
 
 async function restoreVersion(pageId: string, v: PageVersion): Promise<void> {
@@ -145,15 +154,17 @@ async function restoreVersion(pageId: string, v: PageVersion): Promise<void> {
   )) return;
   try {
     setLoad(true, '復元中…');
-    const { apiSavePageMd } = await import('../api/pages');
-    const result = await apiSavePageMd(pageId, v.title || '無題', v.body);
+    // Phase 2: v.body is already block-tree JSON (the version row's
+    // Body_blocks snapshot). Save it directly via apiSavePageBlocks
+    // — converting through markdown would lossy-roundtrip table/etc.
+    const { apiSavePageBlocks } = await import('../api/pages');
+    const result = await apiSavePageBlocks(pageId, v.title || '無題', v.body);
     if (!result.ok) {
       toast('復元失敗: 競合を検出しました。再度お試しください', 'err');
       return;
     }
     toast('v' + v.versionLabel + ' に復元しました');
-    close();
-    // Reload the page so the editor shows the restored content
+    _modal.close();
     if (S.currentId === pageId) {
       const { doSelect } = await import('./views');
       await doSelect(pageId);

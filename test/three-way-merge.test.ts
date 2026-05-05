@@ -152,9 +152,14 @@ describe('resolveConflict', () => {
     expect(hasUnresolvedConflicts(r)).toBe(false);
   });
 
-  it('resolves with both (yours then theirs)', () => {
+  it('resolves with both (yours then theirs, separated by blank line)', () => {
+    // A blank line is inserted between the two halves so markdown
+    // renders them as two separate paragraphs (= "両方残す" visually
+    // means "both versions, stacked"). Without the blank line, an
+    // inline `<br>`-only line at the boundary would surface as a
+    // literal `<br>` text node on render.
     const r = resolveConflict(conflictText, 0, 'both');
-    expect(r).toBe('context\nyours-line\ntheirs-line\nafter');
+    expect(r).toBe('context\nyours-line\n\ntheirs-line\nafter');
   });
 
   it('accepts an explicit replacement array', () => {
@@ -203,8 +208,9 @@ describe('flipping a resolution by replaying from rawMerged', () => {
     expect(m).toBe('a\nb-theirs\nc');
   });
 
-  it('flipping back to both yields concatenation', () => {
+  it('flipping back to both yields concatenation with paragraph break', () => {
     const m = applyResolutions(new Map([[0, 'both']]));
-    expect(m).toBe('a\nb-yours\nb-theirs\nc');
+    // Blank line between the two halves = paragraph separator on render
+    expect(m).toBe('a\nb-yours\n\nb-theirs\nc');
   });
 });

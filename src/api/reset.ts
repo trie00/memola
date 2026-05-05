@@ -21,7 +21,24 @@ import { getListItems, deleteList } from './sp-list';
 import { spGetD } from './sp-rest';
 import { SITE } from '../config';
 import { getDigest } from './digest';
-import { PAGES_LIST, apiGetPages, apiPurgePage } from './pages';
+import { ORG_PAGES_LIST, getMyPagesList, apiGetPages, apiPurgePage } from './pages';
+
+/** Union read of every pages list visible to the current user.
+ *
+ *  Phase 3: pages live in either the org-shared list OR the current
+ *  user's per-user list. Reset needs to scan both to find targets.
+ *  Other users' per-user lists are intentionally not readable (SP-side
+ *  ACL); their data is reachable only via `resetAll`'s list-walk path,
+ *  not via this row-level scan. */
+async function readAllVisiblePages(): Promise<PageRow[]> {
+  const myList = getMyPagesList();
+  const reads: Promise<unknown[]>[] = [getListItems(ORG_PAGES_LIST)];
+  if (myList !== ORG_PAGES_LIST) {
+    reads.push(getListItems(myList).catch(() => []));
+  }
+  const buckets = await Promise.all(reads);
+  return buckets.flat() as unknown as PageRow[];
+}
 
 export interface ResetSummary {
   pagesDeleted: number;
@@ -199,7 +216,7 @@ export async function countResetTargets(
   const myId = S.meta.myUserId || (await getCurrentUserId().catch(() => 0));
   let items: PageRow[] = [];
   try {
-    items = (await getListItems(PAGES_LIST)) as unknown as PageRow[];
+    items = await readAllVisiblePages();
   } catch {
     return { pages: 0, dbs: 0, dailyRows: 0 };
   }
@@ -253,10 +270,10 @@ export async function resetMyPrivateData(): Promise<ResetSummary> {
     summary.errors.push('SP ユーザ ID を解決できません — 中止');
     return summary;
   }
-  // Pull raw rows from SP — apiGetPages filters by visibility and we
-  // need to see ALL our entries here, including any pre-Scope-column
-  // legacy data.
-  const items = (await getListItems(PAGES_LIST)) as unknown as PageRow[];
+  // Pull raw rows from every list visible to me — apiGetPages filters
+  // by display visibility and we need to see ALL our entries here,
+  // including any pre-Scope-column legacy data.
+  const items = await readAllVisiblePages();
   const targets = items.filter((it) =>
     it.PageType !== 'row' &&
     it.Scope === 'user' &&
@@ -283,7 +300,7 @@ export async function resetMyPrivateData(): Promise<ResetSummary> {
   summary.recycleBinPurged = recycle.count;
   summary.errors.push(...recycle.errors);
   // Refresh local state
-  try { S.pages = await apiGetPages(); } catch { /* tolerate */ }
+  try { await apiGetPages(); } catch { /* tolerate */ }
   return summary;
 }
 
@@ -295,7 +312,10 @@ export async function resetOthersData(): Promise<ResetSummary> {
     recycleBinPurged: 0, errors: [],
   };
   const myId = S.meta.myUserId || (await getCurrentUserId().catch(() => 0));
-  const items = (await getListItems(PAGES_LIST)) as unknown as PageRow[];
+  // Visible scope: org list + my user list. Other users' per-user
+  // lists are SP-side inaccessible — their data is reachable only via
+  // `resetAll`'s list-walk path, so excluding them here is correct.
+  const items = await readAllVisiblePages();
   const targets = items.filter((it) =>
     it.PageType !== 'row' &&
     (
@@ -323,7 +343,7 @@ export async function resetOthersData(): Promise<ResetSummary> {
   const recycle = await purgeMemolaRecycleBin(myId, /* onlyMyDeletions */ true);
   summary.recycleBinPurged = recycle.count;
   summary.errors.push(...recycle.errors);
-  try { S.pages = await apiGetPages(); } catch { /* tolerate */ }
+  try { await apiGetPages(); } catch { /* tolerate */ }
   return summary;
 }
 

@@ -10,15 +10,25 @@
 import { S, type Page } from '../state';
 import { g } from './dom';
 import { toast } from './ui-helpers';
-import { mdToHtml } from '../lib/markdown';
+import { mdToBlocks, blocksToMd } from '../lib/blocks-md';
+import { htmlToBlocks, blocksToHtml } from '../lib/blocks-html';
+const mdToHtml = (md: string): string => blocksToHtml(mdToBlocks(md));
 import {
   listAll, deleteDraft, type Draft,
 } from './draft-store';
 import { escapeHtml } from '../lib/html-escape';
 import { formatRelativeTime } from '../lib/date-utils';
+import { subscriberModal } from './lib/modal';
 
 const MODAL_ID = 'memola-drafts-md';
 const SIDEBAR_BTN_ID = 'memola-drafts-btn';
+
+const _modal = subscriberModal({
+  id: MODAL_ID,
+  className: 'memola-drafts-md',
+  onEscape: () => closeDraftsModal(),
+  onBackdropClick: () => closeDraftsModal(),
+});
 
 interface Group {
   pageId: string;
@@ -65,14 +75,12 @@ function totalDraftCount(): number {
   return spDrafts().length + listAll().length;
 }
 
-function ensureModal(): HTMLElement {
-  let el = document.getElementById(MODAL_ID);
-  if (el) return el;
-  el = document.createElement('div');
-  el.id = MODAL_ID;
-  el.className = 'memola-drafts-md';
-  el.style.display = 'none';
-  el.innerHTML =
+export function openDraftsModal(focusPageId?: string): void {
+  // Render with the chrome — `_modal.render` mounts the DOM and
+  // installs ESC + backdrop listeners. The body re-render lives in
+  // its own helper (re-invoked after each mutation: delete / restore /
+  // discard) without unmounting the modal.
+  _modal.render(
     '<div class="memola-drafts-box">' +
       '<div class="memola-drafts-hd">' +
         '<span class="memola-drafts-title">📝 下書き</span>' +
@@ -80,43 +88,25 @@ function ensureModal(): HTMLElement {
         '<button class="memola-drafts-close" title="閉じる">×</button>' +
       '</div>' +
       '<div class="memola-drafts-body"></div>' +
-    '</div>';
-  (document.getElementById('memola-overlay') || document.body).appendChild(el);
-
-  el.addEventListener('click', (e) => {
-    if (e.target === el) closeDraftsModal();
-  });
-  el.querySelector<HTMLElement>('.memola-drafts-close')?.addEventListener('click', closeDraftsModal);
-  return el;
-}
-
-export function openDraftsModal(focusPageId?: string): void {
-  const el = ensureModal();
-  renderModalBody(el);
-  el.style.display = 'flex';
-  document.addEventListener('keydown', escClose, true);
-  if (focusPageId) {
-    setTimeout(() => {
-      const grpEl = el.querySelector<HTMLElement>('.memola-drafts-group[data-page-id="' + focusPageId + '"]');
-      grpEl?.scrollIntoView({ block: 'start' });
-    }, 0);
-  }
+    '</div>',
+    (root) => {
+      root.querySelector<HTMLElement>('.memola-drafts-close')
+        ?.addEventListener('click', closeDraftsModal);
+      renderModalBody(root);
+      if (focusPageId) {
+        setTimeout(() => {
+          const grpEl = root.querySelector<HTMLElement>(
+            '.memola-drafts-group[data-page-id="' + focusPageId + '"]',
+          );
+          grpEl?.scrollIntoView({ block: 'start' });
+        }, 0);
+      }
+    },
+  );
 }
 
 export function closeDraftsModal(): void {
-  const el = document.getElementById(MODAL_ID);
-  if (el) el.style.display = 'none';
-  document.removeEventListener('keydown', escClose, true);
-}
-
-function escClose(e: KeyboardEvent): void {
-  if (e.key === 'Escape') {
-    // Stop the event so the global ESC handler doesn't proceed to
-    // close the app (or show the close-confirm dialog) after we close.
-    e.preventDefault();
-    e.stopPropagation();
-    closeDraftsModal();
-  }
+  _modal.close();
 }
 
 function renderModalBody(el: HTMLElement): void {
@@ -227,7 +217,7 @@ function renderModalBody(el: HTMLElement): void {
         try {
           const { apiApplyDraftToOrigin, apiGetPages } = await import('../api/pages');
           const originId = await apiApplyDraftToOrigin(draftId);
-          S.pages = await apiGetPages();
+          await apiGetPages();
           const { renderTree } = await import('./tree');
           renderTree();
           renderModalBody(el);
@@ -244,7 +234,7 @@ function renderModalBody(el: HTMLElement): void {
         try {
           const { apiDeletePage, apiGetPages } = await import('../api/pages');
           await apiDeletePage(draftId);
-          S.pages = await apiGetPages();
+          await apiGetPages();
           const { renderTree } = await import('./tree');
           renderTree();
           renderModalBody(el);
@@ -278,10 +268,19 @@ function renderModalBody(el: HTMLElement): void {
         await restoreDraft(draft);
       } else if (act === 'merge') {
         // 3-way merge UI — close drafts modal so the merge modal has
-        // the user's full attention.
+        // the user's full attention. The Saver fetches the current SP
+        // body itself; the merge-modal subscriber renders when the
+        // Saver transitions to 'merging'.
         closeDraftsModal();
-        const { openMergeModal } = await import('./merge-modal');
-        await openMergeModal(draft);
+        const { saver } = await import('../lib/saver');
+        await saver.beginExternalMerge({
+          pageId: draft.pageId,
+          pageTitle: draft.pageTitle,
+          title: draft.title,
+          ourBody: draft.body,
+          baseBody: draft.baseBody || '',
+          baseEtag: draft.baseEtag || '',
+        });
       }
     });
   });
@@ -314,10 +313,11 @@ async function restoreDraft(draft: Draft): Promise<void> {
 
   // 1. If we're currently on a page with dirty edits, snapshot those first
   //    so the restore itself doesn't destroy them.
-  if (S.dirty && S.currentId) {
+  const { saver } = await import('../lib/saver');
+  if (saver.isDirty() && S.currentId) {
     const { saveDraft } = await import('./draft-store');
     const ed = (await import('./dom')).getEd();
-    const md = (await import('../lib/markdown')).htmlToMd(ed.innerHTML);
+    const md = blocksToMd(htmlToBlocks(ed.innerHTML));
     const titleEl = g('ttl') as HTMLTextAreaElement;
     saveDraft({
       pageId: S.currentId,
@@ -334,14 +334,15 @@ async function restoreDraft(draft: Draft): Promise<void> {
 
   // 3. Replace editor content with the draft body — keep dirty so user
   //    can review and decide whether to save.
-  const { mdToHtml: m2h } = await import('../lib/markdown');
   const ed = (await import('./dom')).getEd();
-  ed.innerHTML = m2h(draft.body);
+  ed.innerHTML = mdToHtml(draft.body);
   const titleEl = g('ttl') as HTMLTextAreaElement;
   if (draft.title) titleEl.value = draft.title;
-  S.dirty = true;
-  const { setSave } = await import('./ui-helpers');
-  setSave('未保存');
+  // Push the draft content into the Saver — it transitions to 'dirty'
+  // (since the editor diverges from the freshly-loaded base), which
+  // updates the status bar via saver-bridge.
+  const { schedSave: nudgeSaver } = await import('./save-control');
+  nudgeSaver();
   void import('./inline-table').then((m) => m.reattachInlineTables(ed));
 
   // 4. Remove the draft we just restored (it's now in the editor)

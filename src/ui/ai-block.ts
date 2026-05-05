@@ -2,12 +2,13 @@
 // User picks an action (要約/改稿/翻訳/...), the block calls Claude with the
 // surrounding page text as context, then offers 採用 / 編集 / 破棄 buttons.
 
-import { S } from '../state';
 import { getEd } from './dom';
-import { setSave, toast } from './ui-helpers';
-import { schedSave } from './actions';
+import { toast } from './ui-helpers';
+import { schedSave } from './save-control';
 import { callClaude } from '../api/anthropic';
-import { htmlToMd } from '../lib/markdown';
+import { htmlToBlocks } from '../lib/blocks-html';
+import { blocksToMd } from '../lib/blocks-md';
+const htmlToMd = (html: string): string => blocksToMd(htmlToBlocks(html));
 import { escapeHtml } from '../lib/html-escape';
 
 const ACTIONS: Array<{ key: string; label: string; prompt: string }> = [
@@ -16,6 +17,28 @@ const ACTIONS: Array<{ key: string; label: string; prompt: string }> = [
   { key: 'translate', label: '英訳', prompt: 'このページの本文を自然な英語に翻訳してください。' },
   { key: 'actions',   label: 'アクション抽出', prompt: 'このページの内容から、ToDo・アクションアイテムを箇条書きで抽出してください。' },
 ];
+
+/** Reattach handlers + restore result-state on AI blocks that were
+ *  rebuilt from saved markdown. Called after page load so the regen /
+ *  adopt / edit / discard buttons work on round-tripped blocks too. */
+export function reattachAiBlocks(root: HTMLElement): void {
+  root.querySelectorAll<HTMLElement>('.memola-ai-block').forEach((wrap) => {
+    if (wrap.dataset.aibBound === '1') return;
+    wrap.dataset.aibBound = '1';
+    const action = wrap.dataset.aibAction || '';
+    const result = wrap.dataset.aibResult || '';
+    const cfg = ACTIONS.find((a) => a.key === action) ||
+      { key: action, label: action, prompt: '' };
+    if (result) {
+      // Result-state already rendered from markdown — wire up buttons.
+      showResult(wrap, cfg, result);
+    } else {
+      // Picker-state — re-bind the action picker (no result yet).
+      wrap.innerHTML = renderActionPicker();
+      attachActionHandlers(wrap);
+    }
+  });
+}
 
 export function insertAiBlock(): void {
   const ed = getEd();
@@ -43,7 +66,7 @@ export function insertAiBlock(): void {
   ed.insertBefore(trail, wrap.nextSibling);
 
   attachActionHandlers(wrap);
-  S.dirty = true; setSave('未保存'); schedSave();
+  schedSave();
 }
 
 function renderActionPicker(): string {
@@ -65,7 +88,7 @@ function attachActionHandlers(wrap: HTMLElement): void {
   wrap.querySelectorAll<HTMLButtonElement>('.memola-aib-action').forEach((btn) => {
     btn.addEventListener('click', () => {
       const action = btn.dataset.action!;
-      if (action === 'cancel') { wrap.remove(); S.dirty = true; setSave('未保存'); schedSave(); return; }
+      if (action === 'cancel') { wrap.remove(); schedSave(); return; }
       const cfg = ACTIONS.find((a) => a.key === action);
       if (!cfg) return;
       runAction(wrap, cfg);
@@ -103,6 +126,13 @@ async function runAction(wrap: HTMLElement, cfg: { key: string; label: string; p
 }
 
 function showResult(wrap: HTMLElement, cfg: { key: string; label: string; prompt: string }, text: string): void {
+  // Record the action + raw result on the wrap so save-time
+  // serialization (markdown.ts) can round-trip the block. Without
+  // these data attrs the block silently disappears from the saved
+  // markdown — the user has to redo the AI call after navigating
+  // away. With them, mdToHtml can reconstruct the result-state block.
+  wrap.dataset.aibAction = cfg.key;
+  wrap.dataset.aibResult = text;
   wrap.innerHTML =
     '<div class="memola-aib-head">' +
       '<span class="memola-aib-title">✦ ' + escapeHtml(cfg.label) + '</span>' +
@@ -127,7 +157,7 @@ function showResult(wrap: HTMLElement, cfg: { key: string; label: string; prompt
       ed.insertBefore(p, insertBefore);
     });
     wrap.remove();
-    S.dirty = true; setSave('未保存'); schedSave();
+    schedSave();
     toast('AIブロックを採用しました');
   });
   wrap.querySelector<HTMLButtonElement>('.memola-aib-edit')?.addEventListener('click', () => {
@@ -137,7 +167,7 @@ function showResult(wrap: HTMLElement, cfg: { key: string; label: string; prompt
   });
   wrap.querySelector<HTMLButtonElement>('.memola-aib-discard')?.addEventListener('click', () => {
     wrap.remove();
-    S.dirty = true; setSave('未保存'); schedSave();
+    schedSave();
   });
 }
 

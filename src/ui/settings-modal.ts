@@ -1,0 +1,319 @@
+// Settings modal — AI-provider config, theme/density prefs, save/sync/
+// presence intervals, and the three reset buttons (mine / others / all).
+//
+// Triggered by the gear button in the sidebar footer (or ESC-cascading
+// through the global keymap). The settings panel is built statically in
+// the HTML template; this file just wires up the inputs.
+//
+// Reset is potentially destructive — each button has a pre-flight count
+// + double confirm + per-error toast/alert.
+
+import { S } from '../state';
+import { setLoad, toast } from './ui-helpers';
+import { showView } from './views';
+import { getApiKey, setApiKey } from '../api/anthropic';
+import {
+  prefDensity, prefTheme, prefSaveDelayMs, prefSyncPollMs, prefPresenceEnabled,
+} from '../lib/prefs';
+import { openShortcutsModal } from './shortcuts-modal';
+
+let _attached = false;
+
+export function attachSettingsModal(): void {
+  if (_attached) return;
+  _attached = true;
+
+  const setBtn = document.getElementById('memola-settings-btn');
+  const setMd = document.getElementById('memola-settings-md');
+  const setKey = document.getElementById('memola-set-aikey') as HTMLInputElement | null;
+  const setProv = document.getElementById('memola-set-provider') as HTMLSelectElement | null;
+  const setClaudeModel = document.getElementById('memola-set-claude-model') as HTMLSelectElement | null;
+  const setCorpModel = document.getElementById('memola-set-corpai-model') as HTMLSelectElement | null;
+  const setCorpKey = document.getElementById('memola-set-corpai-key') as HTMLInputElement | null;
+  const setCorpBaseUrl = document.getElementById('memola-set-corpai-baseurl') as HTMLInputElement | null;
+  const setCorpPrefix = document.getElementById('memola-set-corpai-prefix') as HTMLInputElement | null;
+  const setCorpOverrides = document.getElementById('memola-set-corpai-overrides') as HTMLTextAreaElement | null;
+  const setLocalBaseUrl = document.getElementById('memola-set-localai-baseurl') as HTMLInputElement | null;
+  const setLocalKey = document.getElementById('memola-set-localai-key') as HTMLInputElement | null;
+  const setLocalModel = document.getElementById('memola-set-localai-model') as HTMLInputElement | null;
+  const setLocalModels = document.getElementById('memola-set-localai-models') as HTMLTextAreaElement | null;
+  const setLocalReasoning = document.getElementById('memola-set-localai-reasoning') as HTMLInputElement | null;
+  const setDensity = document.getElementById('memola-set-density') as HTMLSelectElement | null;
+  const setTheme = document.getElementById('memola-set-theme') as HTMLSelectElement | null;
+  const setSaveDelay = document.getElementById('memola-set-savedelay') as HTMLSelectElement | null;
+  const setSyncPoll = document.getElementById('memola-set-syncpoll') as HTMLSelectElement | null;
+  const setPresence = document.getElementById('memola-set-presence') as HTMLSelectElement | null;
+
+  // ⌨ Shortcut-list button (no-op when missing)
+  document.getElementById('memola-set-shortcuts')?.addEventListener('click', () => openShortcutsModal());
+
+  // Reset buttons (mine / others / all)
+  document.getElementById('memola-set-reset-mine')?.addEventListener('click', () =>
+    runReset('mine', '自分のプライベートのみ削除'));
+  document.getElementById('memola-set-reset-others')?.addEventListener('click', () =>
+    runReset('others', '組織+他人のデータを削除'));
+  document.getElementById('memola-set-reset-all')?.addEventListener('click', () =>
+    runReset('all', '全データ + 設定を初期化'));
+
+  // Bail if any required element is missing — the settings panel UI
+  // would be broken anyway, no point wiring partial.
+  if (!setBtn || !setMd || !setKey || !setProv || !setClaudeModel || !setCorpModel ||
+      !setCorpKey || !setCorpBaseUrl || !setCorpPrefix || !setCorpOverrides ||
+      !setLocalBaseUrl || !setLocalKey || !setLocalModel || !setLocalModels ||
+      !setLocalReasoning || !setDensity || !setTheme || !setSaveDelay ||
+      !setSyncPoll || !setPresence) {
+    return;
+  }
+
+  // Populate model dropdowns once.
+  void import('../api/ai-settings').then((ai) => {
+    ai.CLAUDE_MODELS.forEach((m) => {
+      const o = document.createElement('option');
+      o.value = m.id; o.textContent = m.label;
+      setClaudeModel.appendChild(o);
+    });
+    ai.CORP_AI_MODELS.forEach((m) => {
+      const o = document.createElement('option');
+      o.value = m.id;
+      o.textContent = m.id + (m.reasoning ? ' (推論)' : '') + (m.vision ? ' 🖼' : '');
+      setCorpModel.appendChild(o);
+    });
+  });
+
+  // From here on, every `set*` ref has been null-guarded by the early
+  // return above; capture the non-null aliases to satisfy TS in nested
+  // closures.
+  const provEl = setProv;
+  /** Show/hide rows based on the selected provider. Each conditional row
+   *  has a `data-prov` attribute matching the provider value. */
+  function syncProviderRows(): void {
+    const cur = provEl.value;
+    document.querySelectorAll<HTMLElement>('.memola-set-row[data-prov]').forEach((row) => {
+      row.style.display = (row.dataset.prov === cur) ? '' : 'none';
+    });
+  }
+  provEl.addEventListener('change', syncProviderRows);
+
+  // Sidebar nav inside the settings modal — tabs switch panes.
+  document.querySelectorAll<HTMLElement>('.memola-set-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.tab;
+      if (!target) return;
+      document.querySelectorAll<HTMLElement>('.memola-set-tab')
+        .forEach((t) => t.classList.toggle('on', t === tab));
+      document.querySelectorAll<HTMLElement>('.memola-set-pane')
+        .forEach((p) => p.classList.toggle('on', p.dataset.pane === target));
+    });
+  });
+
+  setBtn.addEventListener('click', () => {
+    // Always reset to the first pane on open so the user has a
+    // predictable starting point.
+    document.querySelectorAll<HTMLElement>('.memola-set-tab')
+      .forEach((t) => t.classList.toggle('on', t.dataset.tab === 'ai'));
+    document.querySelectorAll<HTMLElement>('.memola-set-pane')
+      .forEach((p) => p.classList.toggle('on', p.dataset.pane === 'ai'));
+    void import('../api/ai-settings').then((ai) => {
+      try {
+        setProv.value = ai.getProvider();
+        setClaudeModel.value = ai.getClaudeModel();
+        setCorpModel.value = ai.getCorpAiModel();
+        setKey.value = getApiKey() || '';
+        setCorpKey.value = ai.getCorpAiKey();
+        setCorpBaseUrl.value = ai.getCorpAiBaseUrl();
+        setCorpPrefix.value = ai.getCorpAiDeploymentPrefix();
+        setCorpOverrides.value = ai.getCorpAiOverridesRaw();
+        setLocalBaseUrl.value = ai.getLocalAiBaseUrl();
+        setLocalKey.value = ai.getLocalAiKey();
+        setLocalModel.value = ai.getLocalAiModel();
+        setLocalModels.value = ai.getLocalAiModels().join('\n');
+        setLocalReasoning.value = ai.getLocalAiReasoningModels().join(' ');
+        setDensity.value = prefDensity.get();
+        setTheme.value = prefTheme.get();
+        setSaveDelay.value = prefSaveDelayMs.get();
+        setSyncPoll.value = prefSyncPollMs.get();
+        setPresence.value = prefPresenceEnabled.get();
+      } catch { /* ignore */ }
+      syncProviderRows();
+      setMd.classList.add('on');
+    });
+  });
+  setMd.addEventListener('click', (e) => {
+    if (e.target === setMd) setMd.classList.remove('on');
+  });
+  document.getElementById('memola-set-cancel')?.addEventListener('click', () =>
+    setMd.classList.remove('on'));
+
+  document.getElementById('memola-set-save')?.addEventListener('click', () => {
+    // Pre-validate the overrides JSON so the user gets immediate feedback
+    // rather than silent fallback at request time.
+    const ovRaw = setCorpOverrides.value.trim();
+    if (ovRaw) {
+      try {
+        const parsed = JSON.parse(ovRaw);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          toast('オーバーライド JSON はオブジェクト形式で書いてください', 'err');
+          return;
+        }
+      } catch (e) {
+        toast('オーバーライド JSON が不正です: ' + (e as Error).message, 'err');
+        return;
+      }
+    }
+    void import('../api/ai-settings').then((ai) => {
+      try {
+        ai.setProvider(setProv.value as 'claude' | 'corp' | 'local');
+        if (setClaudeModel.value) ai.setClaudeModel(setClaudeModel.value);
+        if (setCorpModel.value) ai.setCorpAiModel(setCorpModel.value);
+        setApiKey(setKey.value);
+        ai.setCorpAiKey(setCorpKey.value);
+        ai.setCorpAiBaseUrl(setCorpBaseUrl.value);
+        ai.setCorpAiDeploymentPrefix(setCorpPrefix.value);
+        ai.setCorpAiOverridesRaw(setCorpOverrides.value);
+        ai.setLocalAiBaseUrl(setLocalBaseUrl.value);
+        ai.setLocalAiKey(setLocalKey.value);
+        ai.setLocalAiModel(setLocalModel.value);
+        const localModelsList = setLocalModels.value
+          .split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+        ai.setLocalAiModels(localModelsList);
+        ai.setLocalAiReasoningModels(setLocalReasoning.value);
+        prefDensity.set(setDensity.value);
+        prefTheme.set(setTheme.value);
+        prefSaveDelayMs.set(setSaveDelay.value);
+        prefSyncPollMs.set(setSyncPoll.value);
+        const prevPresence = prefPresenceEnabled.get();
+        prefPresenceEnabled.set(setPresence.value);
+        // Re-apply sync-watch + presence so the new pref takes effect
+        // immediately without a reload.
+        if (S.sync.pageId && S.sync.loadedModified && S.sync.loadedEtag) {
+          void import('./sync-watch').then((m) => {
+            m.startWatching(S.sync.pageId!, S.sync.loadedModified!, S.sync.loadedEtag!);
+          });
+        }
+        if (prevPresence !== setPresence.value) {
+          void import('./presence-ui').then((m) => {
+            if (setPresence.value === '0') m.shutdownPresence();
+            else m.syncPresenceForCurrent();
+          });
+        }
+      } catch { /* ignore */ }
+      const ov = document.getElementById('memola-overlay');
+      if (ov) {
+        ov.dataset.density = setDensity.value;
+        ov.dataset.theme = setTheme.value;
+      }
+      void import('./ai-chat').then((m) => m.syncProviderBadge?.());
+      setMd.classList.remove('on');
+      toast('設定を保存しました');
+    });
+  });
+
+  // Apply on init
+  const ov = document.getElementById('memola-overlay');
+  if (ov) {
+    ov.dataset.density = prefDensity.get();
+    ov.dataset.theme = prefTheme.get();
+  }
+}
+
+/** Triple-checked reset path: pre-flight count → double confirm →
+ *  destructive run. Each mode hits a different `reset.ts` helper. */
+async function runReset(
+  mode: 'mine' | 'others' | 'all',
+  label: string,
+): Promise<void> {
+  const reset = await import('../api/reset');
+  setLoad(true, '対象を集計中...');
+  let counts: { pages: number; dbs: number; dailyRows: number };
+  try {
+    counts = await reset.countResetTargets(mode);
+  } catch (e) {
+    setLoad(false);
+    toast('集計失敗: ' + (e as Error).message, 'err');
+    return;
+  }
+  setLoad(false);
+  const total = counts.pages + counts.dbs + counts.dailyRows;
+  const detail = mode === 'all'
+    ? '全 memola-* SP リスト + 全 memola.* localStorage キー'
+    : `ページ ${counts.pages} 件 + DB ${counts.dbs} 件` +
+      (counts.dailyRows > 0 ? ` + デイリー ${counts.dailyRows} 件` : '');
+  if (total === 0 && mode !== 'all') {
+    toast('削除対象のデータがありません');
+    return;
+  }
+  if (!confirm(
+    '【' + label + '】\n\n' +
+    '削除対象: ' + detail + '\n\n' +
+    '⚠ 元に戻せません。SP のごみ箱からも復元できません。\n\n' +
+    '本当に実行しますか?',
+  )) return;
+  if (!confirm('最終確認: 実行すると即座に SP からデータが削除されます。よろしいですか?')) return;
+  setLoad(true, '削除中... (時間がかかる場合があります)');
+  try {
+    const sum = mode === 'mine' ? await reset.resetMyPrivateData()
+              : mode === 'others' ? await reset.resetOthersData()
+              : await reset.resetAll();
+    const summary = mode === 'all'
+      ? `SP リスト ${sum.spListsDeleted} 件 / 完全削除 ${sum.recycleBinPurged} 件`
+      : `ページ ${sum.pagesDeleted} / DB ${sum.dbsDeleted} / 完全削除 ${sum.recycleBinPurged} 件`;
+    let errSummary = '';
+    if (sum.errors.length > 0) {
+      const first = sum.errors[0].length > 80 ? sum.errors[0].slice(0, 80) + '…' : sum.errors[0];
+      errSummary = sum.errors.length === 1
+        ? ` (失敗 1 件: ${first})`
+        : ` (失敗 ${sum.errors.length} 件、最初: ${first})`;
+      console.warn('[Memola reset errors]', sum.errors);
+      setTimeout(() => {
+        const errDetail = sum.errors.slice(0, 20).join('\n');
+        const more = sum.errors.length > 20 ? `\n…他 ${sum.errors.length - 20} 件 (コンソール参照)` : '';
+        alert(`【リセットの失敗詳細 — ${sum.errors.length} 件】\n\n${errDetail}${more}`);
+      }, 800);
+    }
+    if (mode !== 'all') {
+      const { renderTree } = await import('./tree');
+      renderTree();
+      const v = await import('./views');
+      if (S.currentRow) {
+        const dbId = S.currentRow.dbId;
+        const dbStillExists = S.pages.some((p) => p.Id === dbId);
+        S.currentRow = null;
+        if (dbStillExists) {
+          const dbPage = S.pages.find((p) => p.Id === dbId);
+          if (dbPage) await v.doSelectDb(dbId, dbPage);
+        } else {
+          S.currentId = null;
+          showView('empty');
+        }
+      } else if (S.currentType === 'database' && S.currentId) {
+        const dbPage = S.pages.find((p) => p.Id === S.currentId);
+        if (dbPage) {
+          await v.doSelectDb(S.currentId, dbPage);
+        } else {
+          S.currentId = null;
+          showView('empty');
+        }
+      } else {
+        const stillExists = S.currentId && S.pages.some((p) => p.Id === S.currentId);
+        if (!stillExists) {
+          S.currentId = null;
+          showView('empty');
+        }
+      }
+    }
+    toast(label + ' 完了: ' + summary + errSummary,
+      sum.errors.length > 0 ? 'err' : 'ok');
+    document.getElementById('memola-settings-md')?.classList.remove('on');
+    if (mode === 'all') {
+      setTimeout(() => {
+        if (confirm('完全リセットが完了しました。SP ページを今すぐリロードしますか?')) {
+          location.reload();
+        }
+      }, 500);
+    }
+  } catch (e) {
+    toast('リセット失敗: ' + (e as Error).message, 'err');
+  } finally {
+    setLoad(false);
+  }
+}

@@ -619,14 +619,18 @@
 #memola-ed .memola-callout-body p { margin: 0; }
 
 /* ── Todo list ────────────────────────────────────────── */
-#memola-ed .memola-todo {
-  display: flex; align-items: flex-start; gap: 6px; margin: 2px 0; line-height: 1.6;
+/* Both `.memola-todo` (legacy editor) and `.memola-blk-todo`
+ * (controlled editor2) get the same flex layout so checkbox + text
+ * line up cleanly. */
+#memola-ed .memola-todo,
+#memola-ed .memola-blk-todo {
+  display: flex; align-items: flex-start; gap: 10px; margin: 2px 0; line-height: 1.6;
 }
 #memola-ed .memola-todo-cb {
-  width: 16px; height: 16px; margin-top: 3px; flex-shrink: 0; cursor: pointer;
+  width: 16px; height: 16px; margin-top: 4px; flex-shrink: 0; cursor: pointer;
   accent-color: var(--accent);
 }
-#memola-ed .memola-todo-txt { flex: 1; }
+#memola-ed .memola-todo-txt { flex: 1; min-width: 0; }
 #memola-ed .memola-todo-txt.done { text-decoration: line-through; opacity: 0.4; }
 
 /* ── Toggle / Details ─────────────────────────────────── */

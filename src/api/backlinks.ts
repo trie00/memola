@@ -10,7 +10,7 @@
 // delete).
 
 import { spListUrl, spGetD } from './sp-rest';
-import { PAGES_LIST } from './pages';
+import { ORG_PAGES_LIST, getMyPagesList } from './pages';
 
 export interface BacklinkEntry {
   pageId: string;
@@ -44,23 +44,39 @@ export function invalidateBacklinkCache(): void {
   _cachePromise = null;
 }
 
+/** Walk one pages list paginated, accumulating all rows. */
+async function loadBodiesFromList(listTitle: string): Promise<CachedRow[]> {
+  const rows: CachedRow[] = [];
+  let next: string | undefined = spListUrl(
+    listTitle,
+    '/items?$select=Id,Title,Body,PageType,OriginPageId&$top=500&$orderby=Id',
+  );
+  let safety = 0;
+  while (next && safety++ < 50) {
+    const d: { results: CachedRow[]; __next?: string } | null =
+      await spGetD<{ results: CachedRow[]; __next?: string }>(next);
+    if (!d) break;
+    for (const r of d.results) rows.push(r);
+    next = d.__next;
+  }
+  return rows;
+}
+
 async function loadAllBodies(): Promise<CachedRow[]> {
   if (_cache) return _cache;
   if (_cachePromise) return _cachePromise;
   _cachePromise = (async (): Promise<CachedRow[]> => {
-    const rows: CachedRow[] = [];
-    let next: string | undefined = spListUrl(
-      PAGES_LIST,
-      '/items?$select=Id,Title,Body,PageType,OriginPageId&$top=500&$orderby=Id',
-    );
-    let safety = 0;
-    while (next && safety++ < 50) {
-      const d: { results: CachedRow[]; __next?: string } | null =
-        await spGetD<{ results: CachedRow[]; __next?: string }>(next);
-      if (!d) break;
-      for (const r of d.results) rows.push(r);
-      next = d.__next;
+    // Phase 3 union read: bodies live in either the org-shared list
+    // OR my per-user list. Other users' lists are SP-side inaccessible
+    // — backlinks scan can't see them, which is the correct behaviour
+    // (private notes shouldn't leak via backlinks panel either).
+    const myList = getMyPagesList();
+    const reads = [loadBodiesFromList(ORG_PAGES_LIST)];
+    if (myList !== ORG_PAGES_LIST) {
+      reads.push(loadBodiesFromList(myList).catch(() => []));
     }
+    const buckets = await Promise.all(reads);
+    const rows = buckets.flat();
     _cache = rows;
     _cachePromise = null;
     return rows;

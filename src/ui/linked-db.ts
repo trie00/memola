@@ -9,8 +9,8 @@
 // open the full DB), but not editing — for that the user opens the full DB.
 
 import { S, type ListField, type ListItem } from '../state';
-import { setSave, toast } from './ui-helpers';
-import { schedSave } from './actions';
+import { toast } from './ui-helpers';
+import { schedSave } from './save-control';
 import { escapeHtml } from '../lib/html-escape';
 
 const MAX_ROWS_INLINE = 50;     // hard cap so embedding a huge DB stays usable
@@ -67,7 +67,7 @@ function persistFilters(block: HTMLElement, filters: LinkedDbFilter[]): void {
   } else {
     block.setAttribute('data-filter', JSON.stringify(filters));
   }
-  S.dirty = true; setSave('未保存'); schedSave();
+  schedSave();
   // Defer to next tick so the DOM mutation observer in the editor has
   // flushed before we re-render.
   setTimeout(() => { void renderOne(block); }, 0);

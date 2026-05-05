@@ -8,9 +8,7 @@
 //   - Row/col delete via context-style buttons on hover
 //   - Markdown roundtrip: GFM pipe table
 
-import { S } from '../state';
-import { setSave } from './ui-helpers';
-import { schedSave } from './actions';
+import { schedSave } from './save-control';
 import { getEd } from './dom';
 
 /** Build a fresh table DOM (no header by default; 3 cols × 2 body rows). */
@@ -95,7 +93,7 @@ export function attachTableHandlers(wrap: HTMLElement): void {
 
   // Bubble input → mark dirty
   tbl.addEventListener('input', () => {
-    S.dirty = true; setSave('未保存'); schedSave();
+    schedSave();
   });
 
   // Hover row/col buttons (lightweight: rebuild on each enter)
@@ -137,7 +135,7 @@ function installColumnResize(tbl: HTMLTableElement): void {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
       document.body.style.cursor = '';
-      S.dirty = true; setSave('未保存'); schedSave();
+      schedSave();
     }
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -346,7 +344,7 @@ function addRowAfter(tr: HTMLTableRowElement): HTMLTableRowElement {
     newTr.appendChild(td);
   }
   tr.parentElement!.insertBefore(newTr, tr.nextSibling);
-  S.dirty = true; setSave('未保存'); schedSave();
+  schedSave();
   return newTr;
 }
 
@@ -364,7 +362,7 @@ function addColAfter(tbl: HTMLTableElement, colIdx: number): void {
     cell.appendChild(document.createElement('br'));
     row.insertBefore(cell, ref);
   });
-  S.dirty = true; setSave('未保存'); schedSave();
+  schedSave();
 }
 
 function deleteRow(tr: HTMLTableRowElement): void {
@@ -375,7 +373,7 @@ function deleteRow(tr: HTMLTableRowElement): void {
   const totalRows = tbl ? tbl.rows.length : 1;
   if (totalRows <= 1) return;
   tr.remove();
-  S.dirty = true; setSave('未保存'); schedSave();
+  schedSave();
 }
 
 function deleteCol(tbl: HTMLTableElement, colIdx: number): void {
@@ -387,7 +385,7 @@ function deleteCol(tbl: HTMLTableElement, colIdx: number): void {
     const c = row.children[colIdx];
     if (c) c.remove();
   });
-  S.dirty = true; setSave('未保存'); schedSave();
+  schedSave();
 }
 
 function installHoverButtons(wrap: HTMLElement): void {
@@ -473,14 +471,14 @@ function showCellMenu(cell: HTMLTableCellElement, x: number, y: number): void {
     const on = tbl.dataset.hrow === '1';
     menu.appendChild(makeItem(on ? '✓ 行見出しを解除' : '行見出しに設定', () => {
       tbl.dataset.hrow = on ? '0' : '1';
-      S.dirty = true; setSave('未保存'); schedSave();
+      schedSave();
     }));
   }
   if (sel.isLeftCol) {
     const on = tbl.dataset.hcol === '1';
     menu.appendChild(makeItem(on ? '✓ 列見出しを解除' : '列見出しに設定', () => {
       tbl.dataset.hcol = on ? '0' : '1';
-      S.dirty = true; setSave('未保存'); schedSave();
+      schedSave();
     }));
   }
   if (sel.isTopRow || sel.isLeftCol) menu.appendChild(makeSep());
@@ -495,7 +493,7 @@ function showCellMenu(cell: HTMLTableCellElement, x: number, y: number): void {
       newTr.appendChild(td);
     }
     tr.parentElement!.insertBefore(newTr, tr);
-    S.dirty = true; setSave('未保存'); schedSave();
+    schedSave();
   }));
   menu.appendChild(makeItem('↓ 下に行を追加', () => addRowAfter(tr)));
   menu.appendChild(makeItem('行を削除', () => deleteRow(tr), true));
@@ -537,7 +535,7 @@ export function insertInlineTable(cols = 3, rows = 1): void {
     const firstBody = wrap.querySelector('tbody td') as HTMLTableCellElement | null;
     if (firstBody) focusCell(firstBody);
   }
-  S.dirty = true; setSave('未保存'); schedSave();
+  schedSave();
 }
 
 function curBlockSelf(): HTMLElement | null {
@@ -635,7 +633,7 @@ export function insertTableFromGrid(grid: string[][]): void {
     tailP.appendChild(document.createElement('br'));
     if (wrap.parentNode) wrap.parentNode.insertBefore(tailP, wrap.nextSibling);
   }
-  S.dirty = true; setSave('未保存'); schedSave();
+  schedSave();
 }
 
 /** Attach a global paste handler to the editor — Excel/Sheets range → inline table. */

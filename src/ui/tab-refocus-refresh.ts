@@ -22,6 +22,7 @@
 
 import { S } from '../state';
 import { apiGetPages } from '../api/pages';
+import { saver } from '../lib/saver';
 
 const MIN_INTERVAL_MS = 3000;
 let _lastRefreshTs = 0;
@@ -30,16 +31,15 @@ let _inFlight = false;
 async function refresh(): Promise<void> {
   if (_inFlight) return;
   if (Date.now() - _lastRefreshTs < MIN_INTERVAL_MS) return;
-  // Sensitive states — skip everything (= editor or save flow active)
-  if (S.sync.mergeInProgress) return;
-  if (S.saving) return;
+  // Sensitive states — skip everything (= save / conflict / merge in flight)
+  if (saver.isBusy()) return;
   _inFlight = true;
   try {
     // 1. Always refresh the tree — adding / deleting / renaming a page
     //    in another tab while we were away should reflect immediately.
     //    This doesn't touch the editor and is safe regardless of dirty.
     try {
-      S.pages = await apiGetPages();
+      await apiGetPages();
       const { renderTree } = await import('./tree');
       renderTree();
     } catch { /* tolerate */ }
@@ -47,7 +47,7 @@ async function refresh(): Promise<void> {
     // 2. Refresh the current view body — but ONLY if no unsaved edits.
     //    Reloading would clobber the user's typing. They get the
     //    since-last-view banner / sync banner instead.
-    if (S.dirty) return;
+    if (saver.isDirty()) return;
     if (!S.currentId) return;
 
     if (S.currentType === 'page' && !S.currentRow) {

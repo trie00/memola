@@ -14,10 +14,13 @@ import {
   apiLoadFileMeta,
   apiSetTitle,
 } from '../api/pages';
-import { mdToHtml } from '../lib/markdown';
+import { mdToBlocks } from '../lib/blocks-md';
+import { blocksToHtml } from '../lib/blocks-html';
+const mdToHtml = (md: string): string => blocksToHtml(mdToBlocks(md));
 import { renderTree } from '../ui/tree';
 import { confirmPageUpdate } from '../ui/diff-modal';
 import { collectDescendantIds } from '../lib/page-tree';
+import { addPage, removePages, setPageTitle } from '../lib/page-store';
 import { g, getEd } from '../ui/dom';
 import { autoR } from '../ui/ui-helpers';
 import * as db from './db-tool-exec';
@@ -83,7 +86,7 @@ async function handleCreatePage(input: { title: string; parent_id?: string; body
   }
 
   const page = await apiCreatePage(title, parentId);
-  S.pages.push(page);
+  addPage(page);
 
   if (input.body) {
     // Save markdown directly — round-tripping through mdToHtml/htmlToMd is lossy.
@@ -139,7 +142,7 @@ async function handleUpdatePage(input: { id: string; title?: string; body?: stri
   } else if (newTitle !== oldTitle) {
     await apiSetTitle(id, newTitle);
   }
-  page.Title = newTitle;
+  setPageTitle(id, newTitle);
   renderTree();
 
   // If the user is currently viewing this page in the editor, refresh it so
@@ -153,7 +156,19 @@ async function handleUpdatePage(input: { id: string; title?: string; body?: stri
       const titleEl = g('ttl') as HTMLTextAreaElement | null;
       if (titleEl) { titleEl.value = newTitle; autoR(titleEl); }
     }
-    S.dirty = false;
+    // Editor was just refreshed from a successful AI write — re-establish
+    // the Saver's baseline so the editor mirrors 'idle' (no unsaved diff).
+    const fm = await apiLoadFileMeta(id).catch(() => null);
+    if (fm) {
+      const { saver } = await import('../lib/saver');
+      saver.loadPage({
+        pageId: id,
+        body: newBody || '',
+        title: newTitle,
+        etag: fm.etag,
+        modified: fm.modified,
+      });
+    }
   }
   return ok({ id, title: newTitle });
 }
@@ -171,7 +186,7 @@ async function handleTrashPage(input: { id: string }): Promise<ToolResult> {
   if (!confirm(msg)) return err('user_cancelled');
 
   await apiTrashPage(id);
-  S.pages = S.pages.filter((p) => !ids.includes(p.Id));
+  removePages(ids);
   if (S.currentId !== null && ids.includes(S.currentId)) {
     S.currentId = null;
   }

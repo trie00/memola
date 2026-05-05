@@ -94,39 +94,22 @@ export interface AppState {
     messages: ApiMessage[];
     loading: boolean;
   };
+  /** Sync watch — tracks "the page we're watching for foreign edits".
+   *  The save lifecycle (dirty / saving / conflict / merging) lives in
+   *  the Saver state machine (`src/lib/saver.ts`). The legacy
+   *  `S.dirty`, `S.saving`, `S.sync.loadedEtag`, `S.sync.loadedModified`
+   *  and `S.sync.baseBody` fields below are kept in sync by
+   *  saver-bridge so non-migrated readers keep working. */
   sync: {
     pageId: string | null;
     loadedModified: string | null;
     loadedEtag: string | null;
     pollTimer: ReturnType<typeof setInterval> | null;
-    /** Etags this tab has produced via its own save calls. The poll
-     *  loop suppresses the "別タブで更新" banner when the remote etag
-     *  is in this set — it's our own save we're seeing, not someone
-     *  else's. Bounded to 32 entries (FIFO) to cap memory. */
-    ourSavedEtags: string[];
-    /** Wall-clock ms of the last write THIS tab made against the
-     *  currently-watched page. Defence-in-depth on top of ourSavedEtags:
-     *  if the poll sees an etag mismatch but our last local write was
-     *  within QUIET_AFTER_WRITE_MS, treat as our own save propagation lag
-     *  (some pre-fix zombie instance, etag-format quirk, etc.) instead of
-     *  raising "別タブで更新". Cleared when the watched page changes. */
-    lastLocalWriteTs: number | null;
     /** When true, the "別タブで更新" banner won't be re-shown until the
      *  user switches the browser tab away and back. Set by the "このタブ
      *  を離れるまで通知しない" button on the banner. Reset on
      *  visibilitychange (tab regains focus). */
     suppressBannerUntilFocus?: boolean;
-    /** Raw markdown body of the watched page at the moment we last
-     *  fetched it from SP (= our "common ancestor" for 3-way merge).
-     *  Refreshed on every page load AND on every successful save (= the
-     *  body we just wrote becomes the new base). When a save conflict
-     *  surfaces, this is the `base` input to threeWayMerge. */
-    baseBody?: string;
-    /** True while the user is in the merge UI resolving a conflict.
-     *  doSave / schedSave bail when this is set so the autosave timer
-     *  doesn't keep re-firing the conflict modal on top of the merge
-     *  modal. Reset when the merge modal closes (any path). */
-    mergeInProgress?: boolean;
   };
   expanded: Set<string>;
   dirty: boolean;
@@ -134,7 +117,29 @@ export interface AppState {
 }
 
 export const S: AppState = {
-  pages: [],
+  /** **Derived view** of `meta.pages`. The getter rebuilds the
+   *  UI-friendly Page[] each access from the canonical PageMeta[] so
+   *  the two can never drift out of sync. The setter is a deliberate
+   *  no-op — kept so legacy `S.pages = await apiGetPages()` callsites
+   *  still compile, but the assignment does nothing (the value is
+   *  derived from the meta side-effect inside apiGetPages instead).
+   *
+   *  Mutate via the helpers in `lib/page-store.ts` (addPage /
+   *  removePages / setPageTitle), which write to `meta.pages`. The
+   *  getter excludes trashed entries and decorates with `IsDraft`
+   *  exactly the way `apiGetPages` historically did. */
+  get pages(): Page[] {
+    return this.meta.pages
+      .filter((p) => !p.trashed)
+      .map((p): Page => ({
+        Id: p.id,
+        Title: p.title,
+        ParentId: p.parent || '',
+        Type: (p.type || 'page') as 'page' | 'database',
+        IsDraft: !!p.originPageId,
+      }));
+  },
+  set pages(_: Page[]) { /* derived — assignment is a no-op */ },
   meta: { pages: [] },
   currentId: null,
   currentType: 'page',
@@ -148,7 +153,7 @@ export const S: AppState = {
   currentRow: null,
   dbSelected: new Set<number>(),
   ai: { panelOpen: false, messages: [], loading: false },
-  sync: { pageId: null, loadedModified: null, loadedEtag: null, pollTimer: null, ourSavedEtags: [], lastLocalWriteTs: null },
+  sync: { pageId: null, loadedModified: null, loadedEtag: null, pollTimer: null },
   expanded: new Set<string>(),
   dirty: false,
   saving: false,
@@ -158,7 +163,7 @@ export const S: AppState = {
  *  /api are cleared separately. Does NOT touch S itself by reassignment
  *  (other modules import S as a live reference); mutates fields in place. */
 export function resetAppState(): void {
-  S.pages = [];
+  // S.pages is a derived view — clearing meta.pages also clears the view.
   S.meta = { pages: [] };
   S.currentId = null;
   S.currentType = 'page';
@@ -175,8 +180,6 @@ export function resetAppState(): void {
   S.sync.pageId = null;
   S.sync.loadedModified = null;
   S.sync.loadedEtag = null;
-  S.sync.ourSavedEtags = [];
-  S.sync.lastLocalWriteTs = null;
   if (S.sync.pollTimer) { clearInterval(S.sync.pollTimer); S.sync.pollTimer = null; }
   S.expanded.clear();
   S.dirty = false;

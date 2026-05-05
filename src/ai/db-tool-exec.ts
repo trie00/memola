@@ -15,6 +15,7 @@ import { getRowBody, setRowBody } from '../api/pages';
 import { renderTree } from '../ui/tree';
 import { confirmDbRowUpdate } from '../ui/diff-modal';
 import { addRowWithUndo, deleteRowWithUndo, recordRowFieldsUpdate } from '../ui/db-history';
+import { addPage } from '../lib/page-store';
 
 export interface ToolResult { ok: boolean; [k: string]: unknown }
 
@@ -184,7 +185,7 @@ export async function handleCreateDb(input: { title: string; parent_id?: string 
     return err('parent_id_not_found');
   }
   const page = await apiCreateDb(title, parentId);
-  S.pages.push({ Id: page.Id, Title: page.Title, ParentId: page.ParentId, Type: 'database' });
+  addPage({ Id: page.Id, Title: page.Title, ParentId: page.ParentId, Type: 'database' });
   if (parentId) S.expanded.add(parentId);
   renderTree();
   return ok({ id: page.Id, title: page.Title });

@@ -9,7 +9,10 @@ import { setSave, setSavedAt, toast, autoR } from './ui-helpers';
 import { apiUpdateDbRow } from '../api/db';
 import { getListItems } from '../api/sp-list';
 import { getRowBody, setRowBody } from '../api/pages';
-import { mdToHtml, htmlToMd } from '../lib/markdown';
+import { htmlToBlocks, blocksToHtml } from '../lib/blocks-html';
+import { mdToBlocks, blocksToMd } from '../lib/blocks-md';
+const mdToHtml = (md: string): string => blocksToHtml(mdToBlocks(md));
+const htmlToMd = (html: string): string => blocksToMd(htmlToBlocks(html));
 import { showView, renderBcCustom } from './views';
 import { reattachInlineTables } from './inline-table';
 import { renderRowProperties } from './row-props';
@@ -140,7 +143,7 @@ async function maybePromptDailyConvert(
     const newPageId = await convertDailyToPage(rowId, newTitle, date);
     // Reload page tree so the new standalone page shows in the sidebar.
     const { apiGetPages } = await import('../api/pages');
-    S.pages = await apiGetPages();
+    await apiGetPages();
     const { renderTree } = await import('./tree');
     renderTree();
     const v = await import('./views');

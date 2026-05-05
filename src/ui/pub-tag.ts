@@ -96,16 +96,16 @@ async function runSync(): Promise<void> {
   // Persist any in-flight edits to memola-pages first. Without this we'd push
   // the editor buffer to the Site Page while the source row still has the
   // pre-edit body — a subsequent reload would lose the synced content.
-  if (S.dirty) {
-    const { doSave } = await import('./actions');
-    await doSave();
-  }
+  // Flush any pending edits via the Saver before the publish op
+  const { flushPendingSave } = await import('./save-control');
+  await flushPendingSave();
   const tag = document.getElementById('memola-pub-tag');
   const titleEl = g('ttl') as HTMLTextAreaElement | null;
   const ed = getEd();
   const title = (titleEl?.value || '').trim() || '無題';
-  const { htmlToMd } = await import('../lib/markdown');
-  const bodyMd = htmlToMd(ed.innerHTML || '');
+  const { htmlToBlocks } = await import('../lib/blocks-html');
+  const { blocksToMd } = await import('../lib/blocks-md');
+  const bodyMd = blocksToMd(htmlToBlocks(ed.innerHTML || ''));
   const labelEl = tag?.querySelector<HTMLElement>('.memola-pub-tag-label');
   const prevLabel = labelEl?.textContent || '';
   if (tag) tag.classList.add('busy');

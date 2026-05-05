@@ -128,6 +128,13 @@ export const prefPaneOutlineWidth = strPref('memola.pane.outline');
 export const prefPanePropsWidth   = strPref('memola.pane.props');
 export const prefPaneAiWidth      = strPref('memola.pane.ai');
 
+// ── Editor2 (Phase 2c controlled-rendering) feature flag ─────────────
+// When '1', the new block-tree editor (editor2) is mounted instead of
+// the legacy contenteditable+htmlToMd path. Off by default — flip via
+// localStorage to A/B test in a real browser without breaking existing
+// flows.
+export const prefEditor2          = strPref('memola.editor2');           // '1' = enabled
+
 // ── Misc ─────────────────────────────────────────────────────────────
 // Per-DB ordering / configs — these are PREFIX-keyed (one entry per list),
 // so we expose helpers rather than fixed-string accessors.

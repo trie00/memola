@@ -15,16 +15,67 @@ import {
   deleteList,
   getListItems,
   setColumnIndexed,
+  applyOwnerOnlyAcl,
 } from './sp-list';
 import { spListUrl, spGetD } from './sp-rest';
-import { mdToHtml, htmlToMd } from '../lib/markdown';
+import { mdToBlocks, blocksToMd } from '../lib/blocks-md';
+import { blocksToHtml } from '../lib/blocks-html';
+import type { Block } from '../lib/blocks';
 import { collectDescendantIds } from '../lib/page-tree';
 import { getCurrentUserId } from './sync';
 import { invalidateBacklinkCache } from './backlinks';
+import { removePages } from '../lib/page-store';
 
-export const PAGES_LIST = 'memola-pages';
+/** Org-shared pages list. Anything `Scope='org'` lives here (visible to
+ *  the whole workspace). Phase 3 split: this is the workspace-shared
+ *  half; user-scope pages live in per-user lists (see `getMyPagesList`).
+ *
+ *  Row entries (`PageType='row'` — internal DB-row body metadata)
+ *  also live here unconditionally: they're not user-facing pages, so
+ *  the per-user split doesn't apply to them. */
+export const ORG_PAGES_LIST = 'memola-pages';
 
-interface PageRow {
+/** Per-user pages list name. Computed from `S.meta.myUserId` when
+ *  cached (set by `apiGetPages` at startup). Falls back to
+ *  `ORG_PAGES_LIST` BEFORE bootstrap — pre-bootstrap operations end up
+ *  on the shared list, which is intentional (everything boots into a
+ *  consistent state and post-bootstrap calls route correctly). */
+export function getMyPagesList(): string {
+  const id = S.meta.myUserId;
+  if (id) return 'memola-user-' + id + '-pages';
+  return ORG_PAGES_LIST;
+}
+
+/** Pick the right list for a given page scope. `'user'` → per-user
+ *  list, `'org'` → org-shared list. */
+export function pagesListFor(scope: PageScope): string {
+  return scope === 'user' ? getMyPagesList() : ORG_PAGES_LIST;
+}
+
+/** Resolve which SP list backs the given page id. Looks up
+ *  `S.meta.pages` to derive scope; falls back to `ORG_PAGES_LIST` for
+ *  unknown ids (= legacy / pre-bootstrap reads).
+ *
+ *  Note: this resolves by *the current user's view*. A page authored
+ *  by user A with scope='user' lives in A's list; if user B somehow
+ *  has its meta cached (they shouldn't — apiGetPages filters), this
+ *  helper would still route to "my user list", which would 404. The
+ *  privacy filter in `apiGetPages` ensures user-scope rows in the
+ *  meta cache always belong to the current user. */
+export function listForPageId(pageId: string): string {
+  // Codex review PS1: explicit source-list mapping wins over
+  // scope-derived routing. The loader (apiGetPages) records each
+  // pageId's source list at read time; that's authoritative for
+  // existing rows. When the mapping is missing (e.g. brand-new pages
+  // not yet observed by a load), fall back to scope-derived routing.
+  const explicit = SOURCE_LIST_BY_PAGEID.get(pageId);
+  if (explicit) return explicit;
+  const meta = S.meta.pages.find((p) => p.id === pageId);
+  if (!meta) return ORG_PAGES_LIST;
+  return pagesListFor(meta.scope === 'org' ? 'org' : 'user');
+}
+
+export interface PageRow {
   Id: number;
   Title?: string;
   ParentId?: string;
@@ -34,7 +85,10 @@ interface PageRow {
   Trashed?: number;
   ListTitle?: string;       // for 'database': backing list name; for 'row': owning DB list
   DbRowId?: number;         // for 'row': item id within the DB list
-  Body?: string;
+  /** Block-tree JSON — Phase 2 canonical body store. Contents are
+   *  `JSON.stringify(Block[])`. Markdown remains a boundary format
+   *  (AI tool I/F, paste, export) but isn't persisted. */
+  Body_blocks?: string;
   Published?: number;       // 0 / 1 — currently mirrored as a Modern Site Page
   PublishedUrl?: string;    // absolute URL of the mirrored Site Page
   PublishedPageId?: number; // SP.Publishing.SitePage Id
@@ -67,7 +121,12 @@ export function clearPagesCache(): void {
  *  ensurePagesList can verify completeness after column-add attempts. */
 const REQUIRED_FIELDS: Array<[string, number]> = [
   ['ParentId', 2], ['PageType', 2], ['Icon', 2], ['Pinned', 9], ['Trashed', 9],
-  ['ListTitle', 2], ['DbRowId', 9], ['Body', 3],
+  ['ListTitle', 2], ['DbRowId', 9],
+  // Phase 2: block-tree JSON canonical body. The legacy 'Body' (markdown)
+  // column is no longer required — pre-prod data is throwaway, so we
+  // simply stop reading/writing it. The column may linger on the SP
+  // list but isn't enforced.
+  ['Body_blocks', 3],
   ['Published', 9], ['PublishedUrl', 3], ['PublishedPageId', 9], ['PublishedDirty', 9],
   ['OriginDailyDate', 2],
   ['OriginPageId', 2],
@@ -81,38 +140,69 @@ const REQUIRED_FIELDS: Array<[string, number]> = [
  *  text) columns can't be indexed, so `Body` is intentionally absent. */
 const INDEXED_COLUMNS = ['ListTitle', 'DbRowId', 'PageType', 'Scope', 'Trashed', 'TrashedBy'];
 
-/** Idempotently create the memola-pages list and its columns. Resilient to
- *  transient field-add failures: if any required column is still missing
- *  after the first pass, the cached promise is cleared so subsequent calls
- *  retry, and the current call rejects so the caller can surface the error
- *  instead of silently running with an incomplete schema. */
-async function ensurePagesList(): Promise<void> {
+/** Provision a single pages list (org or per-user) with its columns and
+ *  indexed fields. Same shape for both list flavours — only the list
+ *  title differs. Throws if any required column is still missing after
+ *  the field-add pass. */
+async function provisionOnePagesList(listTitle: string): Promise<void> {
+  const wasNew = !((await spGetD<unknown>(spListUrl(listTitle))) != null);
+  if (wasNew) await createList(listTitle);
+  const titles = await listFieldTitles(listTitle);
+  const need = async (n: string, kind: number): Promise<void> => {
+    if (titles.has(n)) return;
+    try { await addListField(listTitle, n, kind); titles.add(n); }
+    catch { /* tolerate failure; verified below */ }
+  };
+  // Run sequentially to avoid digest churn / race
+  for (const [name, kind] of REQUIRED_FIELDS) {
+    await need(name, kind);
+  }
+  // Verify schema completeness — re-fetch field titles in case `titles`
+  // got out of sync (e.g. another tab added a column concurrently).
+  const finalTitles = await listFieldTitles(listTitle);
+  const missing = REQUIRED_FIELDS.filter(([n]) => !finalTitles.has(n)).map(([n]) => n);
+  if (missing.length > 0) {
+    throw new Error(listTitle + ' の必須列が不足しています: ' + missing.join(', '));
+  }
+  // Mark filter-critical columns as indexed so $filter queries scale
+  // past the 5,000-row LVT. Idempotent — SP no-ops on already-indexed
+  // columns. Failures are non-fatal (the app still works at <5K rows).
+  for (const col of INDEXED_COLUMNS) {
+    await setColumnIndexed(listTitle, col).catch(() => undefined);
+  }
+  // Phase 3 ACL: lock per-user lists down to the owner only.
+  //
+  // Codex review P3: re-apply ACL on EVERY ensure pass for per-user
+  // lists, not only when `wasNew`. If list creation succeeded but a
+  // subsequent step (column add, indexing) threw, the next ensure
+  // would have `wasNew=false` and the ACL was previously skipped —
+  // leaving the list created but wide-open. ACL ops are idempotent
+  // on SP (already-broken inheritance / already-granted role return
+  // benign errors that `applyOwnerOnlyAcl` tolerates).
+  const userIdMatch = listTitle.match(/^memola-user-(\d+)-pages$/);
+  if (userIdMatch) {
+    const userId = parseInt(userIdMatch[1], 10);
+    await applyOwnerOnlyAcl(listTitle, userId);
+  }
+}
+
+/** Idempotently create both the org-shared pages list AND the current
+ *  user's per-user pages list (when the user id is known). Resilient
+ *  to transient field-add failures: clears the cached promise on
+ *  failure so the next call retries.
+ *
+ *  Phase 3: when `S.meta.myUserId` is set (= apiGetPages has run at
+ *  least once), this provisions `'memola-user-' + myUserId + '-pages'`
+ *  alongside the org list. Pre-bootstrap calls only provision the org
+ *  list, which is fine because pre-bootstrap operations route through
+ *  the org list anyway (see `getMyPagesList`). */
+export async function ensurePagesList(): Promise<void> {
   if (_ensurePromise) return _ensurePromise;
   _ensurePromise = (async () => {
-    const exists = (await spGetD<unknown>(spListUrl(PAGES_LIST))) != null;
-    if (!exists) await createList(PAGES_LIST);
-    const titles = await listFieldTitles();
-    const need = async (n: string, kind: number): Promise<void> => {
-      if (titles.has(n)) return;
-      try { await addListField(PAGES_LIST, n, kind); titles.add(n); }
-      catch { /* tolerate failure; verified below */ }
-    };
-    // Run sequentially to avoid digest churn / race
-    for (const [name, kind] of REQUIRED_FIELDS) {
-      await need(name, kind);
-    }
-    // Verify schema completeness — re-fetch field titles in case `titles`
-    // got out of sync (e.g. another tab added a column concurrently).
-    const finalTitles = await listFieldTitles();
-    const missing = REQUIRED_FIELDS.filter(([n]) => !finalTitles.has(n)).map(([n]) => n);
-    if (missing.length > 0) {
-      throw new Error('memola-pages の必須列が不足しています: ' + missing.join(', '));
-    }
-    // Mark filter-critical columns as indexed so $filter queries scale
-    // past the 5,000-row LVT. Idempotent — SP no-ops on already-indexed
-    // columns. Failures are non-fatal (the app still works at <5K rows).
-    for (const col of INDEXED_COLUMNS) {
-      await setColumnIndexed(PAGES_LIST, col).catch(() => undefined);
+    await provisionOnePagesList(ORG_PAGES_LIST);
+    const myList = getMyPagesList();
+    if (myList !== ORG_PAGES_LIST) {
+      await provisionOnePagesList(myList);
     }
   })().catch((e) => {
     // Allow the next caller to retry. Without this, a single transient
@@ -123,18 +213,58 @@ async function ensurePagesList(): Promise<void> {
   return _ensurePromise;
 }
 
-async function listFieldTitles(): Promise<Set<string>> {
+async function listFieldTitles(listTitle: string): Promise<Set<string>> {
   const d = await spGetD<{ results: { Title: string; InternalName: string }[] }>(
-    spListUrl(PAGES_LIST, '/fields?$select=Title,InternalName'),
+    spListUrl(listTitle, '/fields?$select=Title,InternalName'),
   );
   const s = new Set<string>();
   d?.results.forEach((f) => { s.add(f.Title); s.add(f.InternalName); });
   return s;
 }
 
+/** Filter raw memola-pages rows down to what the given user should see.
+ *
+ *  - PageType='row' (internal DB-row body metadata) is always excluded
+ *    — those are looked up on demand via getRowBody / setRowBody.
+ *  - Drafts (PageType='draft' OR OriginPageId set for legacy rows) are
+ *    private to their author.
+ *  - Pages with `Scope='user'` are visible only to their author.
+ *    Codex review PS5: rows with empty `Scope` are also treated as
+ *    user-scope (= private). The create-path defaults Scope to 'user',
+ *    so any empty value is a legacy row predating Phase 3 — and the
+ *    pre-launch convention is "no migration, secure-by-default". The
+ *    earlier `return true` for empty-Scope leaked personal/draft rows.
+ *  - Only `Scope === 'org'` is treated as org-shared.
+ *  - When `myUserId === 0` (self resolution failed) we lean toward
+ *    leaking rather than losing data — the user sees more than they
+ *    "should" but no edits go missing.
+ *
+ *  Pure: doesn't mutate `items` and doesn't read any module state. */
+export function filterVisiblePages(items: PageRow[], myUserId: number): PageRow[] {
+  return items.filter((it) => {
+    if (it.PageType === 'row') return false;
+    const isDraft = it.PageType === 'draft' || !!it.OriginPageId;
+    if (isDraft) {
+      if (myUserId === 0) return true;
+      return it.AuthorId === myUserId;
+    }
+    if (it.Scope === 'org') return true;
+    // Default = user-scope (private). Includes Scope='user' AND legacy
+    // empty Scope.
+    if (myUserId === 0) return true;
+    return it.AuthorId === myUserId;
+  });
+}
+
 function rowToMeta(row: PageRow): PageMeta {
+  return rowToMetaWithId(row, String(row.Id));
+}
+
+/** Codex review PS1: rowToMeta variant that takes the chosen pageId
+ *  externally (the loader picks composite or numeric per collision). */
+function rowToMetaWithId(row: PageRow, pageId: string): PageMeta {
   const m: PageMeta = {
-    id: String(row.Id),
+    id: pageId,
     title: row.Title || '',
     parent: row.ParentId || '',
     type: row.PageType === 'database' ? 'database' : 'page',
@@ -162,12 +292,17 @@ interface FetchedRow {
   editor: string;
 }
 
-async function fetchOneRow(itemId: number, select?: string): Promise<FetchedRow | null> {
-  const sel = select || 'Id,Title,ParentId,PageType,Icon,Pinned,Trashed,ListTitle,DbRowId,Body,Published,PublishedUrl,PublishedPageId,PublishedDirty,OriginDailyDate,OriginPageId,Scope,AuthorId,TrashedBy,Modified,Editor/Title';
+/** Read a single page row. Takes a `pageId` (string) so the list can be
+ *  resolved per-page — Phase 3 routes user-scope pages to per-user
+ *  lists. Empty/unparseable ids return null. */
+async function fetchOneRow(pageId: string, select?: string): Promise<FetchedRow | null> {
+  const itemId = pageIdToItemId(pageId);
+  if (!itemId) return null;
+  const sel = select || 'Id,Title,ParentId,PageType,Icon,Pinned,Trashed,ListTitle,DbRowId,Body_blocks,Published,PublishedUrl,PublishedPageId,PublishedDirty,OriginDailyDate,OriginPageId,Scope,AuthorId,TrashedBy,Modified,Editor/Title';
   // Only $expand=Editor when an Editor sub-field is in $select; otherwise SP
   // returns 400 (expand without matching select).
   const expandPart = /\bEditor\//.test(sel) ? '&$expand=Editor' : '';
-  const url = spListUrl(PAGES_LIST, '/items(' + itemId + ')?$select=' +
+  const url = spListUrl(listForPageId(pageId), '/items(' + itemId + ')?$select=' +
     encodeURIComponent(sel) + expandPart);
   const d = await spGetD<PageRow & { __metadata: { etag: string }; Modified: string; Editor?: { Title: string } }>(url);
   if (!d) return null;
@@ -184,49 +319,102 @@ export function getPageParent(id: string): string {
   return p ? (p.parent || '') : '';
 }
 
+/** Codex review PS1: itemId-collision detection. When the org list and
+ *  per-user list contain rows with the same numeric SP item id, the
+ *  meta cache (keyed by `String(id)`) used to silently drop one. After
+ *  this pass, every meta row is keyed by the full PS1 composite form
+ *  `${listTitle}:${itemId}` if and only if a collision exists for that
+ *  itemId — non-colliding rows keep their plain numeric id form for
+ *  source-compatibility with the rest of the codebase.
+ *
+ *  PS1 full form (= every pageId is composite, no exceptions) is
+ *  deferred to its own focused refactor; this opportunistic form fixes
+ *  the actual data-shadowing collision without churning every call
+ *  site that does `parseInt(pageId, 10)`. */
+const SOURCE_LIST_BY_PAGEID = new Map<string, string>();
+
+function buildSourceListMap(buckets: { list: string; rows: PageRow[] }[]): {
+  rowToPageId: Map<PageRow, string>;
+  sourceListByPageId: Map<string, string>;
+} {
+  const rowToPageId = new Map<PageRow, string>();
+  const sourceListByPageId = new Map<string, string>();
+  // Tally numeric-id occurrences across buckets — a numeric id present
+  // in ≥2 buckets requires composite-key minting.
+  const byNumericId = new Map<number, Array<{ list: string; row: PageRow }>>();
+  for (const bucket of buckets) {
+    for (const row of bucket.rows) {
+      const arr = byNumericId.get(row.Id) || [];
+      arr.push({ list: bucket.list, row });
+      byNumericId.set(row.Id, arr);
+    }
+  }
+  for (const [num, entries] of byNumericId) {
+    if (entries.length === 1) {
+      const { list, row } = entries[0];
+      const pid = String(num);
+      rowToPageId.set(row, pid);
+      sourceListByPageId.set(pid, list);
+    } else {
+      // Collision — mint composite ids for all of them.
+      for (const { list, row } of entries) {
+        const pid = list + ':' + num;
+        rowToPageId.set(row, pid);
+        sourceListByPageId.set(pid, list);
+      }
+    }
+  }
+  return { rowToPageId, sourceListByPageId };
+}
+
+/** Refresh `S.meta.pages` from the union of the org-shared list and
+ *  the current user's per-user list. `S.pages` is a derived view that
+ *  picks up the change automatically — callers don't need to capture
+ *  the return value (it's `S.pages` for legacy callers that expect an
+ *  array, but `await apiGetPages()` followed by reading `S.pages` is
+ *  the new pattern). */
 export async function apiGetPages(): Promise<Page[]> {
-  await ensurePagesList();
-  const items = (await getListItems(PAGES_LIST)) as unknown as PageRow[];
-  // Drafts (PageType='draft') are private to their creator. Hide other
-  // users' drafts from this user's view entirely — they shouldn't appear
-  // in the tree, search, or even metadata lookups.
+  // Resolve the SP user id FIRST so `getMyPagesList()` (consulted by
+  // ensurePagesList → provisionOnePagesList for the per-user list)
+  // returns the right name. Cache it for downstream helpers
+  // (`listForPageId`, `pagesListFor`) that route writes by scope.
   const myId = await getCurrentUserId().catch(() => 0);
-  // Cache the resolved id for sync writes (TrashedBy etc.)
   S.meta.myUserId = myId || 0;
-  // Keep only top-level entries. Row-as-page (PageType='row') is an internal
-  // join with DB rows and is looked up on demand via getRowBody / setRowBody.
-  // Other users' drafts are filtered here so they never enter S.meta.pages.
-  const topLevel = items.filter((it) => {
-    if (it.PageType === 'row') return false;
-    // Anything with OriginPageId is a draft (PageType='draft' for new ones,
-    // PageType='page' for ones created before the type was introduced).
-    // Show only the current user's drafts.
-    const isDraft = it.PageType === 'draft' || !!it.OriginPageId;
-    if (isDraft) {
-      if (myId === 0) return true;     // can't resolve self → leak rather than lose
-      return it.AuthorId === myId;
-    }
-    // Privacy filter: pages with `Scope='user'` are visible only to their
-    // creator. Pages with `Scope='org'` (or pre-Scope-column legacy data
-    // where Scope is empty) stay visible to everyone.
-    if (it.Scope === 'user') {
-      if (myId === 0) return true;     // can't resolve self → leak rather than lose
-      return it.AuthorId === myId;
-    }
-    return true;
-  });
-  S.meta.pages = topLevel.map(rowToMeta);
-  return S.meta.pages
-    .filter((p) => !p.trashed)
-    .map((p) => ({
-      Id: p.id,
-      Title: p.title,
-      ParentId: p.parent || '',
-      Type: (p.type || 'page') as 'page' | 'database',
-      // Drafts get IsDraft=true so the tree / search / picker can hide them
-      // and the drafts modal can find them.
-      IsDraft: !!p.originPageId,
-    }));
+  await ensurePagesList();
+  // Phase 3 union read: pages live in the org-shared list (Scope='org')
+  // OR in the current user's per-user list (Scope='user'). Read both
+  // in parallel and merge. When myUserId can't be resolved we fall
+  // back to a single-list read against the org list — the user sees a
+  // degraded view but doesn't lose data.
+  const myList = getMyPagesList();
+  const buckets: { list: string; rows: PageRow[] }[] = [
+    { list: ORG_PAGES_LIST, rows: (await getListItems(ORG_PAGES_LIST)) as unknown as PageRow[] },
+  ];
+  if (myList !== ORG_PAGES_LIST) {
+    const myRows = await getListItems(myList).catch(() => [] as unknown[]);
+    buckets.push({ list: myList, rows: myRows as unknown as PageRow[] });
+  }
+  // Codex review PS1: detect itemId collisions across lists and mint
+  // composite pageIds where needed.
+  const { rowToPageId, sourceListByPageId } = buildSourceListMap(buckets);
+  SOURCE_LIST_BY_PAGEID.clear();
+  for (const [pid, list] of sourceListByPageId) SOURCE_LIST_BY_PAGEID.set(pid, list);
+  const items = buckets.flatMap((b) => b.rows);
+  const topLevel = filterVisiblePages(items, myId);
+  S.meta.pages = topLevel.map((row) => rowToMetaWithId(row, rowToPageId.get(row) ?? String(row.Id)));
+  // S.pages getter recomputes from meta.pages — return the current
+  // value for legacy callers (the assignment is a no-op via the setter).
+  return S.pages;
+}
+
+/** Codex review PS1: parse a pageId that may be either plain numeric
+ *  (`'42'`, the original form) or composite (`'memola-pages:42'`).
+ *  Returns the numeric SP itemId portion. Used by every caller that
+ *  needs to talk to the SP REST API. */
+export function pageIdToItemId(pageId: string): number {
+  const colon = pageId.lastIndexOf(':');
+  const numericPart = colon >= 0 ? pageId.substring(colon + 1) : pageId;
+  return parseInt(numericPart, 10);
 }
 
 export function getTrashedPages(): Array<{ id: string; title: string; trashed: number; type?: string }> {
@@ -236,30 +424,64 @@ export function getTrashedPages(): Array<{ id: string; title: string; trashed: n
     .sort((a, b) => b.trashed - a.trashed);
 }
 
-export async function apiLoadContent(id: string): Promise<string> {
-  const itemId = parseInt(id, 10);
-  if (!itemId) return '';
-  const r = await fetchOneRow(itemId, 'Body');
-  const md = r?.row.Body || '';
-  return mdToHtml(md);
+/** Parse the Body_blocks JSON string into Block[]. Tolerates legacy /
+ *  empty values (returns []). The string form is the Saver's body
+ *  representation — opaque to the Saver, parsed at the boundaries. */
+export function parseBlocksJson(json: string | undefined | null): Block[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json);
+    return Array.isArray(parsed) ? parsed as Block[] : [];
+  } catch {
+    return [];
+  }
 }
 
-/** Raw markdown body — used by export/duplicate paths that don't want HTML. */
+/** Serialize Block[] to the canonical JSON string. Stable across
+ *  saves so the Saver's `===` dirty check works as expected. */
+export function serializeBlocks(blocks: Block[]): string {
+  return JSON.stringify(blocks);
+}
+
+export async function apiLoadContent(id: string): Promise<string> {
+  const r = await fetchOneRow(id, 'Body_blocks');
+  const blocks = parseBlocksJson(r?.row.Body_blocks);
+  return blocksToHtml(blocks);
+}
+
+/** Raw markdown body — used by export/duplicate paths that don't want
+ *  HTML. Phase 2: derived from Body_blocks via blocksToMd at the
+ *  boundary; the canonical store is JSON, markdown is generated on
+ *  demand for AI / export consumers. */
 export async function apiLoadRawBody(id: string): Promise<string> {
-  const itemId = parseInt(id, 10);
-  if (!itemId) return '';
-  const r = await fetchOneRow(itemId, 'Body');
-  return r?.row.Body || '';
+  const r = await fetchOneRow(id, 'Body_blocks');
+  return blocksToMd(parseBlocksJson(r?.row.Body_blocks));
+}
+
+/** Block-tree body — Phase 2 canonical form. Returns the JSON string
+ *  as stored on SP (= what the Saver carries as its body).
+ *  Codex review P6: normalise empty / missing values to the canonical
+ *  `'[]'` so the Saver's string-equality dirty check doesn't see
+ *  `''` as different from `'[]'` (= an empty page would otherwise
+ *  appear dirty on every load). */
+export async function apiLoadBlocksBody(id: string): Promise<string> {
+  const r = await fetchOneRow(id, 'Body_blocks');
+  const raw = r?.row.Body_blocks;
+  if (!raw) return '[]';
+  // Validate: if it doesn't parse as an array, fall back to canonical empty.
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return '[]';
+  } catch { return '[]'; }
+  return raw;
 }
 
 export async function apiLoadFileMeta(id: string): Promise<{ modified: string; etag: string } | null> {
-  const itemId = parseInt(id, 10);
-  if (!itemId) return null;
-  const r = await fetchOneRow(itemId, 'Modified');
+  const r = await fetchOneRow(id, 'Modified');
   return r ? { modified: r.modified, etag: r.etag } : null;
 }
 
-/** Atomic Body + Modified + ETag fetch.
+/** Atomic Body_blocks + Modified + ETag fetch.
  *
  *  Use this from page-open paths instead of calling apiLoadContent and then
  *  apiLoadFileMeta separately. Two separate GETs leave a window where another
@@ -267,33 +489,41 @@ export async function apiLoadFileMeta(id: string): Promise<{ modified: string; e
  *  the next save would then pass `If-Match: <fresh ETag>` and silently
  *  overwrite the foreign edit because SP sees no conflict.
  *
- *  Returns the raw markdown body in `body` so callers can capture it as
- *  the `base` input for 3-way merge on later conflicts.
+ *  Returns the raw block-tree JSON in `body` so callers can capture
+ *  it as the Saver's baseline. `html` is derived for the editor.
  *
  *  Returns null if the row doesn't exist. */
 export async function apiLoadContentMeta(
   id: string,
 ): Promise<{ html: string; body: string; modified: string; etag: string } | null> {
-  const itemId = parseInt(id, 10);
-  if (!itemId) return null;
-  const r = await fetchOneRow(itemId, 'Body,Modified');
+  const r = await fetchOneRow(id, 'Body_blocks,Modified');
   if (!r) return null;
-  const md = r.row.Body || '';
+  // Codex review P6: normalise the body to the canonical empty form
+  // so the Saver baseline matches what the editor will produce on a
+  // pristine empty page. Without this, an empty page would appear
+  // dirty immediately after load (`''` !== `'[]'`).
+  const raw = r.row.Body_blocks || '';
+  const blocks = parseBlocksJson(raw);
+  const json = serializeBlocks(blocks);
   return {
-    html: mdToHtml(md),
-    body: md,
+    html: blocksToHtml(blocks),
+    body: json,                  // Saver baseline (opaque JSON string)
     modified: r.modified,
     etag: r.etag,
   };
 }
 
 /** After any SP write that advances the row's Modified/ETag, refresh
- *  S.sync watermark for the active page so the foreground poller doesn't
- *  mistake our own write for a remote change.
+ *  the watch watermark for the active page so the foreground poller
+ *  doesn't mistake our own write for a remote change.
  *
- *  Callers should `void`-call this — failure is non-fatal (the poller's
- *  own self-edit filter is a backup). Quietly skips when the affected
- *  page isn't the one currently being watched. */
+ *  With the Saver state machine owning the save lifecycle, this hook
+ *  is now only needed for NON-body writes (title-only via inline-rename,
+ *  icon, pin, parent move, trash, restore, publish flags, …). Body
+ *  saves go through the Saver which updates the watermark itself.
+ *
+ *  Callers should `void`-call this — failure is non-fatal. Quietly
+ *  skips when the affected page isn't the one currently being watched. */
 export async function refreshSyncWatermark(pageId: string): Promise<void> {
   if (S.sync.pageId !== pageId) return;
   try {
@@ -301,58 +531,34 @@ export async function refreshSyncWatermark(pageId: string): Promise<void> {
     if (fm) {
       S.sync.loadedEtag = fm.etag;
       S.sync.loadedModified = fm.modified;
-      rememberOurEtag(fm.etag);
     }
   } catch { /* ignore */ }
-}
-
-/** Push an etag we just produced into the "ours" ring buffer. The poll
- *  loop checks this set before surfacing a stale-data banner — anything
- *  in here is a write we made, even if our watermark wasn't updated in
- *  the same code path that did the save. */
-export function rememberOurEtag(etag: string): void {
-  if (!etag) return;
-  const arr = S.sync.ourSavedEtags;
-  if (arr.indexOf(etag) >= 0) return;
-  arr.push(etag);
-  // Bound the list — old etags can be forgotten safely (their SP versions
-  // are well in the past).
-  if (arr.length > 32) arr.shift();
 }
 
 /** Single funnel for ALL writes against the memola-pages list.
  *
  *  Every memola-pages mutation (body, title, icon, pinned, parent, trashed,
- *  published flags, …) MUST go through this helper. After the SP write
- *  succeeds, we read back the new ETag/Modified and remember the ETag in
- *  `ourSavedEtags`. This guarantees the foreground poller never mistakes
- *  one of our own writes for "別のタブで更新".
+ *  published flags, …) goes through this helper. After the SP write
+ *  succeeds, we read back the new ETag/Modified and update
+ *  `S.sync.loadedEtag` / `loadedModified` so the foreground poller
+ *  doesn't see our own write as foreign.
  *
- *  It also updates `S.sync.loadedEtag` / `loadedModified` when the row
- *  being written is the currently-watched page — keeps the watermark
- *  fresh without each caller needing to remember `refreshSyncWatermark`. */
+ *  Takes a `pageId` (string — the canonical page identity used everywhere
+ *  in the app), parses + list-resolves internally. Empty / unparseable
+ *  ids are no-ops, so callers don't need their own `if (itemId)` guard. */
 export async function updatePageRow(
-  itemId: number,
+  pageId: string,
   fields: Record<string, unknown>,
 ): Promise<void> {
+  const itemId = pageIdToItemId(pageId);
   if (!itemId) return;
-  await updateListItem(PAGES_LIST, itemId, fields);
-  // Stamp the wall-clock time of the write BEFORE the read-back fetch.
-  // This is the "we just touched this row" signal the poll loop checks
-  // as a defence-in-depth fallback — even if the etag tracking somehow
-  // misses (zombie pre-fix instance, format quirk), the recent-write
-  // timestamp will suppress the phantom banner.
-  if (S.sync.pageId === String(itemId)) {
-    S.sync.lastLocalWriteTs = Date.now();
-  }
+  const list = listForPageId(pageId);
+  await updateListItem(list, itemId, fields);
   try {
-    const fresh = await fetchOneRow(itemId, 'Modified');
-    if (fresh) {
-      rememberOurEtag(fresh.etag);
-      if (S.sync.pageId === String(itemId)) {
-        S.sync.loadedEtag = fresh.etag;
-        S.sync.loadedModified = fresh.modified;
-      }
+    const fresh = await fetchOneRow(pageId, 'Modified');
+    if (fresh && S.sync.pageId === pageId) {
+      S.sync.loadedEtag = fresh.etag;
+      S.sync.loadedModified = fresh.modified;
     }
   } catch { /* fetch failures are non-fatal — just one phantom risk */ }
 }
@@ -369,17 +575,21 @@ export async function apiCreatePage(
   scope: PageScope = 'user',
 ): Promise<Page> {
   await ensurePagesList();
-  const created = await createListItem(PAGES_LIST, {
+  const list = pagesListFor(scope);
+  const created = await createListItem(list, {
     Title: title,
     ParentId: parentId || '',
     PageType: 'page',
     Icon: '',
     Pinned: 0,
     Trashed: 0,
-    Body: '',
+    Body_blocks: '[]',
     Scope: scope,
   });
   const id = String(created.Id);
+  // Codex review PS1: register the newly-created row's source list so
+  // listForPageId routes correctly even before the next apiGetPages refresh.
+  SOURCE_LIST_BY_PAGEID.set(id, list);
   S.meta.pages.push({
     id, title, parent: parentId || '',
     type: 'page', icon: '', scope,
@@ -395,7 +605,8 @@ export async function apiCreateDbPageRow(
   scope: PageScope = 'user',
 ): Promise<Page> {
   await ensurePagesList();
-  const created = await createListItem(PAGES_LIST, {
+  const list = pagesListFor(scope);
+  const created = await createListItem(list, {
     Title: title,
     ParentId: parentId || '',
     PageType: 'database',
@@ -403,10 +614,11 @@ export async function apiCreateDbPageRow(
     Pinned: 0,
     Trashed: 0,
     ListTitle: listTitle,
-    Body: '',
+    Body_blocks: '[]',
     Scope: scope,
   });
   const id = String(created.Id);
+  SOURCE_LIST_BY_PAGEID.set(id, list);
   S.meta.pages.push({
     id, title, parent: parentId || '',
     type: 'database', list: listTitle, icon: '', scope,
@@ -414,39 +626,47 @@ export async function apiCreateDbPageRow(
   return { Id: id, Title: title, ParentId: parentId || '', Type: 'database' };
 }
 
-export async function apiSavePage(
+/** Save a page's title + body. Phase 2: the body parameter is the
+ *  Saver's body string, which is `JSON.stringify(Block[])` (the
+ *  canonical block-tree storage form). Boundary callers (AI, export,
+ *  daily-convert) that have markdown should use `apiSavePageMd`,
+ *  which converts md → blocks at the boundary. */
+export async function apiSavePageBlocks(
   id: string,
   title: string,
-  bodyHtml: string,
+  blocksJson: string,
   expectedEtag?: string,
 ): Promise<{ ok: true; etag: string } | { ok: false; reason: 'conflict' }> {
-  // Editor path: bodyHtml comes from contenteditable, convert to markdown.
-  return saveBodyInternal(id, title, htmlToMd(bodyHtml), expectedEtag);
+  return saveBodyInternal(id, title, blocksJson, expectedEtag);
 }
 
-/** Save with raw markdown (used by AI tool path; avoids lossy md↔HTML round-trip).
- *  Like apiSavePage, accepts an optional `expectedEtag` so the AI path can
- *  surface conflict-on-save instead of silently overwriting concurrent edits
- *  by other users. */
+/** Save with a markdown body — converts md → blocks at the boundary
+ *  before writing. Used by AI tool I/F, daily→page conversion, and
+ *  draft-apply paths that don't have a Block[] handy. */
 export async function apiSavePageMd(
   id: string,
   title: string,
   bodyMd: string,
   expectedEtag?: string,
 ): Promise<{ ok: true; etag: string } | { ok: false; reason: 'conflict' }> {
-  return saveBodyInternal(id, title, bodyMd, expectedEtag);
+  // Convert md → blocks here. We don't yet have access to the previous
+  // saved blocks (= no stable-id matching), so the produced blocks have
+  // fresh ids. That's fine for first-write or AI-replace flows; for
+  // user-edit flows the editor uses apiSavePageBlocks directly with a
+  // pre-stabilized payload.
+  const blocks = mdToBlocks(bodyMd);
+  return saveBodyInternal(id, title, serializeBlocks(blocks), expectedEtag);
 }
 
 async function saveBodyInternal(
   id: string,
   title: string,
-  bodyMd: string,
+  blocksJson: string,
   expectedEtag?: string,
 ): Promise<{ ok: true; etag: string } | { ok: false; reason: 'conflict' }> {
-  const itemId = parseInt(id, 10);
-  if (!itemId) throw new Error('invalid page id');
+  if (!pageIdToItemId(id)) throw new Error('invalid page id');
   if (expectedEtag) {
-    const cur = await fetchOneRow(itemId, 'Modified');
+    const cur = await fetchOneRow(id, 'Modified');
     if (cur && cur.etag && cur.etag !== expectedEtag) return { ok: false, reason: 'conflict' };
   }
   const p = S.meta.pages.find((p) => p.id === id);
@@ -459,19 +679,14 @@ async function saveBodyInternal(
     p.title = title;
     if (p.published) p.publishedDirty = true;
   }
-  const fields: Record<string, unknown> = { Title: title, Body: bodyMd };
+  const fields: Record<string, unknown> = { Title: title, Body_blocks: blocksJson };
   if (p?.published) fields.PublishedDirty = 1;
   // Body save is also an memola-pages row update — the funnel handles
   // ETag tracking + watermark refresh in one place.
-  await updatePageRow(itemId, fields);
-  const fresh = await fetchOneRow(itemId, 'Modified');
-  // The body we just wrote becomes the new common ancestor for any
-  // future conflict on this page. Without this, subsequent saves
-  // would diff against the body that was on SP when we OPENED the
-  // page — wildly stale after even one edit cycle.
-  if (S.sync.pageId === String(itemId)) {
-    S.sync.baseBody = bodyMd;
-  }
+  await updatePageRow(id, fields);
+  const fresh = await fetchOneRow(id, 'Modified');
+  // The Saver's baseline (saver.state().base) is updated atomically on
+  // its own save success path; nothing extra needed here.
   // Body changed — drop the backlinks cache so the next "リンク元" panel
   // render reflects newly-added / removed `[[..]]` references.
   invalidateBacklinkCache();
@@ -543,9 +758,11 @@ export async function apiDeletePage(id: string): Promise<string[]> {
     }
     // 2. Hide the page from the user by removing its registration. Any
     //    later step's failure leaves only invisible orphan data.
+    //    The list is resolved from the pageId — Phase 3 will route
+    //    user-scope pages to per-user lists.
     const itemId = parseInt(pid, 10);
     if (itemId) {
-      await deleteListItem(PAGES_LIST, itemId).catch(() => undefined);
+      await deleteListItem(listForPageId(pid), itemId).catch(() => undefined);
     }
     // 3. Best-effort cleanup of orphan storage. If we crash here, the
     //    SP list and row bodies persist as unreachable garbage — they
@@ -553,6 +770,7 @@ export async function apiDeletePage(id: string): Promise<string[]> {
     //    "garbage collection" pass could clean these up by scanning
     //    for memola-db-* lists not referenced by any registration row.
     if (dbListToCleanup) {
+      const { deleteAllRowEntriesForList } = await import('./page-row-entries');
       await deleteAllRowEntriesForList(dbListToCleanup).catch(() => undefined);
       await deleteList(dbListToCleanup).catch(() => undefined);
     }
@@ -564,8 +782,7 @@ export async function apiDeletePage(id: string): Promise<string[]> {
   // has been deleted — clicking it tries to load a non-existent SP list,
   // and the title→list mapping appears "shifted" against neighbouring
   // entries. Filtering here keeps both arrays consistent always.
-  S.meta.pages = S.meta.pages.filter((p) => ids.indexOf(p.id) < 0);
-  S.pages = S.pages.filter((p) => ids.indexOf(p.Id) < 0);
+  removePages(ids);
   return ids;
 }
 
@@ -581,8 +798,7 @@ export async function apiMovePage(id: string, newParentId: string): Promise<void
   const m = S.meta.pages.find((p) => p.id === id);
   if (!m) return;
   m.parent = newParentId || '';
-  const itemId = parseInt(id, 10);
-  if (itemId) await updatePageRow(itemId, { ParentId: newParentId || '' });
+  await updatePageRow(id, { ParentId: newParentId || '' });
   const pg = S.pages.find((x) => x.Id === id);
   if (pg) pg.ParentId = newParentId || '';
 }
@@ -628,10 +844,7 @@ export async function apiTrashPage(id: string): Promise<void> {
   for (const pid of ids) {
     const meta = S.meta.pages.find((p) => p.id === pid);
     if (meta) { meta.trashed = ts; meta.trashedBy = myId; }
-    const itemId = parseInt(pid, 10);
-    if (itemId) {
-      await updatePageRow(itemId, { Trashed: ts, TrashedBy: myId }).catch(() => undefined);
-    }
+    await updatePageRow(pid, { Trashed: ts, TrashedBy: myId }).catch(() => undefined);
   }
 }
 
@@ -644,10 +857,7 @@ export async function apiRestorePage(id: string): Promise<void> {
   for (const pid of ids) {
     const meta = S.meta.pages.find((p) => p.id === pid);
     if (meta) { delete meta.trashed; delete meta.trashedBy; }
-    const itemId = parseInt(pid, 10);
-    if (itemId) {
-      await updatePageRow(itemId, { Trashed: 0, TrashedBy: 0 }).catch(() => undefined);
-    }
+    await updatePageRow(pid, { Trashed: 0, TrashedBy: 0 }).catch(() => undefined);
   }
 }
 
@@ -660,15 +870,13 @@ export async function apiSetPin(id: string, pinned: boolean): Promise<void> {
   if (!meta) return;
   if (pinned) meta.pinned = true;
   else delete meta.pinned;
-  const itemId = parseInt(id, 10);
-  if (itemId) await updatePageRow(itemId, { Pinned: pinned ? 1 : 0 });
+  await updatePageRow(id, { Pinned: pinned ? 1 : 0 });
 }
 
 export async function apiSetIcon(id: string, emoji: string): Promise<void> {
   const meta = S.meta.pages.find((p) => p.id === id);
   if (meta) meta.icon = emoji;
-  const itemId = parseInt(id, 10);
-  if (itemId) await updatePageRow(itemId, { Icon: emoji });
+  await updatePageRow(id, { Icon: emoji });
 }
 
 /** Change a page's `Scope` ('user' / 'org'). Cascades to all descendants
@@ -697,11 +905,28 @@ export async function apiSetScope(
     }
   }
   const ids = cascadeChildren ? collectIds(id) : [id];
+  // Codex review PS2: capture the source list BEFORE mutating meta,
+  // then update on the source list, THEN flip meta. The previous
+  // sequence (mutate meta → updatePageRow → listForPageId(meta)) sent
+  // the write to the destination list (= the new scope's list), where
+  // the row didn't yet exist — silently 404'd via the .catch and left
+  // a memory-only scope change that vanished on next reload.
+  //
+  // Cross-list migration of the row itself (= delete from old, create
+  // in new) is deferred to PS1 (pageId GUID redesign). For now the row
+  // stays in its origin list with the new Scope field; the SP-side
+  // ACL of the origin list still applies, so an org->user demotion
+  // doesn't accidentally widen access — and a user->org promotion is
+  // limited to the author until proper migration lands.
   for (const pid of ids) {
+    const sourceList = listForPageId(pid);
+    const itemId = parseInt(pid, 10);
+    if (!itemId) continue;
+    try {
+      await updateListItem(sourceList, itemId, { Scope: scope });
+    } catch { /* tolerate transient failure; meta update below kept consistent */ }
     const meta = S.meta.pages.find((p) => p.id === pid);
     if (meta) meta.scope = scope;
-    const itemId = parseInt(pid, 10);
-    if (itemId) await updatePageRow(itemId, { Scope: scope }).catch(() => undefined);
   }
   return ids;
 }
@@ -716,12 +941,9 @@ export async function apiSetTitle(id: string, title: string): Promise<void> {
     meta.title = title;
     if (meta.published) meta.publishedDirty = true;
   }
-  const itemId = parseInt(id, 10);
-  if (itemId) {
-    const fields: Record<string, unknown> = { Title: title };
-    if (meta?.published) fields.PublishedDirty = 1;
-    await updatePageRow(itemId, fields);
-  }
+  const fields: Record<string, unknown> = { Title: title };
+  if (meta?.published) fields.PublishedDirty = 1;
+  await updatePageRow(id, fields);
 }
 
 // ── Draft-as-page (duplicate to draft / apply to origin) ──
@@ -740,9 +962,16 @@ export async function apiDuplicateAsDraft(originId: string): Promise<Page> {
   await ensurePagesList();
   const origin = S.meta.pages.find((p) => p.id === originId);
   if (!origin) throw new Error('原本ページが見つかりません');
-  const body = await apiLoadRawBody(originId);
+  // Copy the origin's block-tree JSON directly — preserving structure
+  // (and block IDs, which is fine for drafts since the draft is a
+  // separate row that won't be merged with the origin).
+  const blocksJson = await apiLoadBlocksBody(originId);
   const draftTitle = '[下書き] ' + (origin.title || '無題');
-  const created = await createListItem(PAGES_LIST, {
+  // Drafts inherit the origin's scope so a personal draft of an org page
+  // doesn't accidentally become globally visible (and vice versa).
+  const inheritScope: PageScope = origin.scope || 'user';
+  const inheritList = pagesListFor(inheritScope);
+  const created = await createListItem(inheritList, {
     Title: draftTitle,
     // ParentId is intentionally empty so drafts never appear as a child of
     // anything in the regular page tree (defence-in-depth on top of the
@@ -752,13 +981,12 @@ export async function apiDuplicateAsDraft(originId: string): Promise<Page> {
     Icon: '✏️',
     Pinned: 0,
     Trashed: 0,
-    Body: body,
+    Body_blocks: blocksJson || '[]',
     OriginPageId: originId,
-    // Drafts inherit the origin's scope so a personal draft of an org page
-    // doesn't accidentally become globally visible (and vice versa).
-    Scope: origin.scope || 'user',
+    Scope: inheritScope,
   });
   const newId = String(created.Id);
+  SOURCE_LIST_BY_PAGEID.set(newId, inheritList);
   S.meta.pages.push({
     id: newId,
     title: draftTitle,
@@ -781,12 +1009,12 @@ export async function apiApplyDraftToOrigin(draftId: string): Promise<string> {
   const originExists = S.meta.pages.find((p) => p.id === originId && !p.trashed);
   if (!originExists) throw new Error('原本ページが見つかりません (削除済み?)');
 
-  // Fetch the draft's title + body and write them to the origin in one
-  // shot. Use the Md save path so the published-state machinery (Web 公開
-  // の dirty フラグ等) fires the same as a regular save.
-  const draftBody = await apiLoadRawBody(draftId);
+  // Fetch the draft's title + body-as-blocks-JSON, write to origin.
+  // We copy the JSON directly (no md round-trip) so the draft's
+  // structure / block IDs are preserved exactly.
+  const draftBody = await apiLoadBlocksBody(draftId);
   const draftTitleRaw = draftMeta.title.replace(/^\[下書き\]\s*/, '');
-  const result = await saveBodyInternal(originId, draftTitleRaw, draftBody);
+  const result = await saveBodyInternal(originId, draftTitleRaw, draftBody || '[]');
   if (!result.ok) throw new Error('原本の更新に失敗しました (競合)');
 
   // Drop the draft itself
@@ -794,113 +1022,12 @@ export async function apiApplyDraftToOrigin(draftId: string): Promise<string> {
   return originId;
 }
 
-// ── DB row-as-page bodies ─────────────────────────────────
-//
-// A "row" entry in memola-pages has PageType='row', ListTitle=<db list>, and
-// DbRowId=<row item id>. Title is mirrored from the DB row for human readability
-// in SP UI; the canonical title still lives on the DB row itself.
-
-/** Find every memola-pages row matching (PageType='row', listTitle, dbRowId).
- *  Returns multiple in case a prior race created duplicates; callers can
- *  pick a canonical winner and clean up the rest. Sorted by Id ascending. */
-async function findRowEntries(
-  listTitle: string,
-  dbRowId: number,
-): Promise<Array<{ id: number; etag: string }>> {
-  const filter = "PageType eq 'row' and ListTitle eq '" + listTitle.replace(/'/g, "''") +
-    "' and DbRowId eq " + dbRowId;
-  const url = spListUrl(PAGES_LIST,
-    '/items?$select=Id&$filter=' + encodeURIComponent(filter) + '&$orderby=Id&$top=20');
-  const d = await spGetD<{ results: Array<{ Id: number; __metadata?: { etag?: string } }> }>(url);
-  if (!d) return [];
-  return d.results.map((r) => ({ id: r.Id, etag: r.__metadata?.etag || '' }));
-}
-
-async function findRowEntry(listTitle: string, dbRowId: number): Promise<{ id: number; etag: string } | null> {
-  const all = await findRowEntries(listTitle, dbRowId);
-  return all[0] || null;
-}
-
-/** Read the markdown body for a DB row from the memola-pages list. */
-export async function getRowBody(listTitle: string, dbRowId: number): Promise<string> {
-  await ensurePagesList();
-  const hit = await findRowEntry(listTitle, dbRowId);
-  if (!hit) return '';
-  const fetched = await fetchOneRow(hit.id, 'Body');
-  return fetched?.row.Body || '';
-}
-
-/** Upsert (title, body) for a DB row's page entry in memola-pages.
- *
- *  Race handling: SP has no unique constraint on (ListTitle, DbRowId), so a
- *  concurrent caller could create a parallel `PageType='row'` entry between
- *  our find and create. We mitigate by:
- *    1. Re-fetching after create and deduplicating to the lowest-Id entry.
- *    2. Keeping `findRowEntry` deterministic (orderby Id asc) so subsequent
- *       getters consistently pick the same canonical row.
- */
-export async function setRowBody(
-  listTitle: string,
-  dbRowId: number,
-  parentDbId: string,
-  title: string,
-  body: string,
-): Promise<void> {
-  await ensurePagesList();
-  const hits = await findRowEntries(listTitle, dbRowId);
-  if (hits.length >= 1) {
-    // Update canonical (lowest Id) entry.
-    await updatePageRow(hits[0].id, { Title: title, Body: body });
-    // Best-effort cleanup of any duplicates accumulated by past races.
-    for (let i = 1; i < hits.length; i++) {
-      await deleteListItem(PAGES_LIST, hits[i].id).catch(() => undefined);
-    }
-    return;
-  }
-  // DB row body inherits the parent DB's scope so a row in an org DB
-  // is org-scoped, and a row in a personal DB is personal-scoped.
-  const parentMeta = parentDbId ? S.meta.pages.find((p) => p.id === parentDbId) : null;
-  const inheritScope: PageScope = parentMeta?.scope || 'user';
-  await createListItem(PAGES_LIST, {
-    Title: title,
-    ParentId: parentDbId || '',
-    PageType: 'row',
-    ListTitle: listTitle,
-    DbRowId: dbRowId,
-    Body: body,
-    Scope: inheritScope,
-  });
-  // Post-create reconciliation: if a concurrent caller raced us, multiple
-  // entries now exist. Keep the lowest Id (deterministic across tabs) and
-  // delete the rest.
-  const after = await findRowEntries(listTitle, dbRowId);
-  if (after.length > 1) {
-    // Make sure the surviving canonical entry has our latest body — the
-    // older entry might be stale.
-    await updatePageRow(after[0].id, { Title: title, Body: body }).catch(() => undefined);
-    for (let i = 1; i < after.length; i++) {
-      await deleteListItem(PAGES_LIST, after[i].id).catch(() => undefined);
-    }
-  }
-}
-
-/** Delete the memola-pages entry for a DB row, if present. Removes ALL
- *  matching entries in case duplicates accumulated. */
-export async function deleteRowEntry(listTitle: string, dbRowId: number): Promise<void> {
-  const hits = await findRowEntries(listTitle, dbRowId);
-  for (const h of hits) {
-    await deleteListItem(PAGES_LIST, h.id).catch(() => undefined);
-  }
-}
-
-/** Delete every memola-pages entry that points at a given DB list (used when the DB itself is removed). */
-export async function deleteAllRowEntriesForList(listTitle: string): Promise<void> {
-  await ensurePagesList();
-  const filter = "PageType eq 'row' and ListTitle eq '" + listTitle.replace(/'/g, "''") + "'";
-  const url = spListUrl(PAGES_LIST, '/items?$select=Id&$filter=' + encodeURIComponent(filter) + '&$top=500');
-  const d = await spGetD<{ results: Array<{ Id: number }> }>(url);
-  if (!d) return;
-  for (const it of d.results) {
-    await deleteListItem(PAGES_LIST, it.Id).catch(() => undefined);
-  }
-}
+// Row entries (PageType='row' — internal DB-row body metadata) live in
+// `./page-row-entries.ts`. Re-export here so existing call sites keep
+// `from '../api/pages'`.
+export {
+  getRowBody,
+  setRowBody,
+  deleteRowEntry,
+  deleteAllRowEntriesForList,
+} from './page-row-entries';

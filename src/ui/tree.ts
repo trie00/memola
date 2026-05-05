@@ -390,11 +390,7 @@ function wireSectionDrop(container: HTMLElement, sectionScope: PageScope): void 
     if (target.closest('.memola-tr')) return;     // per-row handler active
     const rows = container.querySelectorAll<HTMLElement>('.memola-tr');
     if (rows.length === 0) {
-      // Empty section — show indicator at the section's top edge
-      const r = container.getBoundingClientRect();
-      const ind = document.createElement('div');     // (no-op; rely on visual hover)
-      void ind;
-      // We don't have a custom indicator for empty sections — accept the drop silently
+      // Empty section — accept the drop silently (no custom indicator).
       return;
     }
     const pos = emptyDropPos(e.clientY);

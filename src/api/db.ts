@@ -22,13 +22,14 @@ export function stripInternalDbFields(fields: ListField[]): ListField[] {
   );
 }
 import {
-  createList, createListItem, updateListItem, addListField, getListFields,
-  setColumnIndexed, deleteListItem, getListItemById,
+  ensureList, createListItem, updateListItem,
+  deleteListItem, getListItemById,
+  softDelete, restoreSoftDelete,
 } from './sp-list';
 // Re-export type so callers don't need to chase imports
 export type { ListField } from '../state';
 import {
-  apiCreateDbPageRow, PAGES_LIST, deleteRowEntry,
+  apiCreateDbPageRow, ORG_PAGES_LIST, deleteRowEntry,
 } from './pages';
 import { getCurrentUserId } from './sync';
 import { spListUrl, spGetD } from './sp-rest';
@@ -36,31 +37,30 @@ import { spListUrl, spGetD } from './sp-rest';
 export async function apiCreateDb(title: string, parentId: string): Promise<Page> {
   const stamp = Date.now().toString();
   const listTitle = 'memola-db-' + stamp;
-  await createList(listTitle);
-  // Provision soft-delete columns up-front so the first delete works
-  // without a schema-add round-trip.
-  await ensureRowTrashFields(listTitle).catch(() => undefined);
+  // ensureList handles the create + trash-column provisioning + indexing
+  // in one pass. The columns scale the list past the 5,000-row LVT for
+  // soft-delete filter queries.
+  await ensureList({
+    title: listTitle,
+    fields: [
+      { name: 'Trashed', kind: 9, indexed: true },
+      { name: 'TrashedBy', kind: 9, indexed: true },
+    ],
+  });
   return await apiCreateDbPageRow(title, parentId, listTitle);
 }
 
-/** Add `Trashed` (Number ms) and `TrashedBy` (Number user id) columns
- *  to a DB list if they don't already exist. Idempotent + non-fatal —
- *  the soft-delete API path tolerates the columns being absent (the
- *  `Trashed` filter would just see undefined = active for all rows
- *  pre-provisioning). Indexes them so $filter on Trashed scales past
- *  the 5,000-row LVT. */
+/** Idempotent re-provision for older DB lists that pre-date the trash
+ *  schema. Safe to call repeatedly; equivalent to a partial ensureList
+ *  with only the trash fields. */
 export async function ensureRowTrashFields(listTitle: string): Promise<void> {
-  const fields = await getListFields(listTitle).catch(() => []);
-  const has = (name: string): boolean =>
-    fields.some((f) => f.Title === name || f.InternalName === name);
-  if (!has('Trashed')) {
-    await addListField(listTitle, 'Trashed', 9).catch(() => undefined);
-  }
-  if (!has('TrashedBy')) {
-    await addListField(listTitle, 'TrashedBy', 9).catch(() => undefined);
-  }
-  await setColumnIndexed(listTitle, 'Trashed').catch(() => undefined);
-  await setColumnIndexed(listTitle, 'TrashedBy').catch(() => undefined);
+  await ensureList({
+    title: listTitle,
+    fields: [
+      { name: 'Trashed', kind: 9, indexed: true },
+      { name: 'TrashedBy', kind: 9, indexed: true },
+    ],
+  }).catch(() => undefined);
 }
 
 /** Soft-delete a DB row. Sets Trashed=ts (and TrashedBy=current user id)
@@ -96,7 +96,7 @@ export async function apiTrashRow(listTitle: string, rowId: number): Promise<voi
       title = String(fetched?.Title || '');
     } catch { /* ignore */ }
     try {
-      await createListItem(PAGES_LIST, {
+      await createListItem(ORG_PAGES_LIST, {
         Title: title,
         ParentId: parentDb?.id || '',
         PageType: 'row',
@@ -111,13 +111,11 @@ export async function apiTrashRow(listTitle: string, rowId: number): Promise<voi
                   but trash modal won't see it. Log and continue. */ }
   } else {
     for (const h of hits) {
-      await updateListItem(PAGES_LIST, h.id, { Trashed: ts, TrashedBy: myId })
-        .catch(() => undefined);
+      await softDelete(ORG_PAGES_LIST, h.id, myId, ts).catch(() => undefined);
     }
   }
   // 3. Mark the DB row → table view filters it out.
-  await updateListItem(listTitle, rowId, { Trashed: ts, TrashedBy: myId })
-    .catch(() => undefined);
+  await softDelete(listTitle, rowId, myId, ts).catch(() => undefined);
 }
 
 /** Restore a soft-deleted DB row. Clears Trashed/TrashedBy on both
@@ -126,12 +124,10 @@ export async function apiTrashRow(listTitle: string, rowId: number): Promise<voi
  *  is back in the table but still in trash modal (user can re-restore). */
 export async function apiRestoreRow(listTitle: string, rowId: number): Promise<void> {
   await ensureRowTrashFields(listTitle).catch(() => undefined);
-  await updateListItem(listTitle, rowId, { Trashed: 0, TrashedBy: 0 })
-    .catch(() => undefined);
+  await restoreSoftDelete(listTitle, rowId).catch(() => undefined);
   const hits = await findTrashHits(listTitle, rowId);
   for (const h of hits) {
-    await updateListItem(PAGES_LIST, h.id, { Trashed: 0, TrashedBy: 0 })
-      .catch(() => undefined);
+    await restoreSoftDelete(ORG_PAGES_LIST, h.id).catch(() => undefined);
   }
 }
 
@@ -152,7 +148,7 @@ async function findTrashHits(
 ): Promise<Array<{ id: number }>> {
   const filter = "PageType eq 'row' and ListTitle eq '" + listTitle.replace(/'/g, "''") +
     "' and DbRowId eq " + dbRowId;
-  const url = spListUrl(PAGES_LIST,
+  const url = spListUrl(ORG_PAGES_LIST,
     '/items?$select=Id&$filter=' + encodeURIComponent(filter) + '&$orderby=Id&$top=20');
   const d = await spGetD<{ results: Array<{ Id: number }> }>(url);
   return (d?.results || []).map((r) => ({ id: r.Id }));
@@ -198,7 +194,7 @@ export async function reconcileTrashedRows(
   listTitle: string, dbRows: ListItem[],
 ): Promise<void> {
   // Query memola-pages for trashed body rows pointing to this DB
-  const url = spListUrl(PAGES_LIST,
+  const url = spListUrl(ORG_PAGES_LIST,
     "/items?$select=Id,DbRowId,Trashed,TrashedBy" +
     "&$filter=" + encodeURIComponent(
       "PageType eq 'row' and ListTitle eq '" + listTitle.replace(/'/g, "''") + "' and Trashed gt 0"
@@ -220,7 +216,7 @@ export async function reconcileTrashedRows(
 }
 
 export async function getTrashedRows(): Promise<TrashedRow[]> {
-  const url = spListUrl(PAGES_LIST,
+  const url = spListUrl(ORG_PAGES_LIST,
     "/items?$select=Id,Title,ListTitle,DbRowId,Trashed,TrashedBy,Scope,AuthorId" +
     "&$filter=" + encodeURIComponent("PageType eq 'row' and Trashed gt 0") +
     "&$orderby=Trashed desc&$top=500");

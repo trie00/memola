@@ -18,10 +18,11 @@ import {
 import { spListUrl, spGetD } from './sp-rest';
 import {
   apiCreateDbPageRow, apiCreatePage, apiSavePageMd, apiLoadRawBody,
-  setRowBody, getRowBody, deleteRowEntry, PAGES_LIST, updatePageRow,
+  setRowBody, getRowBody, deleteRowEntry, updatePageRow,
 } from './pages';
 import { apiAddDbRow } from './db';
 import { todayYMD, formatDailyTitle, isDailyTitleFormat } from '../lib/date-utils';
+import { addPage } from '../lib/page-store';
 
 export const DAILY_LIST_TITLE = 'memola-daily';
 // English internal names — Japanese-titled DateTime columns occasionally
@@ -199,14 +200,14 @@ export async function ensureDailyDb(): Promise<DailyDb> {
       return { dbPageId: cachedMeta.id, listTitle: DAILY_LIST_TITLE, dateInternalName };
     }
     const created = await apiCreateDbPageRow('デイリーノート', '', DAILY_LIST_TITLE);
-    const itemId = parseInt(created.Id, 10);
-    if (itemId) {
-      await updatePageRow(itemId, { Icon: '📅', Pinned: 1 }).catch(() => undefined);
-    }
+    await updatePageRow(created.Id, { Icon: '📅', Pinned: 1 }).catch(() => undefined);
     // Mirror to in-memory meta so the sidebar updates without a full reload.
+    // `apiCreateDbPageRow` already added the meta entry; we just need to
+    // patch the icon/pinned fields, then sync to S.pages via addPage
+    // (idempotent on meta, so the meta isn't double-added).
     const m = S.meta.pages.find((p) => p.id === created.Id);
     if (m) { m.icon = '📅'; m.pinned = true; }
-    S.pages.push(created);
+    addPage(created);
     return { dbPageId: created.Id, listTitle: DAILY_LIST_TITLE, dateInternalName };
   })().catch((e) => {
     // Allow a failed bootstrap to be retried on the next call.
@@ -284,10 +285,7 @@ export async function convertDailyToPage(
   //    want to have already deleted the daily row.
   const newPage = await apiCreatePage(newTitle, parentId);
   await apiSavePageMd(newPage.Id, newTitle, body).catch(() => undefined);
-  const itemId = parseInt(newPage.Id, 10);
-  if (itemId) {
-    await updatePageRow(itemId, { OriginDailyDate: originDate }).catch(() => undefined);
-  }
+  await updatePageRow(newPage.Id, { OriginDailyDate: originDate }).catch(() => undefined);
   const meta = S.meta.pages.find((p) => p.id === newPage.Id);
   if (meta) meta.originDailyDate = originDate;
   // 3. Drop the daily row + its row-as-page entry.

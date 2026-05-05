@@ -7,15 +7,16 @@
 // many side-channel writers (icon change, pin, Web 公開, AI tools, …) update
 // the row without refreshing `S.sync.loadedModified`.
 
-import { PAGES_LIST } from './pages';
+import { listForPageId, pageIdToItemId } from './pages';
 import { SITE } from '../config';
 import { spListUrl, spGetD } from './sp-rest';
 
 export async function getListItemEditor(pageId: string): Promise<string> {
-  const itemId = parseInt(pageId, 10);
+  const itemId = pageIdToItemId(pageId);
   if (!itemId) return '';
+  // Resolve the list per-pageId so Phase 3 (per-user lists) routes correctly.
   const d = await spGetD<{ Editor?: { Title?: string } }>(
-    spListUrl(PAGES_LIST, '/items(' + itemId + ')?$select=Editor/Title&$expand=Editor'),
+    spListUrl(listForPageId(pageId), '/items(' + itemId + ')?$select=Editor/Title&$expand=Editor'),
   );
   return d?.Editor?.Title || '';
 }

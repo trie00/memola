@@ -10,8 +10,8 @@
 // so you can avoid stepping on each other", not full collaborative
 // editing.
 
-import { createList, addListField, getListItems, createListItem, updateListItem, deleteListItem } from './sp-list';
-import { spListUrl, spGetD } from './sp-rest';
+import { ensureList, getListItems, createListItem, updateListItem, deleteListItem } from './sp-list';
+import { spListUrl } from './sp-rest';
 import { getCurrentUser } from './sync';
 
 export const PRESENCE_LIST = 'memola-presence';
@@ -30,14 +30,14 @@ interface PresenceRow {
 
 async function ensurePresenceList(): Promise<void> {
   if (_ensurePromise) return _ensurePromise;
-  _ensurePromise = (async () => {
-    const exists = (await spGetD<unknown>(spListUrl(PRESENCE_LIST))) != null;
-    if (!exists) await createList(PRESENCE_LIST);
-    // Idempotent column adds
-    try { await addListField(PRESENCE_LIST, 'PageId', 2); } catch { /* ignore */ }
-    try { await addListField(PRESENCE_LIST, 'UserName', 2); } catch { /* ignore */ }
-    try { await addListField(PRESENCE_LIST, 'LastSeen', 4); } catch { /* ignore */ }
-  })().catch((e) => { _ensurePromise = null; throw e; });
+  _ensurePromise = ensureList({
+    title: PRESENCE_LIST,
+    fields: [
+      { name: 'PageId', kind: 2 },
+      { name: 'UserName', kind: 2 },
+      { name: 'LastSeen', kind: 4 },
+    ],
+  }).then(() => undefined).catch((e) => { _ensurePromise = null; throw e; });
   return _ensurePromise;
 }
 
@@ -46,6 +46,12 @@ const _sessionId = 'sess-' + Math.random().toString(36).slice(2, 12) + '-' + Dat
 let _myRowId: number | null = null;          // SP item id for this session's row
 let _currentPageId: string | null = null;
 let _userName = '';
+// In-flight create promise. Set while `createListItem` is on the wire so
+// that a concurrent `leavePresence` (e.g. bookmarklet re-press inside the
+// ~200 ms create window) can wait for the rowId to materialise before
+// issuing DELETE — without this, the row was orphaned and lingered in SP
+// for STALE_MS (90 s), inflating the avatar count.
+let _createInFlight: Promise<void> | null = null;
 
 /** Reset cached state (used on workspace switch — presence list lives
  *  in the now-stale site). */
@@ -53,12 +59,17 @@ export function clearPresenceCache(): void {
   _ensurePromise = null;
   _myRowId = null;
   _currentPageId = null;
+  _createInFlight = null;
 }
 
 export async function startPresence(pageId: string): Promise<void> {
   await ensurePresenceList();
   if (!_userName) _userName = await getCurrentUser().catch(() => '');
   if (!_userName) return;          // can't ping anonymously
+
+  // Serialize on any in-flight create so we don't fire a parallel one
+  // (would orphan the first row).
+  if (_createInFlight) { try { await _createInFlight; } catch { /* ignore */ } }
 
   _currentPageId = pageId;
   const now = new Date().toISOString();
@@ -68,12 +79,15 @@ export async function startPresence(pageId: string): Promise<void> {
       PageId: pageId, UserName: _userName, LastSeen: now,
     }).catch(() => undefined);
   } else {
-    try {
-      const created = await createListItem(PRESENCE_LIST, {
-        Title: _sessionId, PageId: pageId, UserName: _userName, LastSeen: now,
-      });
-      _myRowId = created.Id;
-    } catch { /* swallow — presence is best-effort */ }
+    _createInFlight = (async () => {
+      try {
+        const created = await createListItem(PRESENCE_LIST, {
+          Title: _sessionId, PageId: pageId, UserName: _userName, LastSeen: now,
+        });
+        _myRowId = created.Id;
+      } catch { /* swallow — presence is best-effort */ }
+    })();
+    try { await _createInFlight; } finally { _createInFlight = null; }
   }
 }
 
@@ -87,6 +101,11 @@ export async function pingPresence(): Promise<void> {
 }
 
 export async function leavePresence(): Promise<void> {
+  // Wait for any in-flight create — without this, a bookmarklet re-press
+  // (or page-switch teardown) that races the create round-trip would see
+  // _myRowId === null and skip the delete, leaving an orphan row behind
+  // for STALE_MS (90 s) and double-counting the tab in the avatar list.
+  if (_createInFlight) { try { await _createInFlight; } catch { /* ignore */ } }
   if (!_myRowId) return;
   const id = _myRowId;
   _myRowId = null;
@@ -146,8 +165,8 @@ export function attachUnloadCleanup(): void {
     //    in modern Chrome/Firefox/Safari and show a generic dialog —
     //    setting returnValue is what matters.
     //    Lazy-import the state module to avoid a hard cycle.
-    void import('../state').then(({ S }) => {
-      if (S.dirty && S.currentType !== 'database') {
+    void import('../lib/saver').then(({ saver }) => {
+      if (saver.isDirty()) {
         e.preventDefault();
         // Older browsers used returnValue as the message; modern ones
         // ignore the string but require it to be set to ANY value.

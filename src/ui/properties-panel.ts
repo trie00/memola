@@ -5,7 +5,8 @@
 import { S } from '../state';
 import { g } from './dom';
 import { ancs } from './tree';
-import { apiLoadFileMeta, PAGES_LIST } from '../api/pages';
+import { apiLoadFileMeta, listForPageId } from '../api/pages';
+import { getBacklinksFor } from '../api/backlinks';
 import { getListItemEditor } from '../api/sync';
 import { escapeHtml } from '../lib/html-escape';
 import { prefPropertiesOpen } from '../lib/prefs';
@@ -62,7 +63,7 @@ export async function renderProperties(): Promise<void> {
     row('アイコン', meta.icon || '-') +
     row('ID', id) +
     (page.Type === 'database' && meta.list ? row('SP リスト', meta.list) : '') +
-    (page.Type !== 'database' ? row('リスト項目', PAGES_LIST + ' #' + id) : '') +
+    (page.Type !== 'database' ? row('リスト項目', listForPageId(id) + ' #' + id) : '') +
     '<div class="memola-prop-row memola-prop-loading">最終更新者を取得中...</div>';
 
   if (page.Type !== 'database') {
@@ -103,21 +104,43 @@ export async function renderProperties(): Promise<void> {
     });
   }
 
-  // バックリンクセクション (このページを参照しているページの簡易検出)
+  // バックリンク — body に `[[<id>...]]` で参照しているページを列挙。
+  // backlinks.ts のキャッシュ機構を経由するので、再描画でも追加 fetch は
+  // 走らない (page-body 保存時に invalidateBacklinkCache が走る)。
   list.insertAdjacentHTML('beforeend', '<div class="memola-prop-sep"></div>');
   list.insertAdjacentHTML('beforeend', '<div class="memola-prop-section">バックリンク</div>');
-  const titleStr = (page.Title || '').toLowerCase();
-  const backlinks = titleStr ? S.pages.filter((p) => {
-    if (p.Id === id) return false;
-    return false; // TODO: indexer がない為プレースホルダ
-  }) : [];
-  if (backlinks.length === 0) {
-    list.insertAdjacentHTML('beforeend', '<div class="memola-prop-empty">参照しているページはありません</div>');
-  } else {
-    backlinks.forEach((bp) => {
-      list.insertAdjacentHTML('beforeend',
-        '<div class="memola-prop-backlink">→ ' + escapeHtml(bp.Title || '無題') + '</div>',
-      );
+  const placeholder = document.createElement('div');
+  placeholder.className = 'memola-prop-empty';
+  placeholder.textContent = '読み込み中...';
+  list.appendChild(placeholder);
+  // Snapshot the page id we're rendering for — by the time the async
+  // backlinks fetch resolves the user may have navigated elsewhere, in
+  // which case we should drop the result instead of clobbering the
+  // newer page's panel.
+  const renderedFor = id;
+  void getBacklinksFor(id, (pid) => S.meta.pages.find((p) => p.id === pid)?.title || null)
+    .then((entries) => {
+      if (S.currentId !== renderedFor) return;
+      placeholder.remove();
+      if (entries.length === 0) {
+        list.insertAdjacentHTML('beforeend',
+          '<div class="memola-prop-empty">参照しているページはありません</div>');
+        return;
+      }
+      for (const e of entries) {
+        const div = document.createElement('div');
+        div.className = 'memola-prop-backlink';
+        div.dataset.pid = e.pageId;
+        div.innerHTML =
+          '<div class="memola-prop-backlink-title">→ ' + escapeHtml(e.pageTitle) + '</div>' +
+          (e.snippet
+            ? '<div class="memola-prop-backlink-snippet">' + escapeHtml(e.snippet) + '</div>'
+            : '');
+        list.appendChild(div);
+      }
+    })
+    .catch(() => {
+      if (S.currentId !== renderedFor) return;
+      placeholder.textContent = 'バックリンクの取得に失敗しました';
     });
-  }
 }

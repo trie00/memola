@@ -1,21 +1,21 @@
 // Keyboard shortcuts reference modal.
 //
 // One source of truth for "what keys do what" in Memola. The list lives
-// here as a typed constant — the modal renders it directly, and any future
-// command-palette / cheat-sheet feature can import the same list.
+// here as a typed constant; the modal renders it directly.
 //
 // IMPORTANT: keep this list in sync with the actual handlers in
-// `actions.ts onKey()`, the editor toolbar, and `editor.ts`. Adding an
+// `keymap.ts onKey()`, the editor toolbar, and `editor.ts`. Adding an
 // entry here doesn't bind a key — it just documents one.
 
 import { escapeHtml } from '../lib/html-escape';
+import { confirmModal } from './lib/modal';
+
+const MODAL_ID = 'memola-shortcuts-md';
 
 export interface Shortcut {
-  /** Key combo, in the abstract form. We render Cmd/Ctrl conditionally
-   *  per-platform at display time. Use 'Mod' for Cmd-on-Mac / Ctrl-on-PC,
-   *  'Shift', 'Alt', and literal keys like 'K', 'S', '\\', '['. */
+  /** Key combo. We render Cmd/Ctrl conditionally per-platform. Use 'Mod'
+   *  for Cmd-on-Mac / Ctrl-on-PC, 'Shift', 'Alt', and literal keys. */
   keys: string[];
-  /** Human-readable description. */
   desc: string;
 }
 
@@ -24,9 +24,6 @@ export interface ShortcutGroup {
   items: Shortcut[];
 }
 
-/** All shortcuts the app responds to, organised by category. Sourced by
- *  reading every `addEventListener('keydown', …)` in the codebase — if
- *  you add a binding, add it here too so the help modal stays accurate. */
 export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: 'ナビゲーション',
@@ -88,8 +85,7 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
   },
 ];
 
-/** Render `keys` for display. Maps 'Mod' → ⌘ on Mac, Ctrl on others.
- *  Returns escaped HTML ready to drop into innerHTML. */
+/** Render `keys` for display. Maps 'Mod' → ⌘ on Mac, Ctrl on others. */
 function renderKeys(keys: string[]): string {
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
   return keys.map((k) => {
@@ -102,59 +98,39 @@ function renderKeys(keys: string[]): string {
   }).join('<span class="memola-kbd-plus">+</span>');
 }
 
-/** Open (or rebuild) the shortcut-cheatsheet modal. Idempotent — calling
- *  twice replaces the existing modal so the platform-conditional rendering
- *  always matches the current navigator. */
+function buildHtml(): string {
+  const sections = SHORTCUT_GROUPS.map((group) => {
+    const items = group.items.map((item) =>
+      '<li><span class="memola-shortcuts-keys">' + renderKeys(item.keys) +
+      '</span><span class="memola-shortcuts-desc">' + escapeHtml(item.desc) + '</span></li>'
+    ).join('');
+    return '<section class="memola-shortcuts-sec"><h3>' +
+      escapeHtml(group.title) + '</h3><ul>' + items + '</ul></section>';
+  }).join('');
+  return '<div class="memola-mb memola-shortcuts-mb">' +
+    '<h2>⌨ キーボードショートカット</h2>' +
+    '<div class="memola-shortcuts-grid">' + sections + '</div>' +
+    '<div class="memola-ma">' +
+      '<button class="memola-btn p" data-c="close">閉じる</button>' +
+    '</div>' +
+  '</div>';
+}
+
+/** Open the shortcut cheatsheet. Auto-closes on ESC, backdrop click, or
+ *  the 「閉じる」 button — all wired by the shared modal helper. */
 export function openShortcutsModal(): void {
-  closeShortcutsModal();
-  const md = document.createElement('div');
-  md.id = 'memola-shortcuts-md';
-  md.className = 'on';
-
-  const inner = document.createElement('div');
-  inner.className = 'memola-mb memola-shortcuts-mb';
-
-  const title = document.createElement('h2');
-  title.textContent = '⌨ キーボードショートカット';
-  inner.appendChild(title);
-
-  const grid = document.createElement('div');
-  grid.className = 'memola-shortcuts-grid';
-  for (const group of SHORTCUT_GROUPS) {
-    const sec = document.createElement('section');
-    sec.className = 'memola-shortcuts-sec';
-    const h = document.createElement('h3');
-    h.textContent = group.title;
-    sec.appendChild(h);
-    const ul = document.createElement('ul');
-    for (const item of group.items) {
-      const li = document.createElement('li');
-      li.innerHTML = '<span class="memola-shortcuts-keys">' + renderKeys(item.keys) +
-        '</span><span class="memola-shortcuts-desc">' + escapeHtml(item.desc) + '</span>';
-      ul.appendChild(li);
-    }
-    sec.appendChild(ul);
-    grid.appendChild(sec);
-  }
-  inner.appendChild(grid);
-
-  const foot = document.createElement('div');
-  foot.className = 'memola-ma';
-  const close = document.createElement('button');
-  close.className = 'memola-btn p';
-  close.textContent = '閉じる';
-  close.addEventListener('click', closeShortcutsModal);
-  foot.appendChild(close);
-  inner.appendChild(foot);
-
-  md.appendChild(inner);
-  // Click on the dark backdrop (but not the inner panel) closes too.
-  md.addEventListener('click', (e) => { if (e.target === md) closeShortcutsModal(); });
-
-  (document.getElementById('memola-overlay') || document.body).appendChild(md);
+  // Fire-and-forget: the user dismissing the modal resolves the Promise
+  // but we don't need its value (cheatsheet has nothing to return).
+  void confirmModal<void>({
+    id: MODAL_ID,
+    className: '',                              // already in the contentHtml
+    contentHtml: buildHtml(),
+    buttons: { close: undefined as unknown as void },
+    cancelValue: undefined as unknown as void,
+  });
 }
 
 export function closeShortcutsModal(): void {
-  const md = document.getElementById('memola-shortcuts-md');
+  const md = document.getElementById(MODAL_ID);
   if (md) md.remove();
 }
