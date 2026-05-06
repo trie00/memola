@@ -118,6 +118,8 @@ export async function doSelect(id: string): Promise<void> {
   // editor DOM. This is the fix for "navigating away loses my last edits"
   // — `flushPendingSave` waits for an in-flight save (autosave) to finish
   // and then performs another save if the user typed during that flight.
+  // Critical: must run BEFORE we clear `S.currentRow`; the row-page save
+  // path inside flushPendingSave keys off that flag.
   if (S.currentType !== 'database') await flushPendingSave();
   // Page change — Saver ownership transfer happens automatically via
   // saver.unload() (called from stopWatching paths) and saver.loadPage()
@@ -125,6 +127,11 @@ export async function doSelect(id: string): Promise<void> {
   // is needed: the Saver's state IS the source of truth.
   S.currentRow = null;          // 別のページ/DB 選択時は行ページモードを解除
   S.currentId = id;
+  // Capture the navigation generation: a slow `apiLoadContentMeta`
+  // resolving after a newer doSelect started must NOT mount its editor /
+  // overwrite watchers / call saver.loadPage on stale data. Each await
+  // below re-checks `S.currentId === id` and bails if it changed.
+  const navId = id;
   const page = S.pages.find((p) => p.Id === id);
   if (!page) return;
   // Push into the back/forward history stack — pushHistory() ignores the
@@ -155,12 +162,14 @@ export async function doSelect(id: string): Promise<void> {
       // stale-Body / fresh-ETag, and our next save would silently overwrite
       // their edit (SP sees no conflict because our If-Match matches).
       const meta = await apiLoadContentMeta(id);
+      if (S.currentId !== navId) return;     // navigated away during fetch
       // Phase 2c-5: editor2 (controlled rendering) is the only path.
       // Mount the editor with the block-tree from storage; the inline
       // contenteditable=false islands (table / linkdb / ai) bind their
       // own handlers via editor-render's per-block dispatch.
       const { mountEditor2, loadBlocksFromJson } =
         await import('./editor2/editor2-bridge');
+      if (S.currentId !== navId) return;     // and during dynamic import
       mountEditor2(getEd());
       loadBlocksFromJson(meta?.body || '');
       // Mark page-link chips whose target page is missing (broken-link

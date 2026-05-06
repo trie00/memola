@@ -99,8 +99,14 @@ export async function setPresencePage(pageId: string | null): Promise<void> {
   } catch { /* ignore */ }
 }
 
-/** Wire one-time setup (unload handler). Called from boot. */
+/** Wire one-time setup (unload handler). Called from boot. Idempotent
+ *  — guarded by a body dataset flag so repeated bookmarklet presses
+ *  don't pile up `visibilitychange` listeners (each carrying a stale
+ *  closure over `_timer` / `_currentPageId`). */
 export function attachPresence(): void {
+  const body = document.body as HTMLElement & { dataset: DOMStringMap };
+  if (body.dataset.memolaPresenceWired === '1') return;
+  body.dataset.memolaPresenceWired = '1';
   attachUnloadCleanup();
   // Also leave on tab hide / reload
   document.addEventListener('visibilitychange', () => {

@@ -32,10 +32,8 @@ export interface BacklinkEntry {
 interface CachedRow {
   Id: number;
   Title: string;
-  Body: string;
-  /** Phase 2 storage column. Holds the canonical block-tree JSON for
-   *  every save; the legacy `Body` column receives a flattened
-   *  markdown copy on save but isn't authoritative. */
+  /** Phase 2 canonical body — JSON-blocks. Saves no longer write the
+   *  legacy `Body` column at all, so we don't fetch it. */
   Body_blocks?: string;
   PageType?: string;
   OriginPageId?: string;
@@ -54,7 +52,7 @@ async function loadBodiesFromList(listTitle: string): Promise<CachedRow[]> {
   const rows: CachedRow[] = [];
   let next: string | undefined = spListUrl(
     listTitle,
-    '/items?$select=Id,Title,Body,Body_blocks,PageType,OriginPageId&$top=500&$orderby=Id',
+    '/items?$select=Id,Title,Body_blocks,PageType,OriginPageId&$top=500&$orderby=Id',
   );
   let safety = 0;
   while (next && safety++ < 50) {
@@ -117,16 +115,12 @@ export async function getBacklinksFor(
     // Phase 2: canonical content lives in Body_blocks (JSON). Convert
     // to markdown so the existing `[[<id>` regex matches — pagelinks
     // are stored as { kind:'pagelink', pageId } in the block-tree, but
-    // round-trip out as `[[<id>]]` markdown. Fall back to legacy Body
-    // for rows that haven't been re-saved yet under Phase 2.
+    // round-trip out as `[[<id>]]` markdown.
     const blocksJson = row.Body_blocks || '';
+    if (!blocksJson) continue;
     let body: string;
-    if (blocksJson) {
-      try { body = blocksToMd(parseBlocksJson(blocksJson)); }
-      catch { body = row.Body || ''; }
-    } else {
-      body = row.Body || '';
-    }
+    try { body = blocksToMd(parseBlocksJson(blocksJson)); }
+    catch { continue; }
     if (!body) continue;
     const matches = body.match(re);
     if (!matches || matches.length === 0) continue;

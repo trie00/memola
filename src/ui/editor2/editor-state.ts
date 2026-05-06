@@ -369,7 +369,11 @@ function splitInsideList(
       const after = sliceInline(inner.inline, offset, Infinity);
       const newId = newBlockId();
       const updatedInner: Block = { ...inner, inline: before } as Block;
-      const newPara: Block = { id: newId, kind: 'p', inline: after };
+      // Preserve the block kind on continuation. Splitting a todo
+      // item inside a list should produce another todo, not a plain
+      // paragraph (mirrors the top-level + callout/quote split paths
+      // which already use `continuationBlock`).
+      const newPara: Block = continuationBlock(inner, newId, after);
       const newCurrentItem = [...item.slice(0, innerIdx), updatedInner];
       const newNextItem = [newPara, ...item.slice(innerIdx + 1)];
       const newItems = [

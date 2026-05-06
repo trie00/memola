@@ -52,6 +52,15 @@ export function mdToBlocks(md: string): Block[] {
     // Blank line — eat it
     if (/^\s*$/.test(line)) { i++; continue; }
 
+    // Block sentinel for table / linkdb / ai (encoded by blocksToMd to
+    // survive the markdown round-trip used by the line-based merge UI).
+    const sentinel = parseBlockSentinel(line);
+    if (sentinel) {
+      blocks.push(sentinel);
+      i++;
+      continue;
+    }
+
     // Horizontal rule
     if (/^\s*---+\s*$/.test(line) || /^\s*\*\*\*+\s*$/.test(line)) {
       const b: RuleBlock = { id: newBlockId(), kind: 'rule' };
@@ -100,8 +109,11 @@ export function mdToBlocks(md: string): Block[] {
       continue;
     }
 
-    // Callout — first line `> [emoji] ...`, continuation `> ...`
-    const calloutHead = line.match(/^>\s*\[([^\]]+)\]\s*(.*)$/);
+    // Callout — first line `> [emoji] ...`, continuation `> ...`.
+    // Restrict the bracket content to a single non-ASCII glyph (= an
+    // emoji or pictograph). Without this, ordinary bracketed quotes
+    // like `> [RFC] foo` were misparsed as callouts with emoji='RFC'.
+    const calloutHead = line.match(/^>\s*\[([^\sA-Za-z0-9][^\]]*)\]\s*(.*)$/);
     if (calloutHead) {
       const emoji = calloutHead[1];
       const bodyLines = [calloutHead[2]];
@@ -434,10 +446,42 @@ function blockToMd(b: Block): string {
     case 'table':
     case 'linkdb':
     case 'ai':
-      // Phase 2 deferred — see header note. Emit a stable placeholder
-      // so blocksToMd is total over the type.
-      return '<!-- block-tree:' + b.kind + ' id=' + (b as { id: BlockId }).id + ' -->\n';
+      // These atomic islands have no clean markdown representation,
+      // but they DO have to round-trip through `blocksToMd` →
+      // `mdToBlocks` (= the line-based merge UI converts via markdown,
+      // and we'd otherwise lose table rows / linkdb config / ai
+      // prompts on every save-time conflict). Encode the full block
+      // as a JSON sentinel inside an HTML comment; mdToBlocks decodes
+      // it back to the original block. Base64 keeps the content safe
+      // from `--` collapse + line-break artefacts.
+      return encodeBlockSentinel(b) + '\n';
   }
+}
+
+/** Encode a `table` / `linkdb` / `ai` block as a self-describing
+ *  HTML-comment sentinel. The body is base64-encoded JSON so the comment
+ *  survives markdown serialisation (no `--` artefacts, no line break
+ *  surprises). Decoded by `parseBlockSentinel`. */
+function encodeBlockSentinel(b: Block): string {
+  const json = JSON.stringify(b);
+  let b64: string;
+  try { b64 = btoa(unescape(encodeURIComponent(json))); }
+  catch { b64 = ''; }
+  return '<!-- memola-block:' + b64 + ' -->';
+}
+
+/** Inverse of `encodeBlockSentinel`. Returns the decoded block, or
+ *  null when the line isn't a sentinel or decoding fails. */
+function parseBlockSentinel(line: string): Block | null {
+  const m = line.match(/^\s*<!--\s*memola-block:([A-Za-z0-9+/=]*)\s*-->\s*$/);
+  if (!m) return null;
+  try {
+    const json = decodeURIComponent(escape(atob(m[1])));
+    const block = JSON.parse(json) as Block;
+    if (!block || typeof block !== 'object' || !('kind' in block) || !('id' in block)) return null;
+    if (block.kind !== 'table' && block.kind !== 'linkdb' && block.kind !== 'ai') return null;
+    return block;
+  } catch { return null; }
 }
 
 function inlineToMd(inline: Inline[]): string {

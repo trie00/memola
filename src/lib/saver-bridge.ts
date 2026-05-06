@@ -32,8 +32,16 @@ function onState(s: SaverState): void {
   _prevKind = s.kind;
   switch (s.kind) {
     case 'unloaded':
-      // No active page → leave row-page dirty state alone (row-page
-      // manages its own S.dirty for DB rows).
+      // Page-driven saver state is gone; clear any stale dirty/saving
+      // markers it set on prior transitions. Row-page-managed dirty
+      // (= when `S.currentRow` is set) is OUT of scope for the
+      // page-Saver, so we only reset when no row is active.
+      if (!S.currentRow) {
+        S.dirty = false;
+        S.saving = false;
+      }
+      S.sync.loadedEtag = null;
+      S.sync.loadedModified = null;
       return;
 
     case 'idle':

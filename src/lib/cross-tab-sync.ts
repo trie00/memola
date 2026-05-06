@@ -11,7 +11,13 @@
 // uses), which surfaces the existing "🔔 別のタブ (あなた) が更新
 // しました" banner.
 
-const CHANNEL_NAME = 'memola-cross-tab';
+// Scope the channel per SITE so two browser tabs pointed at different
+// workspaces (= different SP sites) don't cross-talk. Numeric SP item
+// ids are not unique across sites; without this scoping, a save in
+// site-A would surface a banner in site-B for whatever page happens to
+// share the same numeric id.
+import { SITE } from '../config';
+const CHANNEL_NAME = 'memola-cross-tab:' + SITE;
 
 export interface PageSavedMessage {
   type: 'page-saved';

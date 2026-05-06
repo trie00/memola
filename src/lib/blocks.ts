@@ -192,6 +192,7 @@ export function inlineToPlainText(inline: Inline[]): string {
     else if (i.kind === 'code') out += i.text;
     else if (i.kind === 'br') out += '\n';
     else if (i.kind === 'pagelink') out += i.alias || i.pageId;
+    else if (i.kind === 'dailylink') out += i.alias || i.date;
     else if (i.kind === 'bold' || i.kind === 'italic' || i.kind === 'strike' || i.kind === 'link') {
       out += inlineToPlainText(i.children);
     }

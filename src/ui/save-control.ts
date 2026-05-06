@@ -7,13 +7,14 @@
 //
 // Public API:
 //   - `schedSave()`       editor mutation hook (flips Saver to 'dirty')
-//   - `doSave()`          immediate save (Cmd/Ctrl+S, etc)
-//   - `flushPendingSave()` synchronous-ish flush (page nav, app close)
+//   - `flushPendingSave()` save the current edits NOW (Ctrl+S, page
+//                         nav, app close). Handles both Saver-driven
+//                         pages and the legacy row-page branch.
 //   - `clearSaveTimer()`  cancel pending autosave (close path)
 //
 // Row-page saves take a separate code path (`row-page.saveCurrentRow`)
-// because DB rows aren't yet migrated to the Saver. The doSave wrapper
-// here delegates when `S.currentRow` is set.
+// because DB rows aren't yet migrated to the Saver. flushPendingSave
+// delegates when `S.currentRow` is set.
 
 import { S } from '../state';
 import { g, getEd } from './dom';
@@ -58,34 +59,15 @@ function syncEditorIntoSaver(): void {
   saver.notifyEdit(body, title);
 }
 
-/** Trigger a save attempt against the current editor content. The
- *  Saver state machine handles the full lifecycle (dirty → saving →
- *  idle / conflict). UI subscribers (status bar, conflict modal,
- *  merge modal) react automatically. */
-export async function doSave(): Promise<void> {
-  // DB-row pages still have their own bespoke save path (not yet
-  // migrated to the Saver). Delegate.
-  if (S.currentRow && S.dirty && !S.saving) {
-    S.saving = true;
-    try {
-      const m = await import('./row-page');
-      await m.saveCurrentRow();
-    } finally { S.saving = false; }
-    return;
-  }
-  if (!S.currentId || S.currentType === 'database') return;
-  syncEditorIntoSaver();
-  await saver.save();
-}
-
 /** Editor-input hook — debounced autosave. Pulls the current editor
  *  content into the Saver (which transitions to 'dirty'); the autosave
  *  scheduler arms a timer to call `saver.save()`. */
 export function schedSave(): void {
   if (!S.currentId || S.currentType === 'database') return;
   if (S.currentRow) {
-    // Row-pages still use the legacy dirty/saving markers
-    // (saveCurrentRow is invoked from doSave above).
+    // Row-pages still use the legacy dirty/saving markers; the
+    // row-page editor sets S.dirty itself on input, and the
+    // flushPendingSave path below picks that up at navigate / save time.
     return;
   }
   syncEditorIntoSaver();
@@ -105,6 +87,19 @@ export function clearSaveTimer(): void {
  *  follow-up if the user typed during the round-trip. It does NOT
  *  retry after a conflict — the user must resolve it explicitly. */
 export async function flushPendingSave(): Promise<void> {
+  // Row-page (= DB row's body editor) still uses its own save path
+  // distinct from the Saver state machine. Without this branch the
+  // row-page Ctrl+S, page-nav flush and close-app flush were all
+  // no-ops (the lower syncEditorIntoSaver early-returns when
+  // `S.currentRow` is set), silently dropping unsaved row edits.
+  if (S.currentRow && S.dirty && !S.saving) {
+    S.saving = true;
+    try {
+      const m = await import('./row-page');
+      await m.saveCurrentRow();
+    } finally { S.saving = false; }
+    return;
+  }
   syncEditorIntoSaver();
   await saver.flush();
 }

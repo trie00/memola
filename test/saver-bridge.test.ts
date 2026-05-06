@@ -120,13 +120,22 @@ describe('saver-bridge', () => {
     expect(setSave).toHaveBeenLastCalledWith('競合');
   });
 
-  it('unloaded → leaves dirty/saving alone (row-page may own them)', () => {
+  it('unloaded → leaves row-page dirty alone, clears stale page-driven flags', () => {
     mod.saver.loadPage(SNAP());
     expect(stateMod.S.dirty).toBe(false);
-    // Simulate row-page setting its own dirty
+    // Simulate row-page setting its own dirty (S.currentRow ≠ null is
+    // the signal that row-page owns the dirty/saving markers).
     stateMod.S.dirty = true;
+    stateMod.S.currentRow = { listTitle: 'list', itemId: 1, dbId: '1' };
     mod.saver.unload();
-    // unload leaves S.dirty as-is so row-page state isn't clobbered
     expect(stateMod.S.dirty).toBe(true);
+    // Without an active row-page, an unload from a stuck dirty/saving
+    // page must clear the markers so subsequent flows (sync-watch
+    // checkOnce, status bar) don't see stale data.
+    stateMod.S.currentRow = null;
+    stateMod.S.dirty = true;
+    mod.saver.loadPage(SNAP());
+    mod.saver.unload();
+    expect(stateMod.S.dirty).toBe(false);
   });
 });

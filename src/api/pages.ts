@@ -314,11 +314,6 @@ async function fetchOneRow(pageId: string, select?: string): Promise<FetchedRow 
   };
 }
 
-export function getPageParent(id: string): string {
-  const p = S.meta.pages.find((p) => p.id === id);
-  return p ? (p.parent || '') : '';
-}
-
 /** Codex review PS1: itemId-collision detection. When the org list and
  *  per-user list contain rows with the same numeric SP item id, the
  *  meta cache (keyed by `String(id)`) used to silently drop one. After
@@ -513,27 +508,6 @@ export async function apiLoadContentMeta(
   };
 }
 
-/** After any SP write that advances the row's Modified/ETag, refresh
- *  the watch watermark for the active page so the foreground poller
- *  doesn't mistake our own write for a remote change.
- *
- *  With the Saver state machine owning the save lifecycle, this hook
- *  is now only needed for NON-body writes (title-only via inline-rename,
- *  icon, pin, parent move, trash, restore, publish flags, …). Body
- *  saves go through the Saver which updates the watermark itself.
- *
- *  Callers should `void`-call this — failure is non-fatal. Quietly
- *  skips when the affected page isn't the one currently being watched. */
-export async function refreshSyncWatermark(pageId: string): Promise<void> {
-  if (S.sync.pageId !== pageId) return;
-  try {
-    const fm = await apiLoadFileMeta(pageId);
-    if (fm) {
-      S.sync.loadedEtag = fm.etag;
-      S.sync.loadedModified = fm.modified;
-    }
-  } catch { /* ignore */ }
-}
 
 /** Single funnel for ALL writes against the memola-pages list.
  *
@@ -760,7 +734,11 @@ export async function apiDeletePage(id: string): Promise<string[]> {
     //    later step's failure leaves only invisible orphan data.
     //    The list is resolved from the pageId — Phase 3 will route
     //    user-scope pages to per-user lists.
-    const itemId = parseInt(pid, 10);
+    // Use `pageIdToItemId` so composite ids ('memola-pages-user:42')
+    // resolve to the numeric SP itemId. `parseInt(pid, 10)` returned
+    // NaN for those, so the SP delete was silently skipped and the row
+    // re-surfaced on next reload.
+    const itemId = pageIdToItemId(pid);
     if (itemId) {
       await deleteListItem(listForPageId(pid), itemId).catch(() => undefined);
     }
@@ -920,7 +898,9 @@ export async function apiSetScope(
   // limited to the author until proper migration lands.
   for (const pid of ids) {
     const sourceList = listForPageId(pid);
-    const itemId = parseInt(pid, 10);
+    // Composite ids ('memola-pages-user:42') need pageIdToItemId; the
+    // raw `parseInt` returned NaN and silently skipped the SP write.
+    const itemId = pageIdToItemId(pid);
     if (!itemId) continue;
     try {
       await updateListItem(sourceList, itemId, { Scope: scope });

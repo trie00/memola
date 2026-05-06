@@ -8,7 +8,6 @@ import { doSelect } from './views';
 import { escapeHtml } from '../lib/html-escape';
 import { prefSyncPollMs } from '../lib/prefs';
 import { listenPageSaved } from '../lib/cross-tab-sync';
-import { saver } from '../lib/saver';
 
 const DEFAULT_POLL_INTERVAL_MS = 30_000;
 
@@ -70,6 +69,7 @@ async function checkOnce(): Promise<void> {
     //     same-user-two-tab conflicts, causing silent overwrites
     //
     // Net: simpler, more correct, no false negatives.
+    if (S.currentId !== id) return;        // user navigated during await
     const etagSame = !!meta.etag && meta.etag === S.sync.loadedEtag;
     const modifiedSame = !!meta.modified && meta.modified === S.sync.loadedModified;
     if (etagSame || modifiedSame) return;
@@ -78,6 +78,7 @@ async function checkOnce(): Promise<void> {
     // be clearer.
     const editor = await getListItemEditor(id).catch(() => '');
     const me = await getCurrentUser().catch(() => '');
+    if (S.currentId !== id) return;        // and again before painting
     const sameUser = !!editor && !!me && editor === me;
     showStaleBanner(editor, meta.modified, id, sameUser);
   } catch { /* ignore transient errors */ }
@@ -165,12 +166,11 @@ export function attachCrossTabSync(): void {
     if (S.currentId !== msg.pageId) return;
     if (msg.etag && msg.etag === S.sync.loadedEtag) return;
     if (S.sync.suppressBannerUntilFocus) return;
-    void (async () => {
-      const editor = await getListItemEditor(msg.pageId).catch(() => '');
-      const me = await getCurrentUser().catch(() => '');
-      const sameUser = !!editor && !!me && editor === me;
-      showStaleBanner(editor, msg.modified, msg.pageId, sameUser);
-    })();
+    // BroadcastChannel only delivers same-origin same-user same-browser
+    // messages, so we can label the banner "別のタブ (あなた)" without
+    // a network round-trip to confirm the editor identity. (The poll
+    // path still asks SP because it sees real foreign-user edits too.)
+    showStaleBanner('', msg.modified, msg.pageId, /*sameUser*/ true);
   });
 }
 

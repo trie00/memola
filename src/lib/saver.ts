@@ -268,13 +268,18 @@ class Saver {
         // Treat this as an explicit override: drop the conflict bundle,
         // re-enter dirty against the ORIGINAL base. The next save will
         // re-detect SP advancement and surface a fresh conflict if real.
-        const c = s.kind === 'conflict' ? s.conflict : s.conflict;
+        const c = s.conflict;
         const base: PageSnapshot = {
           pageId: c.pageId,
           body: c.base.body,
           title: c.base.title,
           etag: c.base.etag,
-          modified: '',
+          // Preserve the conflict-time `modified` watermark — this
+          // mirrors `cancelConflict` (Codex review #8). Resetting to ''
+          // here would zero out `S.sync.loadedModified` via saver-bridge,
+          // breaking the foreground poller's "is this our edit?"
+          // short-circuit until the next save.
+          modified: c.base.modified,
         };
         if (body === base.body && title === base.title) {
           this._set({ kind: 'idle', base });

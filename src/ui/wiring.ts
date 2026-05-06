@@ -139,6 +139,7 @@ export function attachAll(): void {
   applyFocusMode();
   applyViewportAutoCollapse();
   window.addEventListener('resize', applyViewportAutoCollapse);
+  _viewportAutoCollapseAttached = true;
 
   // Side panels (outline / properties / trash / workspace switcher)
   attachSidePanels();
@@ -153,6 +154,20 @@ export function attachAll(): void {
   document.addEventListener('keydown', onKey);
 }
 
+// Tracked so `detachViewportAutoCollapse` (called from teardown) only
+// removes the listener if attachAll() actually attached it. Without
+// this, repeated bookmarklet presses leaked a fresh resize listener
+// per cycle.
+let _viewportAutoCollapseAttached = false;
+
+/** Drop the resize listener attached in `attachAll`. Called from
+ *  `teardown` so re-pressing the bookmarklet doesn't pile up handlers. */
+export function detachViewportAutoCollapse(): void {
+  if (!_viewportAutoCollapseAttached) return;
+  window.removeEventListener('resize', applyViewportAutoCollapse);
+  _viewportAutoCollapseAttached = false;
+}
+
 // ── INIT ─────────────────────────────────────────────
 /** Tear down everything that lives outside the DOM (intervals, listeners,
  *  presence row). Called when the user re-presses the bookmarklet to
@@ -160,7 +175,7 @@ export function attachAll(): void {
  *  running invisibly. Stored on the overlay element so the new IIFE can
  *  reach it across closure boundaries. */
 function memolaShutdown(): void {
-  teardown({ flushSave: true, removeOverlay: false });
+  void teardown({ flushSave: true, removeOverlay: false });
 }
 
 export async function init(): Promise<void> {

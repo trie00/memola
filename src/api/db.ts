@@ -102,7 +102,10 @@ export async function apiTrashRow(listTitle: string, rowId: number): Promise<voi
         PageType: 'row',
         ListTitle: listTitle,
         DbRowId: rowId,
-        Body: '',
+        // Phase 2: canonical body column is Body_blocks (JSON-blocks),
+        // not the legacy Body markdown column. Writing Body='' here
+        // left the row's body invisible to every Phase-2-aware reader.
+        Body_blocks: '[]',
         Scope: parentDb?.scope || 'user',
         Trashed: ts,
         TrashedBy: myId,

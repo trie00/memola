@@ -158,7 +158,13 @@ export function handleBeforeInput(
     }
     case 'deleteContentForward': {
       if (sel.kind === 'caret') {
-        const next = deleteRange(state, sel.blockId, sel.offset, 1);
+        // Mirror Backspace's atomic-link guard for forward delete: if
+        // the inline node STARTING at the caret is atomic
+        // (pagelink/dailylink), delete the whole chip rather than
+        // slicing through it. Falls back to single-char otherwise.
+        const atomicLen = atomicNodeStartingAt(state, sel.blockId, sel.offset);
+        const count = atomicLen > 0 ? atomicLen : 1;
+        const next = deleteRange(state, sel.blockId, sel.offset, count);
         return { next, preventDefault: true };
       }
       const after = deleteSelectionRange(state, sel);
@@ -188,11 +194,53 @@ function deleteSelectionRange(
     const next = deleteRange(state, sel.anchorBlockId, start, end - start);
     return { state: next, cursor: { blockId: sel.anchorBlockId, offset: start } };
   }
-  // Cross-block range — delete the tail of the start block, all
-  // intermediate blocks, the head of the end block, then merge the
-  // start and end blocks.
-  // For now this is unsupported — return the state unchanged.
-  return { state, cursor: null };
+  // Cross-block range — order start/end by document position, take the
+  // prefix of the start block + the suffix of the end block, drop every
+  // block between them, and merge prefix+suffix into the start block
+  // (= same semantics as a contenteditable native cross-block backspace).
+  // Top-level blocks only; nested-block ranges fall through unchanged
+  // (= a separate hairy case).
+  const blocks = state.blocks;
+  const aIdx = blocks.findIndex((b) => b.id === sel.anchorBlockId);
+  const fIdx = blocks.findIndex((b) => b.id === sel.focusBlockId);
+  if (aIdx < 0 || fIdx < 0) return { state, cursor: null };
+  const startIdx = Math.min(aIdx, fIdx);
+  const endIdx = Math.max(aIdx, fIdx);
+  const startOffset = aIdx <= fIdx ? sel.anchorOffset : sel.focusOffset;
+  const endOffset = aIdx <= fIdx ? sel.focusOffset : sel.anchorOffset;
+  const startBlock = blocks[startIdx];
+  const endBlock = blocks[endIdx];
+  if (!('inline' in startBlock) || !('inline' in endBlock)) {
+    // Range crosses an atomic block (table/linkdb/ai/rule/image) — leave
+    // it to the browser. We pass `preventDefault: false` upstream by
+    // returning a null cursor; orchestrator already handles this.
+    return { state, cursor: null };
+  }
+  const mergedInline = [
+    ...sliceInlineLocal(startBlock.inline, 0, startOffset),
+    ...sliceInlineLocal(endBlock.inline, endOffset, Number.POSITIVE_INFINITY),
+  ];
+  const mergedBlock = { ...startBlock, inline: mergedInline } as typeof startBlock;
+  const nextBlocks = [
+    ...blocks.slice(0, startIdx),
+    mergedBlock,
+    ...blocks.slice(endIdx + 1),
+  ];
+  return {
+    state: { ...state, blocks: nextBlocks },
+    cursor: { blockId: mergedBlock.id, offset: startOffset },
+  };
+}
+
+/** Local slice helper that delegates to the canonical `sliceInline`
+ *  from editor-state. Re-exported with an alias to keep the cross-block
+ *  range delete self-contained while reusing the offset math. */
+function sliceInlineLocal(
+  inline: import('../../lib/blocks').Inline[],
+  from: number,
+  to: number,
+): import('../../lib/blocks').Inline[] {
+  return sliceInline(inline, from, to);
 }
 
 /** When the user presses Enter on an EMPTY block that lives inside a
@@ -282,6 +330,32 @@ function atomicNodeEndingAt(state: EditorState, blockId: string, offset: number)
       return 0;
     }
     if (pos + len > offset) return 0;     // caret is INSIDE this node
+    pos += len;
+  }
+  return 0;
+}
+
+/** Mirror of `atomicNodeEndingAt` for forward delete: when the inline
+ *  node STARTING exactly at the given offset is an atomic atom
+ *  (`pagelink` / `dailylink`), return its visible length. Returns 0
+ *  when the offset doesn't fall right before such an atom. */
+function atomicNodeStartingAt(state: EditorState, blockId: string, offset: number): number {
+  const top = state.blocks.find((b) => b.id === blockId);
+  if (!top || !('inline' in top)) return 0;
+  let pos = 0;
+  for (const node of top.inline) {
+    let len = 0;
+    if (node.kind === 'text') len = node.text.length;
+    else if (node.kind === 'code') len = node.text.length;
+    else if (node.kind === 'br') len = 1;
+    else if (node.kind === 'pagelink') len = (node.alias || node.pageId).length;
+    else if (node.kind === 'dailylink') len = (node.alias || node.date).length;
+    else if ('children' in node) len = sumInlineLength(node.children);
+    if (pos === offset) {
+      if (node.kind === 'pagelink' || node.kind === 'dailylink') return len;
+      return 0;
+    }
+    if (pos > offset) return 0;
     pos += len;
   }
   return 0;
@@ -660,26 +734,3 @@ function locateInsideContainer(state: EditorState, innerId: string): ContainerLo
   return null;
 }
 
-/** Convenience for keydown handlers that want to convert simple key
- *  events into mutations. The orchestrator wires `beforeinput` for
- *  the heavy lifting; this is for keys browsers don't deliver as
- *  beforeinput (= mostly app-level shortcuts). */
-export interface KeyAction {
-  kind: 'mutate';
-  next: EditorState;
-}
-
-export function handleArrowsAndShortcuts(
-  state: EditorState,
-  ev: KeyboardEvent,
-  editorEl: HTMLElement,
-): KeyAction | null {
-  // For Phase 2c-1 the orchestrator handles ⌘B / ⌘I / ⌘Z directly.
-  // Arrow keys are left to the browser (caret moves via browser
-  // selection; our captureSelection picks up the new position on the
-  // next mutation).
-  void state;
-  void ev;
-  void editorEl;
-  return null;
-}

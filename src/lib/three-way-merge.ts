@@ -359,7 +359,17 @@ export function resolveConflict(
   return [...before, ...pick, ...after].join('\n');
 }
 
-/** True if the merged text still contains any conflict markers. */
+/** True if the merged text still contains any conflict markers. We
+ *  match marker LINES, not substrings — a setext-style H2 underline
+ *  (`=======`) embedded in the body would otherwise trigger a false
+ *  positive on `MARK_SEP` and disable the 「このマージを保存」 button.
+ *  The yours/theirs markers carry an id suffix so a substring match is
+ *  safe; the base marker is unique enough to test as a substring too,
+ *  but we anchor on line equality for symmetry. */
 export function hasUnresolvedConflicts(merged: string): boolean {
-  return merged.includes(MARK_YOURS) || merged.includes(MARK_SEP) || merged.includes(MARK_THEIRS);
+  if (merged.includes(MARK_YOURS) || merged.includes(MARK_THEIRS)) return true;
+  for (const line of merged.split('\n')) {
+    if (line === MARK_SEP || line === MARK_BASE) return true;
+  }
+  return false;
 }

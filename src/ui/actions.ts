@@ -80,17 +80,6 @@ export async function doDel(id: string): Promise<void> {
   finally { setLoad(false); }
 }
 
-// Permanently remove from trash (called by trash UI)
-export async function doPurge(id: string): Promise<void> {
-  if (!confirm('完全に削除します。元に戻せませんがよろしいですか？')) return;
-  try {
-    setLoad(true, '完全削除中...');
-    await apiDeletePage(id);
-    toast('完全に削除しました');
-  } catch (e) { toast('削除失敗: ' + (e as Error).message, 'err'); }
-  finally { setLoad(false); }
-}
-
 // ── DB new row action ─────────────────────────────────
 export function doNewDbRow(): void {
   const tbody = g('dtb');
@@ -185,14 +174,22 @@ export function doNewDbRow(): void {
  *  `removeOverlay=true` is for closeApp (the user expects the UI gone);
  *  bookmarklet-shutdown sets it false because main.ts removes the
  *  overlay itself just after calling shutdown. */
-export function teardown(opts: { flushSave: boolean; removeOverlay: boolean }): void {
+export async function teardown(opts: { flushSave: boolean; removeOverlay: boolean }): Promise<void> {
   if (opts.flushSave) {
-    void flushPendingSave().catch(() => undefined);
+    // Await the flush — dropping it on the floor (`void ... .catch`)
+    // meant a slow save raced the overlay teardown and the user lost
+    // edits silently after the close-confirm dialog promised "(OK で
+    // 保存してから閉じます)".
+    try { await flushPendingSave(); } catch { /* surface failure to user? close anyway */ }
   }
   clearSaveTimer();
   void import('./sync-watch').then((m) => m.stopWatching()).catch(() => undefined);
   void import('./presence-ui').then((m) => m.shutdownPresence()).catch(() => undefined);
   document.removeEventListener('keydown', onKey);
+  // Drop the resize listener wired in `wiring.ts:applyViewportAutoCollapse`.
+  // Without this the handler accumulated across each bookmarklet
+  // close/reopen cycle.
+  void import('./wiring').then((m) => m.detachViewportAutoCollapse?.()).catch(() => undefined);
   if (opts.removeOverlay) {
     const overlay = document.getElementById('memola-overlay');
     if (overlay) overlay.remove();
