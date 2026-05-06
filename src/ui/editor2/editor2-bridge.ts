@@ -21,7 +21,7 @@ import { attachImageHandlers } from './editor2-image';
 import { attachBlockDrag } from './editor2-drag';
 import { attachTableHandlers } from './editor2-table';
 import {
-  bulletList, orderedList, quote, callout, codeBlock, rule,
+  bulletList, orderedList, quote, callout, codeBlock, rule, paragraph,
 } from './editor-state';
 
 let _editor: Editor | null = null;
@@ -34,6 +34,7 @@ let _imageCleanup: (() => void) | null = null;
 let _dragCleanup: (() => void) | null = null;
 let _tableCleanup: (() => void) | null = null;
 let _pageLinkCleanup: (() => void) | null = null;
+let _bottomClickCleanup: (() => void) | null = null;
 /** Codex review E5: incremented on every mount/destroy. Subscriber
  *  callbacks capture this value; if a deferred async path (e.g. the
  *  dynamic `import('../save-control')`) resolves AFTER the editor was
@@ -82,7 +83,47 @@ export function mountEditor2(rootEl: HTMLElement): Editor {
   _dragCleanup = attachBlockDrag(_editor, rootEl);
   _tableCleanup = attachTableHandlers(_editor, rootEl);
   _pageLinkCleanup = attachPageLinkClicks(rootEl);
+  _bottomClickCleanup = attachBottomClickHandler(_editor, rootEl);
   return _editor;
+}
+
+/** Click below the last block: append a fresh empty paragraph and
+ *  focus it so the user can start typing immediately. If the last
+ *  block is already an empty paragraph, just focus it (= no churn,
+ *  no dirty flag). Mirrors the legacy editor.ts behaviour deleted in
+ *  Phase 2c. */
+function attachBottomClickHandler(editor: Editor, rootEl: HTMLElement): () => void {
+  const onMousedown = (ev: MouseEvent): void => {
+    if (ev.target !== rootEl) return;          // clicked on a block — let default handle
+    const last = rootEl.lastElementChild as HTMLElement | null;
+    if (last) {
+      const r = last.getBoundingClientRect();
+      if (ev.clientY < r.bottom) return;       // not below the last block
+    }
+    ev.preventDefault();
+    const blocks = editor.getBlocks();
+    const tail = blocks[blocks.length - 1];
+    const tailIsEmptyP = !!tail && tail.kind === 'p'
+      && tail.inline.length === 0;
+    if (tailIsEmptyP) {
+      // Already-empty trailing paragraph — just focus, no DOM mutation,
+      // no dirty bump.
+      editor.applyMutation((s) => ({
+        ...s,
+        selection: { kind: 'caret' as const, blockId: tail.id, offset: 0 },
+      }), 'selection');
+      return;
+    }
+    // Append a fresh empty paragraph and focus it.
+    const p = paragraph('');
+    editor.applyMutation((s) => ({
+      ...s,
+      blocks: [...s.blocks, p],
+      selection: { kind: 'caret' as const, blockId: p.id, offset: 0 },
+    }), 'structural');
+  };
+  rootEl.addEventListener('mousedown', onMousedown);
+  return () => rootEl.removeEventListener('mousedown', onMousedown);
 }
 
 /** Click handler for page-link / daily-link chips inside the editor.
@@ -168,6 +209,7 @@ export function destroyEditor2(): void {
   if (_dragCleanup) { _dragCleanup(); _dragCleanup = null; }
   if (_tableCleanup) { _tableCleanup(); _tableCleanup = null; }
   if (_pageLinkCleanup) { _pageLinkCleanup(); _pageLinkCleanup = null; }
+  if (_bottomClickCleanup) { _bottomClickCleanup(); _bottomClickCleanup = null; }
   if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
   if (_editor) { _editor.destroy(); _editor = null; }
 }

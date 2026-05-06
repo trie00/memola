@@ -121,31 +121,15 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
       if (x >= rect.left && x <= rect.right) { colIdx = c; break; }
     }
 
-    // +row button: appears at the right edge of the table, vertically
-    // centred on the hovered row.
-    const addRowBtn = ensureButton('add-row', '+', '行を追加');
-    if (rowIdx >= 0 && trs[rowIdx]) {
+    // +col button: appears at the right edge of the table, vertically
+    // centred on the hovered row. Geometric intuition: extending
+    // horizontally → adds a column to the right of the hovered column.
+    const addColBtn = ensureButton('add-col', '+', '列を追加');
+    if (rowIdx >= 0 && colIdx >= 0 && trs[rowIdx] && cells[colIdx]) {
       const rr = trs[rowIdx].getBoundingClientRect();
       const tr = tbl.getBoundingClientRect();
-      addRowBtn.style.top = (rr.top + window.scrollY + (rr.height - 20) / 2) + 'px';
-      addRowBtn.style.left = (tr.right + window.scrollX + 4) + 'px';
-      addRowBtn.style.display = 'block';
-      addRowBtn.onclick = () => {
-        editor.applyMutation((s) => tableAddRow(s, blockId, rowIdx + 1), 'structural');
-        hideButtons();
-      };
-    } else {
-      addRowBtn.style.display = 'none';
-    }
-
-    // +col button: appears at the bottom of the table, horizontally
-    // centred on the hovered column.
-    const addColBtn = ensureButton('add-col', '+', '列を追加');
-    if (colIdx >= 0 && cells[colIdx]) {
-      const cr = cells[colIdx].getBoundingClientRect();
-      const tr = tbl.getBoundingClientRect();
-      addColBtn.style.top = (tr.bottom + window.scrollY + 4) + 'px';
-      addColBtn.style.left = (cr.left + window.scrollX + (cr.width - 20) / 2) + 'px';
+      addColBtn.style.top = (rr.top + window.scrollY + (rr.height - 20) / 2) + 'px';
+      addColBtn.style.left = (tr.right + window.scrollX + 4) + 'px';
       addColBtn.style.display = 'block';
       addColBtn.onclick = () => {
         editor.applyMutation((s) => tableAddCol(s, blockId, colIdx + 1), 'structural');
@@ -153,6 +137,24 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
       };
     } else {
       addColBtn.style.display = 'none';
+    }
+
+    // +row button: appears at the bottom of the table, horizontally
+    // centred on the hovered column. Geometric intuition: extending
+    // vertically → adds a row below the hovered row.
+    const addRowBtn = ensureButton('add-row', '+', '行を追加');
+    if (rowIdx >= 0 && colIdx >= 0 && cells[colIdx]) {
+      const cr = cells[colIdx].getBoundingClientRect();
+      const tr = tbl.getBoundingClientRect();
+      addRowBtn.style.top = (tr.bottom + window.scrollY + 4) + 'px';
+      addRowBtn.style.left = (cr.left + window.scrollX + (cr.width - 20) / 2) + 'px';
+      addRowBtn.style.display = 'block';
+      addRowBtn.onclick = () => {
+        editor.applyMutation((s) => tableAddRow(s, blockId, rowIdx + 1), 'structural');
+        hideButtons();
+      };
+    } else {
+      addRowBtn.style.display = 'none';
     }
 
     // -row / -col buttons: small ✕ in the row/col header. Only show
@@ -188,9 +190,24 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
 }
 
 /** Walk a `<td>`'s child nodes back into Inline[]. Mirrors
- *  `renderInlineInto` in editor-render.ts but inverse. */
+ *  `renderInlineInto` in editor-render.ts but inverse.
+ *
+ *  Critical normalisation: `renderInlineInto` appends a placeholder
+ *  `<br>` to empty inline targets so the line stays selectable. That
+ *  placeholder is purely visual — it is NOT meant to round-trip into
+ *  the block model. Without this filter, a click on a cell whose
+ *  content is empty would blur the previously-focused cell (also
+ *  empty), `walkChildren` would read its `<br>` placeholder as
+ *  `[{kind:'br'}]`, `tableSetCell` would persist that, and the next
+ *  render would treat the cell as non-empty: `renderInlineInto`'s
+ *  trailing-br branch appends a SECOND `<br>` after the existing one,
+ *  visibly inserting a line break. Repeated clicks would accumulate
+ *  more brs. The user sees this as "clicking on the table inserts a
+ *  line break in the top-left header". */
 function readCellInline(cell: HTMLElement): Inline[] {
-  return walkChildren(cell);
+  const out = walkChildren(cell);
+  if (out.length === 1 && out[0].kind === 'br') return [];
+  return out;
 }
 
 function walkChildren(parent: Node): Inline[] {

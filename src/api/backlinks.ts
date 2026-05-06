@@ -10,7 +10,8 @@
 // delete).
 
 import { spListUrl, spGetD } from './sp-rest';
-import { ORG_PAGES_LIST, getMyPagesList } from './pages';
+import { ORG_PAGES_LIST, getMyPagesList, parseBlocksJson } from './pages';
+import { blocksToMd } from '../lib/blocks-md';
 
 export interface BacklinkEntry {
   pageId: string;
@@ -32,6 +33,10 @@ interface CachedRow {
   Id: number;
   Title: string;
   Body: string;
+  /** Phase 2 storage column. Holds the canonical block-tree JSON for
+   *  every save; the legacy `Body` column receives a flattened
+   *  markdown copy on save but isn't authoritative. */
+  Body_blocks?: string;
   PageType?: string;
   OriginPageId?: string;
 }
@@ -49,7 +54,7 @@ async function loadBodiesFromList(listTitle: string): Promise<CachedRow[]> {
   const rows: CachedRow[] = [];
   let next: string | undefined = spListUrl(
     listTitle,
-    '/items?$select=Id,Title,Body,PageType,OriginPageId&$top=500&$orderby=Id',
+    '/items?$select=Id,Title,Body,Body_blocks,PageType,OriginPageId&$top=500&$orderby=Id',
   );
   let safety = 0;
   while (next && safety++ < 50) {
@@ -109,7 +114,19 @@ export async function getBacklinksFor(
     if (row.PageType === 'draft') continue;               // skip drafts
     if (row.OriginPageId) continue;                        // legacy drafts
     if (row.PageType === 'row') continue;                  // skip DB row bodies (still findable via parent DB)
-    const body = row.Body || '';
+    // Phase 2: canonical content lives in Body_blocks (JSON). Convert
+    // to markdown so the existing `[[<id>` regex matches — pagelinks
+    // are stored as { kind:'pagelink', pageId } in the block-tree, but
+    // round-trip out as `[[<id>]]` markdown. Fall back to legacy Body
+    // for rows that haven't been re-saved yet under Phase 2.
+    const blocksJson = row.Body_blocks || '';
+    let body: string;
+    if (blocksJson) {
+      try { body = blocksToMd(parseBlocksJson(blocksJson)); }
+      catch { body = row.Body || ''; }
+    } else {
+      body = row.Body || '';
+    }
     if (!body) continue;
     const matches = body.match(re);
     if (!matches || matches.length === 0) continue;
