@@ -122,7 +122,26 @@ function paintBlockContent(el: HTMLElement, b: Block): void {
       const pre = document.createElement('pre');
       const code = document.createElement('code');
       if (b.lang) code.className = 'language-' + b.lang;
-      code.textContent = b.text;
+      // Render newlines as `<br>` rather than literal `\n` in a single
+      // text node — the browser doesn't give the caret a landing slot
+      // past a trailing `\n` inside <pre>, so an empty trailing line
+      // looks invisible. With `<br>` (matching the same trick as
+      // paragraphs), the caret can sit on the empty next line and the
+      // user actually sees it move.
+      const lines = b.text.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i]) code.appendChild(document.createTextNode(lines[i]));
+        if (i < lines.length - 1) code.appendChild(document.createElement('br'));
+      }
+      // Trailing-line placeholder. Without this, "abc\n" renders as
+      // "abc<br>" and Chrome refuses to put the caret past the br
+      // (same reason paragraphs need a placeholder br). For "abc\n"
+      // the user pressed Enter and expected to see line 2 with the
+      // caret on it — without the placeholder the caret stays on
+      // line 1 visually until they type a character.
+      if (b.text === '' || b.text.endsWith('\n')) {
+        code.appendChild(document.createElement('br'));
+      }
       pre.appendChild(code);
       el.appendChild(pre);
       break;
@@ -246,6 +265,18 @@ function renderInlineInto(target: HTMLElement, inline: Inline[]): void {
   }
   for (const i of inline) {
     target.appendChild(renderInlineNode(i));
+  }
+  // Trailing-br placeholder. When the inline run ends with a hard
+  // break, the browser's contenteditable doesn't give the caret a
+  // landing spot AFTER the br — IME composition then writes into
+  // the previous text node, putting the new line on the wrong row.
+  // A second `<br>` after the inline br creates the missing slot.
+  // (Notion / ProseMirror use the same trick.) The extra br is NOT
+  // tracked in state — `domOffsetToLogical` accumulates `+1` per
+  // br, so the final placeholder is implicitly past `inlineLength`
+  // and won't be reachable via state offsets.
+  if (inline[inline.length - 1].kind === 'br') {
+    target.appendChild(document.createElement('br'));
   }
 }
 

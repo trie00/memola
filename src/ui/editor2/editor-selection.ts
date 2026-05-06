@@ -156,6 +156,17 @@ function logicalToDomOffset(
         result = { node: parent, offset: idx };
         return true;
       }
+      if (acc + 1 === target) {
+        // Caret right after the <br> — parent slot past the br.
+        // Without this the "past-end" fallback would land in the
+        // last text node (= BEFORE the br), so a Shift+Enter
+        // followed by typing would insert the new text on the
+        // wrong side of the line break.
+        const parent = el.parentNode!;
+        const idx = Array.from(parent.childNodes).indexOf(el);
+        result = { node: parent, offset: idx + 1 };
+        return true;
+      }
       acc += 1;
       return false;
     }

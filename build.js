@@ -1,5 +1,27 @@
 const esbuild = require('esbuild');
 const fs = require('fs');
+const crypto = require('crypto');
+
+// Build identifier — surfaced in Settings → Help so users can verify
+// which version their bookmarklet is running. Format:
+//   YYMMDD-HHMM-<6-char-content-hash>
+// The content hash is computed from src/ + styles to detect "the
+// bookmark URL is the same byte sequence" cases.
+function computeBuildId() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = String(d.getFullYear()).slice(2) + pad(d.getMonth() + 1) + pad(d.getDate())
+    + '-' + pad(d.getHours()) + pad(d.getMinutes());
+  // Hash a representative subset of source files. Don't walk the
+  // whole tree — just the entry + a stable few files is enough to
+  // detect "same code or different".
+  const hash = crypto.createHash('sha256');
+  for (const f of ['src/main.ts', 'src/api/pages.ts', 'src/ui/wiring.ts', 'package.json']) {
+    try { hash.update(fs.readFileSync(f)); } catch { /* ignore */ }
+  }
+  return stamp + '-' + hash.digest('hex').slice(0, 6);
+}
+const BUILD_ID = computeBuildId();
 
 const result = esbuild.buildSync({
   entryPoints: ['src/main.ts'],
@@ -10,6 +32,9 @@ const result = esbuild.buildSync({
   write: false,
   minify: false,
   legalComments: 'none',
+  define: {
+    '__BUILD_ID__': JSON.stringify(BUILD_ID),
+  },
 });
 
 const bundled = result.outputFiles[0].text;

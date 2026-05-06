@@ -15,11 +15,12 @@
 // candidates. We wait until compositionend then capture the result.
 
 import {
-  insertText, deleteRange, splitBlock, mergeWithPrev,
+  insertText, insertBr, deleteRange, splitBlock, mergeWithPrev,
   paragraph, inlineLength, sliceInline,
   type EditorState,
 } from './editor-state';
 import type { Block } from '../../lib/blocks';
+import { newBlockId, inlineToPlainText } from '../../lib/blocks';
 import { captureSelection } from './editor-selection';
 
 /** Apply a beforeinput event to the current state, returning the
@@ -68,6 +69,18 @@ export function handleBeforeInput(
       return { next, preventDefault: true };
     }
     case 'insertParagraph': {
+      // Code-block specific Enter handling. Two cases:
+      //   - caret at end of an empty trailing line (= text === '' OR
+      //     text endsWith '\n') AND offset === text.length:
+      //       exit the code block. Strip the trailing '\n' (if any)
+      //       and insert a fresh paragraph after the code.
+      //   - Otherwise: insert '\n' at the caret. (= multi-line code)
+      if (sel.kind === 'caret' && isCodeBlock(state, sel.blockId)) {
+        const exitCode = enterExitCodeOnEmptyLine(state, sel.blockId, sel.offset);
+        if (exitCode) return { next: exitCode, preventDefault: true };
+        const next = insertText(state, sel.blockId, sel.offset, '\n');
+        return { next, preventDefault: true };
+      }
       if (sel.kind !== 'caret') {
         const after = deleteSelectionRange(state, sel);
         if (!after.cursor) return { next: state, preventDefault: false };
@@ -89,31 +102,53 @@ export function handleBeforeInput(
       return { next, preventDefault: true };
     }
     case 'insertLineBreak': {
-      // Shift+Enter inserts a hard break inline. For now treat as
-      // insertText with newline; a future pass can swap to a real br
-      // inline node.
-      if (sel.kind === 'caret') {
+      // Shift+Enter inside a code block also inserts a newline (same
+      // as plain Enter — the distinction collapses for multi-line
+      // text inside <pre>).
+      if (sel.kind === 'caret' && isCodeBlock(state, sel.blockId)) {
         const next = insertText(state, sel.blockId, sel.offset, '\n');
         return { next, preventDefault: true };
       }
-      return { next: state, preventDefault: false };
+      // Shift+Enter inserts a hard line break as a `<br>` inline node.
+      // (Plain text "\n" wouldn't render as a visible break in HTML.)
+      if (sel.kind === 'caret') {
+        const next = insertBr(state, sel.blockId, sel.offset);
+        return { next, preventDefault: true };
+      }
+      // Range selection — delete the range first, then insert br.
+      const after = deleteSelectionRange(state, sel);
+      if (!after.cursor) return { next: state, preventDefault: false };
+      const next = insertBr(after.state, after.cursor.blockId, after.cursor.offset);
+      return { next, preventDefault: true };
     }
     case 'deleteContentBackward': {
       if (sel.kind === 'caret') {
         if (sel.offset > 0) {
-          const next = deleteRange(state, sel.blockId, sel.offset, -1);
+          // If the inline node ENDING at the caret is atomic (page-
+          // link / daily-link), Backspace deletes the whole link
+          // rather than slicing through it (= no half-link "Welcom"
+          // left behind). Fall back to single-char delete otherwise.
+          const atomicLen = atomicNodeEndingAt(state, sel.blockId, sel.offset);
+          const count = atomicLen > 0 ? -atomicLen : -1;
+          const next = deleteRange(state, sel.blockId, sel.offset, count);
           return { next, preventDefault: true };
         }
         // At start of block — sequence of fallbacks:
         //   1. Unwrap a single-child container (callout / quote / list
         //      with one item / one block).
-        //   2. Remove an empty list item (= bullet "・" only).
-        //   3. Merge with the previous block, including reaching INTO
+        //   2. Remove an empty inner block from a list / quote / callout
+        //      (= the bullet "・" or empty quote-continuation line).
+        //   3. Convert an empty code block to a plain paragraph (so a
+        //      mistakenly-inserted code block can be undone with one
+        //      Backspace).
+        //   4. Merge with the previous block, including reaching INTO
         //      a list's last item to land at its tail.
         const unwrap = backspaceUnwrapContainer(state, sel.blockId);
         if (unwrap) return { next: unwrap, preventDefault: true };
-        const removeItem = backspaceRemoveEmptyListItem(state, sel.blockId);
+        const removeItem = backspaceRemoveEmptyInner(state, sel.blockId);
         if (removeItem) return { next: removeItem, preventDefault: true };
+        const exitCode = backspaceExitEmptyCode(state, sel.blockId);
+        if (exitCode) return { next: exitCode, preventDefault: true };
         const merged = backspaceMergeWithPrev(state, sel.blockId);
         if (merged) return { next: merged, preventDefault: true };
         return { next: state, preventDefault: true };
@@ -216,6 +251,134 @@ function enterEscapeContainer(state: EditorState, innerId: string): EditorState 
   };
 }
 
+/** When the inline node ENDING exactly at the given offset is an
+ *  atomic atom (`pagelink` / `dailylink`), return its visible length.
+ *  Returns 0 when the offset doesn't fall right after such an atom.
+ *  Used by Backspace to delete the whole link in one keystroke. */
+function atomicNodeEndingAt(state: EditorState, blockId: string, offset: number): number {
+  const top = state.blocks.find((b) => b.id === blockId);
+  // Top-level only — atomic-link Backspace inside nested blocks is
+  // a rare edge case and already handled correctly by the
+  // recursive sliceInline path.
+  if (!top || !('inline' in top)) return 0;
+  let pos = 0;
+  for (const node of top.inline) {
+    let len = 0;
+    if (node.kind === 'text') len = node.text.length;
+    else if (node.kind === 'code') len = node.text.length;
+    else if (node.kind === 'br') len = 1;
+    else if (node.kind === 'pagelink') len = (node.alias || node.pageId).length;
+    else if (node.kind === 'dailylink') len = (node.alias || node.date).length;
+    else if ('children' in node) {
+      // Format wrappers (bold/italic/strike/link) — accumulate length
+      // by recursing once. Keep it simple: just sum inline lengths.
+      len = sumInlineLength(node.children);
+    }
+    if (pos + len === offset) {
+      // Caret is right after `node`. Atomic only if pagelink/dailylink.
+      if (node.kind === 'pagelink' || node.kind === 'dailylink') {
+        return len;
+      }
+      return 0;
+    }
+    if (pos + len > offset) return 0;     // caret is INSIDE this node
+    pos += len;
+  }
+  return 0;
+}
+
+function sumInlineLength(inline: import('../../lib/blocks').Inline[]): number {
+  let total = 0;
+  for (const i of inline) {
+    if (i.kind === 'text') total += i.text.length;
+    else if (i.kind === 'code') total += i.text.length;
+    else if (i.kind === 'br') total += 1;
+    else if (i.kind === 'pagelink') total += (i.alias || i.pageId).length;
+    else if (i.kind === 'dailylink') total += (i.alias || i.date).length;
+    else if ('children' in i) total += sumInlineLength(i.children);
+  }
+  return total;
+}
+
+/** Notion-style "two Enters to exit code block": when the user hits
+ *  Enter at the end of an EMPTY trailing line of a code block, exit
+ *  the code (= drop that trailing '\n' AND append a fresh paragraph
+ *  AFTER the code, with caret on the new paragraph). Returns null
+ *  when the conditions don't match. */
+function enterExitCodeOnEmptyLine(
+  state: EditorState,
+  blockId: string,
+  offset: number,
+): EditorState | null {
+  const idx = state.blocks.findIndex((b) => b.id === blockId);
+  if (idx < 0) return null;
+  const block = state.blocks[idx];
+  if (block.kind !== 'code') return null;
+  // Must be at the very end of the code's text.
+  if (offset !== block.text.length) return null;
+  // Current line is empty: either the text itself is empty (= empty
+  // code block), or the last char before the caret is '\n'.
+  const isEmptyLine = block.text === '' || block.text.endsWith('\n');
+  if (!isEmptyLine) return null;
+  // Strip the trailing '\n' (if any) so the code doesn't carry a
+  // dangling empty line into persistence.
+  const newText = block.text.endsWith('\n')
+    ? block.text.slice(0, -1)
+    : block.text;
+  const newId = newBlockId();
+  const fresh: Block = { id: newId, kind: 'p', inline: [] };
+  const blocks = state.blocks.slice();
+  blocks[idx] = { ...block, text: newText } as Block;
+  blocks.splice(idx + 1, 0, fresh);
+  return {
+    ...state,
+    blocks,
+    selection: { kind: 'caret', blockId: newId, offset: 0 },
+  };
+}
+
+/** True iff the block carrying `blockId` is a `code` block. Used to
+ *  swap Enter / Shift+Enter from "split block" to "insert newline
+ *  in the code text". */
+function isCodeBlock(state: EditorState, blockId: string): boolean {
+  // Top-level fast path; nested code blocks are uncommon but the
+  // recursive `findBlockPath` covers them.
+  const top = state.blocks.find((b) => b.id === blockId);
+  if (top?.kind === 'code') return true;
+  // Fall back to a recursive search if the id wasn't found at top
+  // level (shouldn't happen in current design but be defensive).
+  const stack: import('./editor-state').EditorState['blocks'] = state.blocks.slice();
+  while (stack.length) {
+    const b = stack.shift()!;
+    if (b.id === blockId) return b.kind === 'code';
+    if (b.kind === 'callout' || b.kind === 'quote') stack.push(...b.children);
+    else if (b.kind === 'list') for (const item of b.items) stack.push(...item);
+  }
+  return false;
+}
+
+/** Convert an empty top-level code block into a paragraph at the
+ *  same position. The user typically lands here after creating a
+ *  code block via slash menu / toolbar by mistake — without this,
+ *  Backspace on the empty code block was a no-op and the user
+ *  was stuck with a code block they couldn't remove. Non-empty
+ *  code blocks are left alone (= avoid destructive single-key delete
+ *  of typed content). */
+function backspaceExitEmptyCode(state: EditorState, blockId: string): EditorState | null {
+  const idx = state.blocks.findIndex((b) => b.id === blockId);
+  if (idx < 0) return null;
+  const block = state.blocks[idx];
+  if (block.kind !== 'code') return null;
+  if (block.text !== '') return null;
+  const blocks = state.blocks.slice();
+  blocks[idx] = { id: block.id, kind: 'p', inline: [] };
+  return {
+    ...state,
+    blocks,
+    selection: { kind: 'caret', blockId: block.id, offset: 0 },
+  };
+}
+
 /** Convert an empty top-level todo into a paragraph (= the user
  *  pressed Enter to "stop the todo list"). Returns null when the
  *  block isn't a top-level empty todo. */
@@ -234,88 +397,129 @@ function enterExitEmptyTodo(state: EditorState, blockId: string): EditorState | 
   };
 }
 
-/** Backspace on an empty inner block of a list item: remove the item
- *  entirely (the bullet line vanishes). Cursor lands at the end of
- *  the previous item's last block; if there's no previous item, lands
- *  at the start of a fresh paragraph in place of the dropped list.
+/** Backspace on an empty inner block of a container (list / quote /
+ *  callout). Removes that block from the container's children; lands
+ *  the caret at the end of the previous sibling. When the container
+ *  becomes empty as a result, replaces it with a fresh top-level
+ *  paragraph so the user can keep typing.
  *
  *  Skips when the inner block isn't empty (= caller should fall
- *  through to a content-merge path) or when the unwrap path already
- *  handles the single-child case (handled earlier in the chain). */
-function backspaceRemoveEmptyListItem(state: EditorState, innerId: string): EditorState | null {
+ *  through to merge-with-prev) or when the single-child unwrap path
+ *  earlier in the chain has already handled the case. */
+function backspaceRemoveEmptyInner(state: EditorState, innerId: string): EditorState | null {
   for (let i = 0; i < state.blocks.length; i++) {
-    const list = state.blocks[i];
-    if (list.kind !== 'list') continue;
-    for (let j = 0; j < list.items.length; j++) {
-      const item = list.items[j];
-      const innerIdx = item.findIndex((b) => b.id === innerId);
-      if (innerIdx < 0) continue;
-      const inner = item[innerIdx];
-      if (!('inline' in inner)) return null;
-      if (inlineLength(inner.inline) > 0) return null;
-      // Item has multiple blocks — drop just this one block from the item.
-      if (item.length > 1) {
-        const newItem = item.filter((b) => b.id !== innerId);
-        const newItems = list.items.slice();
-        newItems[j] = newItem;
-        const blocks = state.blocks.slice();
-        blocks[i] = { ...list, items: newItems } as Block;
-        // Land caret at end of previous block in same item.
-        const prevBlock = newItem[Math.max(0, innerIdx - 1)];
-        if (!('inline' in prevBlock)) return null;
-        return {
-          ...state,
-          blocks,
-          selection: {
-            kind: 'caret',
-            blockId: prevBlock.id,
-            offset: inlineLength(prevBlock.inline),
-          },
-        };
-      }
-      // Single-block item — drop the whole item.
-      const newItems = list.items.filter((_, k) => k !== j);
-      const blocks = state.blocks.slice();
-      if (newItems.length === 0) {
-        // List is now empty — drop the list itself; insert a fresh
-        // paragraph in its place so the user can keep typing.
-        const fresh: Block = { id: innerId, kind: 'p', inline: [] };
-        blocks.splice(i, 1, fresh);
-        return {
-          ...state,
-          blocks,
-          selection: { kind: 'caret', blockId: innerId, offset: 0 },
-        };
-      }
-      blocks[i] = { ...list, items: newItems } as Block;
-      // Cursor: end of previous item's last block. If no previous
-      // item (= we removed the first), land on first remaining
-      // item's first block at offset 0.
-      if (j > 0) {
-        const prevItem = newItems[j - 1];
-        const prevBlock = prevItem[prevItem.length - 1];
-        if ('inline' in prevBlock) {
-          return {
-            ...state,
-            blocks,
-            selection: {
-              kind: 'caret',
-              blockId: prevBlock.id,
-              offset: inlineLength(prevBlock.inline),
-            },
-          };
-        }
-      }
-      const firstItem = newItems[0];
-      const firstBlock = firstItem[0];
-      return {
-        ...state,
-        blocks,
-        selection: { kind: 'caret', blockId: firstBlock.id, offset: 0 },
-      };
+    const container = state.blocks[i];
+    if (container.kind === 'list') {
+      const r = removeFromList(state, container, i, innerId);
+      if (r) return r;
+    } else if (container.kind === 'quote' || container.kind === 'callout') {
+      const r = removeFromChildren(state, container, i, innerId);
+      if (r) return r;
     }
   }
   return null;
+}
+
+function removeFromList(
+  state: EditorState,
+  list: Extract<Block, { kind: 'list' }>,
+  listIdx: number,
+  innerId: string,
+): EditorState | null {
+  for (let j = 0; j < list.items.length; j++) {
+    const item = list.items[j];
+    const innerIdx = item.findIndex((b) => b.id === innerId);
+    if (innerIdx < 0) continue;
+    const inner = item[innerIdx];
+    if (!('inline' in inner)) return null;
+    if (inlineLength(inner.inline) > 0) return null;
+    // Item has multiple blocks — drop just this one block.
+    if (item.length > 1) {
+      const newItem = item.filter((b) => b.id !== innerId);
+      const newItems = list.items.slice();
+      newItems[j] = newItem;
+      const blocks = state.blocks.slice();
+      blocks[listIdx] = { ...list, items: newItems } as Block;
+      const prevBlock = newItem[Math.max(0, innerIdx - 1)];
+      if (!('inline' in prevBlock)) return null;
+      return {
+        ...state, blocks,
+        selection: { kind: 'caret', blockId: prevBlock.id, offset: inlineLength(prevBlock.inline) },
+      };
+    }
+    // Single-block item — drop the whole item.
+    const newItems = list.items.filter((_, k) => k !== j);
+    const blocks = state.blocks.slice();
+    if (newItems.length === 0) {
+      // List empty — replace with a fresh paragraph.
+      const fresh: Block = { id: innerId, kind: 'p', inline: [] };
+      blocks.splice(listIdx, 1, fresh);
+      return {
+        ...state, blocks,
+        selection: { kind: 'caret', blockId: innerId, offset: 0 },
+      };
+    }
+    blocks[listIdx] = { ...list, items: newItems } as Block;
+    if (j > 0) {
+      const prevItem = newItems[j - 1];
+      const prevBlock = prevItem[prevItem.length - 1];
+      if ('inline' in prevBlock) {
+        return {
+          ...state, blocks,
+          selection: { kind: 'caret', blockId: prevBlock.id, offset: inlineLength(prevBlock.inline) },
+        };
+      }
+    }
+    const firstBlock = newItems[0][0];
+    return {
+      ...state, blocks,
+      selection: { kind: 'caret', blockId: firstBlock.id, offset: 0 },
+    };
+  }
+  return null;
+}
+
+function removeFromChildren(
+  state: EditorState,
+  container: Extract<Block, { kind: 'quote' | 'callout' }>,
+  containerIdx: number,
+  innerId: string,
+): EditorState | null {
+  const innerIdx = container.children.findIndex((b) => b.id === innerId);
+  if (innerIdx < 0) return null;
+  const inner = container.children[innerIdx];
+  if (!('inline' in inner)) return null;
+  if (inlineLength(inner.inline) > 0) return null;
+  const newChildren = container.children.filter((b) => b.id !== innerId);
+  const blocks = state.blocks.slice();
+  if (newChildren.length === 0) {
+    // Container empty — replace with a fresh paragraph (= the
+    // single-child unwrap handled this earlier; this branch is the
+    // belt-and-braces fallback).
+    const fresh: Block = { id: innerId, kind: 'p', inline: [] };
+    blocks.splice(containerIdx, 1, fresh);
+    return {
+      ...state, blocks,
+      selection: { kind: 'caret', blockId: innerId, offset: 0 },
+    };
+  }
+  blocks[containerIdx] = { ...container, children: newChildren } as Block;
+  // Land the caret at the end of the previous sibling, or at the
+  // start of the new first child if we deleted index 0.
+  if (innerIdx > 0) {
+    const prev = newChildren[innerIdx - 1];
+    if ('inline' in prev) {
+      return {
+        ...state, blocks,
+        selection: { kind: 'caret', blockId: prev.id, offset: inlineLength(prev.inline) },
+      };
+    }
+  }
+  const first = newChildren[0];
+  return {
+    ...state, blocks,
+    selection: { kind: 'caret', blockId: first.id, offset: 0 },
+  };
 }
 
 /** Backspace at start of a block — merge with the previous block.
@@ -332,6 +536,28 @@ function backspaceMergeWithPrev(state: EditorState, blockId: string): EditorStat
     const cur = state.blocks[idx];
     const prev = state.blocks[idx - 1];
     if (!('inline' in cur)) return null;
+    // Predecessor is a code block — append cur's text into the code,
+    // adding a newline separator if the code doesn't already end with
+    // one. (= "the line below code falls into the code block", which
+    // is what the user expects when they Backspace at the boundary.)
+    if (prev.kind === 'code') {
+      // Code is opaque text — strip cur's inline formatting.
+      const curText = inlineToPlainText(cur.inline);
+      const sep = (prev.text === '' || prev.text.endsWith('\n')) ? '' : '\n';
+      const newText = prev.text + sep + curText;
+      const blocks = state.blocks.slice();
+      blocks[idx - 1] = { ...prev, text: newText } as Block;
+      blocks.splice(idx, 1);
+      return {
+        ...state,
+        blocks,
+        selection: {
+          kind: 'caret',
+          blockId: prev.id,
+          offset: prev.text.length + sep.length,
+        },
+      };
+    }
     // Predecessor is a list — splice cur's content onto the tail of
     // the last item's last block.
     if (prev.kind === 'list' && prev.items.length > 0) {

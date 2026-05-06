@@ -7,6 +7,8 @@ import { getListItemEditor, getCurrentUser } from '../api/sync';
 import { doSelect } from './views';
 import { escapeHtml } from '../lib/html-escape';
 import { prefSyncPollMs } from '../lib/prefs';
+import { listenPageSaved } from '../lib/cross-tab-sync';
+import { saver } from '../lib/saver';
 
 const DEFAULT_POLL_INTERVAL_MS = 30_000;
 
@@ -141,6 +143,34 @@ export function attachStaleBannerSuppressionReset(): void {
     if (!document.hidden) {
       S.sync.suppressBannerUntilFocus = false;
     }
+  });
+}
+
+/** Cross-tab broadcast receiver. When a sibling tab finishes saving
+ *  the same page we have open, surface the existing stale-banner
+ *  immediately instead of waiting up to 30 s for the polling tick.
+ *
+ *  Auto-reload was tried but produced a "body disappears on tab
+ *  switch" race against `attachTabRefocusRefresh`'s visibilitychange
+ *  handler — they both end up calling `doSelect` and one half-completes.
+ *  Manual click on the banner is more predictable and never strands
+ *  the editor in an inconsistent state.
+ *
+ *  Idempotent — guarded by a dataset flag. */
+export function attachCrossTabSync(): void {
+  const body = document.body as HTMLElement & { dataset: DOMStringMap };
+  if (body.dataset.memolaCrossTabWired === '1') return;
+  body.dataset.memolaCrossTabWired = '1';
+  listenPageSaved((msg) => {
+    if (S.currentId !== msg.pageId) return;
+    if (msg.etag && msg.etag === S.sync.loadedEtag) return;
+    if (S.sync.suppressBannerUntilFocus) return;
+    void (async () => {
+      const editor = await getListItemEditor(msg.pageId).catch(() => '');
+      const me = await getCurrentUser().catch(() => '');
+      const sameUser = !!editor && !!me && editor === me;
+      showStaleBanner(editor, msg.modified, msg.pageId, sameUser);
+    })();
   });
 }
 

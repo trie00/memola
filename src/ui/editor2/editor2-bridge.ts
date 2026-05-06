@@ -33,6 +33,7 @@ let _ftbCleanup: (() => void) | null = null;
 let _imageCleanup: (() => void) | null = null;
 let _dragCleanup: (() => void) | null = null;
 let _tableCleanup: (() => void) | null = null;
+let _pageLinkCleanup: (() => void) | null = null;
 /** Codex review E5: incremented on every mount/destroy. Subscriber
  *  callbacks capture this value; if a deferred async path (e.g. the
  *  dynamic `import('../save-control')`) resolves AFTER the editor was
@@ -80,7 +81,48 @@ export function mountEditor2(rootEl: HTMLElement): Editor {
   _ftbCleanup = attachFloatingToolbar(rootEl);
   _dragCleanup = attachBlockDrag(_editor, rootEl);
   _tableCleanup = attachTableHandlers(_editor, rootEl);
+  _pageLinkCleanup = attachPageLinkClicks(rootEl);
   return _editor;
+}
+
+/** Click handler for page-link / daily-link chips inside the editor.
+ *  Without this, the legacy click→navigate behaviour (deleted with
+ *  editor.ts) leaves clicks on `[[link]]` chips inert. */
+function attachPageLinkClicks(rootEl: HTMLElement): () => void {
+  const onClick = (ev: MouseEvent): void => {
+    const t = ev.target as HTMLElement | null;
+    const a = t?.closest?.('a.memola-page-link') as HTMLAnchorElement | null;
+    if (!a || !rootEl.contains(a)) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const dailyDate = a.getAttribute('data-daily-date');
+    const pageId = a.getAttribute('data-page-id');
+    if (dailyDate) {
+      void (async () => {
+        try {
+          const daily = await import('../../api/daily');
+          const ref = await daily.getOrCreateNoteForDate(dailyDate);
+          const { doSelect } = await import('../views');
+          await doSelect(ref.dbPageId);
+        } catch (e) {
+          console.error('[memola] daily link click failed:', e);
+        }
+      })();
+      return;
+    }
+    if (pageId) {
+      void (async () => {
+        try {
+          const { doSelect } = await import('../views');
+          await doSelect(pageId);
+        } catch (e) {
+          console.error('[memola] page link click failed:', e);
+        }
+      })();
+    }
+  };
+  rootEl.addEventListener('click', onClick);
+  return () => rootEl.removeEventListener('click', onClick);
 }
 
 /** Load blocks into the active editor2 (called on page navigation).
@@ -125,6 +167,7 @@ export function destroyEditor2(): void {
   if (_ftbCleanup) { _ftbCleanup(); _ftbCleanup = null; }
   if (_dragCleanup) { _dragCleanup(); _dragCleanup = null; }
   if (_tableCleanup) { _tableCleanup(); _tableCleanup = null; }
+  if (_pageLinkCleanup) { _pageLinkCleanup(); _pageLinkCleanup = null; }
   if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
   if (_editor) { _editor.destroy(); _editor = null; }
 }
@@ -218,11 +261,18 @@ function makeBlock(cmd: 'ul' | 'ol' | 'quote' | 'callout' | 'pre' | 'hr'): Block
 
 /** Find the child block whose caret should land at offset 0 after a
  *  shape-replacement command. For lists / callouts / quotes that's
- *  the inner first paragraph; for code / rule the block itself. */
+ *  the inner first paragraph; for code / rule / image / etc. the
+ *  block itself.
+ *
+ *  Without the code branch the caret stayed on the OLD block id
+ *  (now replaced) — applySelection couldn't find it and the user
+ *  had to manually click into the code block before they could type
+ *  / press Enter. */
 function focusableIdOf(b: Block): string | null {
   if (b.kind === 'list') return b.items[0]?.[0]?.id ?? null;
   if (b.kind === 'callout' || b.kind === 'quote') return b.children[0]?.id ?? null;
   if ('inline' in b) return b.id;
+  if (b.kind === 'code') return b.id;
   return null;
 }
 

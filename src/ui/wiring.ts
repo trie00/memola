@@ -30,7 +30,7 @@ import { attachPubTag } from './pub-tag';
 import { attachScopeTag } from './scope-tag';
 import { attachDraftsSidebar, refreshDraftsBadge } from './drafts-modal';
 import { attachPresence } from './presence-ui';
-import { attachStaleBannerSuppressionReset } from './sync-watch';
+import { attachStaleBannerSuppressionReset, attachCrossTabSync } from './sync-watch';
 import { attachTabRefocusRefresh } from './tab-refocus-refresh';
 import { attachSaverBridge } from '../lib/saver-bridge';
 import { attachAutosaveScheduler } from '../lib/autosave';
@@ -114,6 +114,7 @@ export function attachAll(): void {
   attachScopeTag();
   attachStaleBannerSuppressionReset();
   attachTabRefocusRefresh();
+  attachCrossTabSync();
 
   // Saver state machine — single source of truth for save lifecycle.
   // The bridge keeps legacy S.dirty / S.saving / S.sync.* in sync.

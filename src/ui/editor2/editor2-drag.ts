@@ -26,7 +26,15 @@ export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void
     if (block === hoveredBlock) return;
     hoveredBlock = block;
     const rect = block.getBoundingClientRect();
-    handle.style.top = (rect.top + window.scrollY + 4) + 'px';
+    // Default vertical anchor: 4px from the block's top so the
+    // handle aligns with the FIRST line of multi-line blocks
+    // (paragraphs, headings, lists). Short atomic blocks (hr) look
+    // off — center the handle on the rule instead.
+    const handleH = handle.offsetHeight || 22;
+    const top = block.dataset.blockKind === 'rule'
+      ? rect.top + window.scrollY + (rect.height - handleH) / 2
+      : rect.top + window.scrollY + 4;
+    handle.style.top = top + 'px';
     handle.style.left = (rect.left + window.scrollX - 28) + 'px';
     handle.style.opacity = '1';
     handle.style.pointerEvents = 'auto';
@@ -55,6 +63,28 @@ export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void
     return null;
   };
 
+  /** Walk up from a node to the top-level block element (= direct
+   *  child of rootEl carrying `data-block-id`). Returns null when
+   *  the node isn't inside the editor. */
+  const blockOf = (node: Node | null): HTMLElement | null => {
+    while (node && node !== rootEl) {
+      const el = node as HTMLElement;
+      if (el.parentElement === rootEl && el.dataset?.blockId) return el;
+      node = node.parentNode;
+    }
+    return null;
+  };
+
+  /** Top-level block currently containing the caret, or null when the
+   *  selection is outside the editor. */
+  const caretBlock = (): HTMLElement | null => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0);
+    if (!rootEl.contains(range.startContainer)) return null;
+    return blockOf(range.startContainer);
+  };
+
   // Track hover via mousemove (= robust against children with their own
   // pointer-events behaviour, like contenteditable cells).
   const onMove = (e: MouseEvent): void => {
@@ -62,10 +92,26 @@ export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void
     const target = e.target as HTMLElement | null;
     if (target === handle) return;     // already over the handle
     const block = blockUnderCursor(e.clientX, e.clientY);
-    if (block) showHandle(block);
-    else if (target && !rootEl.contains(target)) hideHandle();
+    if (block) { showHandle(block); return; }
+    // Mouse not over a block. If the caret is still in the editor,
+    // keep the handle anchored to the caret block instead of hiding.
+    if (target && !rootEl.contains(target)) {
+      const caret = caretBlock();
+      if (caret) showHandle(caret); else hideHandle();
+    }
   };
   document.addEventListener('mousemove', onMove);
+
+  // Move the handle to follow the caret as it travels between blocks
+  // (clicks, arrow keys, Enter inserting a fresh paragraph). Without
+  // this the handle only repositions on hover, so a typing user has
+  // to manually wave the mouse to keep it on the active block.
+  const onSelectionChange = (): void => {
+    if (dragSourceId) return;
+    const caret = caretBlock();
+    if (caret) showHandle(caret);
+  };
+  document.addEventListener('selectionchange', onSelectionChange);
 
   // ── Drag start / end ─────────────────────────────────
 
@@ -160,6 +206,7 @@ export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void
     // and `.memola-block-dragging` class linger in the DOM.
     onDragEnd();
     document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('selectionchange', onSelectionChange);
     document.removeEventListener('dragover', onDragOver);
     document.removeEventListener('drop', onDrop);
     handle.remove();

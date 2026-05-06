@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "build": "node build.js",
+    "dev": "node dev/serve.js",
     "test": "vitest run",
     "typecheck": "tsc"
   },

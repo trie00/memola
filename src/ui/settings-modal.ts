@@ -113,6 +113,12 @@ export function attachSettingsModal(): void {
       .forEach((t) => t.classList.toggle('on', t.dataset.tab === 'ai'));
     document.querySelectorAll<HTMLElement>('.memola-set-pane')
       .forEach((p) => p.classList.toggle('on', p.dataset.pane === 'ai'));
+    // Populate the build id (Help pane). Injected by esbuild's
+    // `define` at build time; falls back to 'unknown' just in case.
+    const buildEl = document.getElementById('memola-set-build-id');
+    if (buildEl) {
+      buildEl.textContent = (typeof __BUILD_ID__ !== 'undefined' ? __BUILD_ID__ : 'unknown');
+    }
     void import('../api/ai-settings').then((ai) => {
       try {
         setProv.value = ai.getProvider();

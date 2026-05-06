@@ -184,12 +184,50 @@ export function insertText(
   const found = findBlockPath(state, blockId);
   if (!found) return state;
   const { block } = found;
+  // Code block: opaque text leaf — splice into block.text.
+  if (block.kind === 'code') {
+    const newText = block.text.slice(0, offset) + text + block.text.slice(offset);
+    const blocks = withBlockAtPath(state.blocks, found.path, (b) =>
+      b.kind === 'code' ? { ...b, text: newText } : b,
+    );
+    return {
+      ...state,
+      blocks,
+      selection: { kind: 'caret', blockId, offset: offset + text.length },
+    };
+  }
   if (!('inline' in block)) return state;
   const newInline = insertTextIntoInline(block.inline, offset, text);
   const next = setBlockInline(state, blockId, newInline);
   return {
     ...next,
     selection: { kind: 'caret', blockId, offset: offset + text.length },
+  };
+}
+
+/** Insert a hard line break (`<br>` inline node) at the caret. Used
+ *  by Shift+Enter to create an in-block line break without splitting
+ *  the block. The br advances the caret by 1 logical position
+ *  (`inlineNodeLength('br') === 1`). */
+export function insertBr(
+  state: EditorState,
+  blockId: BlockId,
+  offset: number,
+): EditorState {
+  const found = findBlockPath(state, blockId);
+  if (!found) return state;
+  const { block } = found;
+  if (!('inline' in block)) return state;
+  const before = sliceInline(block.inline, 0, offset);
+  const after = sliceInline(block.inline, offset, Infinity);
+  const merged = sliceInline(
+    [...before, { kind: 'br' as const }, ...after],
+    0, Infinity,
+  );
+  const next = setBlockInline(state, blockId, merged);
+  return {
+    ...next,
+    selection: { kind: 'caret', blockId, offset: offset + 1 },
   };
 }
 
@@ -205,6 +243,35 @@ export function deleteRange(
   const found = findBlockPath(state, blockId);
   if (!found) return state;
   const { block } = found;
+  // Code block: splice characters from block.text directly. When
+  // the deletion empties the code, convert the block to a fresh
+  // paragraph in place (= "delete the code block once it's empty",
+  // matching the user's expectation that a fully-cleared code block
+  // shouldn't linger as a visible empty box).
+  if (block.kind === 'code') {
+    const start = count < 0 ? Math.max(0, offset + count) : offset;
+    const end = count < 0 ? offset : Math.min(block.text.length, offset + count);
+    if (start === end) return state;
+    const newText = block.text.slice(0, start) + block.text.slice(end);
+    if (newText === '') {
+      const blocks = withBlockAtPath(state.blocks, found.path, () =>
+        ({ id: block.id, kind: 'p', inline: [] } as Block),
+      );
+      return {
+        ...state,
+        blocks,
+        selection: { kind: 'caret', blockId: block.id, offset: 0 },
+      };
+    }
+    const blocks = withBlockAtPath(state.blocks, found.path, (b) =>
+      b.kind === 'code' ? { ...b, text: newText } : b,
+    );
+    return {
+      ...state,
+      blocks,
+      selection: { kind: 'caret', blockId, offset: start },
+    };
+  }
   if (!('inline' in block)) return state;
   const start = count < 0 ? offset + count : offset;
   const end = count < 0 ? offset : offset + count;
@@ -452,12 +519,130 @@ export function sliceInline(inline: Inline[], from: number, to: number): Inline[
   return mergeAdjacentText(out);
 }
 
-/** Insert plain text into an inline run at offset. The inserted text
- *  picks up no formatting (= becomes a plain `text` node). */
+/** Insert text into an inline run at offset, INHERITING the format
+ *  that surrounds the caret (Notion-style "left-wins" boundary).
+ *
+ *  Rules:
+ *   - Strictly INSIDE a bold/italic/strike/link wrapper → recurse so
+ *     the new text becomes part of that span.
+ *   - At the boundary right AFTER a wrapper → extend the wrapper.
+ *   - At the boundary right BEFORE a wrapper (= start of a node /
+ *     after a non-extending node like br/pagelink) → insert plain.
+ *   - Inside `text` / `code` leaves → splice into that leaf.
+ *   - Atomic nodes (br/pagelink/dailylink) at strict-inside positions
+ *     fall back to plain text (= demote the atom; rare in practice
+ *     since the caret normally lands at boundaries). */
 function insertTextIntoInline(inline: Inline[], offset: number, text: string): Inline[] {
-  const before = sliceInline(inline, 0, offset);
-  const after = sliceInline(inline, offset, Infinity);
-  return mergeAdjacentText([...before, { kind: 'text', text }, ...after]);
+  if (text === '') return inline;
+  return insertTextRec(inline, offset, text);
+}
+
+function insertTextRec(inline: Inline[], offset: number, text: string): Inline[] {
+  let pos = 0;
+  for (let i = 0; i < inline.length; i++) {
+    const node = inline[i];
+    const len = inlineNodeLength(node);
+
+    // Boundary at START of this node — caller's "left side" was a
+    // non-extending node (br / pagelink / dailylink) or this is the
+    // very first node. Insert plain text BEFORE this node.
+    if (offset === pos) {
+      return mergeAdjacentText([
+        ...inline.slice(0, i),
+        { kind: 'text', text },
+        ...inline.slice(i),
+      ]);
+    }
+
+    // Strictly INSIDE this node — recurse / splice.
+    if (offset < pos + len) {
+      const local = offset - pos;
+      if (node.kind === 'bold' || node.kind === 'italic' || node.kind === 'strike') {
+        return [
+          ...inline.slice(0, i),
+          { ...node, children: insertTextRec(node.children, local, text) },
+          ...inline.slice(i + 1),
+        ];
+      }
+      if (node.kind === 'link') {
+        return [
+          ...inline.slice(0, i),
+          { ...node, children: insertTextRec(node.children, local, text) },
+          ...inline.slice(i + 1),
+        ];
+      }
+      if (node.kind === 'text') {
+        return mergeAdjacentText([
+          ...inline.slice(0, i),
+          { kind: 'text', text: node.text.slice(0, local) + text + node.text.slice(local) },
+          ...inline.slice(i + 1),
+        ]);
+      }
+      if (node.kind === 'code') {
+        return [
+          ...inline.slice(0, i),
+          { kind: 'code', text: node.text.slice(0, local) + text + node.text.slice(local) },
+          ...inline.slice(i + 1),
+        ];
+      }
+      // br / pagelink / dailylink: caret in middle is degenerate.
+      // Demote to plain text (= split the atom around the insertion).
+      const visible = node.kind === 'pagelink' ? (node.alias || node.pageId)
+        : node.kind === 'dailylink' ? (node.alias || node.date)
+        : '';
+      const before = visible.slice(0, local);
+      const after = visible.slice(local);
+      const parts: Inline[] = [];
+      if (before) parts.push({ kind: 'text', text: before });
+      parts.push({ kind: 'text', text });
+      if (after) parts.push({ kind: 'text', text: after });
+      return mergeAdjacentText([
+        ...inline.slice(0, i),
+        ...parts,
+        ...inline.slice(i + 1),
+      ]);
+    }
+
+    // Boundary at END of this node — extend the LEFT side's format.
+    if (offset === pos + len) {
+      if (node.kind === 'bold' || node.kind === 'italic' || node.kind === 'strike') {
+        return [
+          ...inline.slice(0, i),
+          { ...node, children: insertTextRec(node.children, len, text) },
+          ...inline.slice(i + 1),
+        ];
+      }
+      if (node.kind === 'link') {
+        return [
+          ...inline.slice(0, i),
+          { ...node, children: insertTextRec(node.children, len, text) },
+          ...inline.slice(i + 1),
+        ];
+      }
+      if (node.kind === 'text') {
+        return mergeAdjacentText([
+          ...inline.slice(0, i),
+          { kind: 'text', text: node.text + text },
+          ...inline.slice(i + 1),
+        ]);
+      }
+      if (node.kind === 'code') {
+        return [
+          ...inline.slice(0, i),
+          { kind: 'code', text: node.text + text },
+          ...inline.slice(i + 1),
+        ];
+      }
+      // br / pagelink / dailylink: don't extend — fall through to
+      // the next iteration, where the START-boundary check inserts
+      // plain text before the next node (or, if this was the last
+      // node, the past-end fallback below).
+    }
+
+    pos += len;
+  }
+  // Past the end — append as plain text.
+  return mergeAdjacentText([...inline, { kind: 'text', text }]);
 }
 
 function deleteRangeInInline(inline: Inline[], start: number, end: number): Inline[] {
@@ -513,17 +698,47 @@ function sliceInlineNode(i: Inline, from: number, to: number): Inline | null {
   }
 }
 
-/** Coalesce adjacent text nodes after slicing — keeps the inline tree
- *  canonical so equality / round-trip checks behave. */
+/** Coalesce adjacent inline nodes that share the same shape — keeps
+ *  the inline tree canonical so equality / round-trip checks behave.
+ *  Also covers a Backspace-merge user issue: when two paragraphs
+ *  whose last/first child are the SAME format (e.g. two <code>
+ *  spans) get concatenated, the browser renders a hairline gap
+ *  between them that looks like a stray space. Coalescing fuses
+ *  them into a single span so the gap goes away.
+ *
+ *  Cases:
+ *   - text + text → text (concatenate)
+ *   - code + code → code (concatenate; code is a leaf)
+ *   - bold/italic/strike + same kind → recurse into merged children
+ *   - link + link with same href → recurse into merged children */
 function mergeAdjacentText(inline: Inline[]): Inline[] {
   const out: Inline[] = [];
   for (const i of inline) {
     const last = out[out.length - 1];
-    if (i.kind === 'text' && last && last.kind === 'text') {
+    if (last && i.kind === 'text' && last.kind === 'text') {
       out[out.length - 1] = { kind: 'text', text: last.text + i.text };
-    } else {
-      out.push(i);
+      continue;
     }
+    if (last && i.kind === 'code' && last.kind === 'code') {
+      out[out.length - 1] = { kind: 'code', text: last.text + i.text };
+      continue;
+    }
+    if (last && (i.kind === 'bold' || i.kind === 'italic' || i.kind === 'strike')
+      && last.kind === i.kind) {
+      out[out.length - 1] = {
+        kind: i.kind,
+        children: mergeAdjacentText([...last.children, ...i.children]),
+      } as Inline;
+      continue;
+    }
+    if (last && i.kind === 'link' && last.kind === 'link' && last.href === i.href) {
+      out[out.length - 1] = {
+        kind: 'link', href: i.href,
+        children: mergeAdjacentText([...last.children, ...i.children]),
+      };
+      continue;
+    }
+    out.push(i);
   }
   return out;
 }

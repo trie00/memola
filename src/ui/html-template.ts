@@ -387,6 +387,14 @@ export function buildHtml(): string {
               '主要ショートカットは <code>?</code> キー (エディタ外) でも一覧が開きます。' +
               '</div>' +
             '</div>' +
+            '<div class="memola-set-row"><label>ビルド</label>' +
+              '<code id="memola-set-build-id" style="font-size:12px;color:var(--ink-3)"></code>' +
+            '</div>' +
+            '<div class="memola-set-row"><label></label>' +
+              '<div class="memola-set-hint">' +
+              '不具合を報告する時にこの ID を一緒に伝えてください。古いブックマークレットを使い続けていないかの確認にもなります。' +
+              '</div>' +
+            '</div>' +
           '</div>' +
           // Debug / reset pane — destructive ops, all unrecoverable
           '<div class="memola-set-pane" data-pane="debug">' +

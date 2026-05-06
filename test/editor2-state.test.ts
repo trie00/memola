@@ -43,7 +43,7 @@ describe('insertText', () => {
     expect((next.blocks[0] as { inline: Inline[] }).inline).toEqual([txt('hi!')]);
   });
 
-  it('preserves bold formatting around inserted text', () => {
+  it('extends the bold format when inserting just after a bold span (left-wins)', () => {
     const p: Block = {
       id: 'b1', kind: 'p',
       inline: [
@@ -52,12 +52,43 @@ describe('insertText', () => {
         txt(' c'),
       ],
     };
-    // Insert "X" at offset 6 (= just after 'bold')
+    // Insert "X" at offset 6 (= boundary right after 'bold').
+    // Notion-style left-wins: the new char inherits the LEFT span's
+    // format, so 'X' becomes part of the bold span.
     const next = insertText(state([p]), 'b1', 6, 'X');
     const inline = (next.blocks[0] as { inline: Inline[] }).inline;
-    // Expect: 'a ' + bold('bold') + 'X c'
     expect(inline.length).toBe(3);
-    expect(inline[1]).toEqual({ kind: 'bold', children: [txt('bold')] });
+    expect(inline[1]).toEqual({ kind: 'bold', children: [txt('boldX')] });
+    expect(inline[2]).toEqual(txt(' c'));
+  });
+
+  it('inherits bold format when inserting INSIDE a bold span', () => {
+    const p: Block = {
+      id: 'b1', kind: 'p',
+      inline: [{ kind: 'bold', children: [txt('abc')] }],
+    };
+    // Insert at offset 2 (= between 'b' and 'c' inside the bold)
+    const next = insertText(state([p]), 'b1', 2, 'X');
+    const inline = (next.blocks[0] as { inline: Inline[] }).inline;
+    expect(inline).toEqual([{ kind: 'bold', children: [txt('abXc')] }]);
+  });
+
+  it('does NOT extend the bold when inserting right BEFORE the bold span', () => {
+    const p: Block = {
+      id: 'b1', kind: 'p',
+      inline: [
+        txt('a '),
+        { kind: 'bold', children: [txt('bold')] },
+      ],
+    };
+    // Insert at offset 2 (= boundary right before bold). Left side
+    // is plain text → extends the plain text, not the bold.
+    const next = insertText(state([p]), 'b1', 2, 'X');
+    const inline = (next.blocks[0] as { inline: Inline[] }).inline;
+    expect(inline).toEqual([
+      txt('a X'),
+      { kind: 'bold', children: [txt('bold')] },
+    ]);
   });
 
   it('no-op for empty text', () => {
@@ -135,6 +166,29 @@ describe('mergeWithPrev', () => {
     const a = paragraph('hello');
     const next = mergeWithPrev(state([a]), a.id);
     expect(next).toEqual(state([a]));
+  });
+
+  it('coalesces adjacent code spans at the merge boundary', () => {
+    // Reproduces: type abcdef → make all inline-code → split in
+    // middle → backspace. The two <code> spans were left adjacent,
+    // so the browser rendered a hairline gap that looked like a
+    // half-width space. mergeAdjacentText now fuses them.
+    const a: Block = { id: 'p1', kind: 'p', inline: [{ kind: 'code', text: 'abc' }] };
+    const b: Block = { id: 'p2', kind: 'p', inline: [{ kind: 'code', text: 'def' }] };
+    const next = mergeWithPrev(state([a, b]), 'p2');
+    expect(next.blocks).toHaveLength(1);
+    expect((next.blocks[0] as { inline: Inline[] }).inline).toEqual([
+      { kind: 'code', text: 'abcdef' },
+    ]);
+  });
+
+  it('coalesces adjacent bold spans at the merge boundary', () => {
+    const a: Block = { id: 'p1', kind: 'p', inline: [{ kind: 'bold', children: [txt('hi')] }] };
+    const b: Block = { id: 'p2', kind: 'p', inline: [{ kind: 'bold', children: [txt('there')] }] };
+    const next = mergeWithPrev(state([a, b]), 'p2');
+    expect((next.blocks[0] as { inline: Inline[] }).inline).toEqual([
+      { kind: 'bold', children: [txt('hithere')] },
+    ]);
   });
 });
 

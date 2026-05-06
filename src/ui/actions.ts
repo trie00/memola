@@ -63,6 +63,14 @@ export async function doDel(id: string): Promise<void> {
     const trashedIds = collectIds(id);
     removePages(trashedIds);
     if (S.currentId !== null && trashedIds.includes(S.currentId)) {
+      // Drop any pending autosave AND release the saver's snapshot
+      // before the page id disappears. Without this, the next
+      // page navigation (= `doSelect`) calls `saver.flush()` which
+      // tries to write to the now-deleted SP item and hangs the UI
+      // — the user reported "loading 状態のまま動かない" + couldn't
+      // create new pages because doNew also funnels through doSelect.
+      clearSaveTimer();
+      saver.unload();
       S.currentId = null;
       showView('empty');
     }

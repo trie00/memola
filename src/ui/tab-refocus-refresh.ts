@@ -31,57 +31,38 @@ let _inFlight = false;
 async function refresh(): Promise<void> {
   if (_inFlight) return;
   if (Date.now() - _lastRefreshTs < MIN_INTERVAL_MS) return;
-  // Sensitive states — skip everything (= save / conflict / merge in flight)
   if (saver.isBusy()) return;
   _inFlight = true;
   try {
-    // 1. Always refresh the tree — adding / deleting / renaming a page
-    //    in another tab while we were away should reflect immediately.
-    //    This doesn't touch the editor and is safe regardless of dirty.
+    // Refresh the tree only — page additions / deletions in other tabs
+    // should reflect immediately. The body is intentionally NOT
+    // re-loaded here: aggressive `doSelect` on every tab refocus was
+    // racing with the BroadcastChannel sync (and other in-flight
+    // events) and intermittently left the editor showing an empty
+    // body even when SP had content. Cross-tab same-user updates are
+    // surfaced via the cross-tab banner in `sync-watch.ts`; the 30 s
+    // polling still picks up other-user edits as a slower fallback.
     try {
       await apiGetPages();
       const { renderTree } = await import('./tree');
       renderTree();
     } catch { /* tolerate */ }
-
-    // 2. Refresh the current view body — but ONLY if no unsaved edits.
-    //    Reloading would clobber the user's typing. They get the
-    //    since-last-view banner / sync banner instead.
+    // DB views still need re-render because S.dbItems is a snapshot of
+    // the list view at open time; without this, deletions / additions
+    // in other tabs leave the UI showing ghost rows. The page editor
+    // path doesn't have that problem (its body is the Saver baseline,
+    // updated on every save).
     if (saver.isDirty()) return;
     if (!S.currentId) return;
-
-    if (S.currentType === 'page' && !S.currentRow) {
-      const v = await import('./views');
-      await v.doSelect(S.currentId);
-    } else if (S.currentType === 'database') {
+    if (S.currentType === 'database' && !S.currentRow) {
       const dbPage = S.pages.find((p) => p.Id === S.currentId);
       if (dbPage) {
         const v = await import('./views');
         await v.doSelectDb(S.currentId, dbPage);
       } else {
-        // The DB itself was deleted in another tab while we were away.
         S.currentId = null;
         const { showView } = await import('./views');
         showView('empty');
-      }
-    } else if (S.currentRow) {
-      // Row-as-page: reload via parent DB to pick up row deletions /
-      // edits cleanly.
-      const dbId = S.currentRow.dbId;
-      const dbPage = S.pages.find((p) => p.Id === dbId);
-      if (dbPage) {
-        const rowId = S.currentRow.itemId;
-        const listTitle = S.currentRow.listTitle;
-        S.currentRow = null;
-        const v = await import('./views');
-        await v.doSelectDb(dbId, dbPage);
-        // Try to re-open the row if it still exists post-refresh
-        const item = S.dbItems.find((i) => i.Id === rowId);
-        if (item) {
-          const r = await import('./row-page');
-          await r.openRowAsPage(dbId, item);
-        }
-        void listTitle;          // captured for symmetry; unused here
       }
     }
   } finally {
