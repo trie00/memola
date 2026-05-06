@@ -178,8 +178,18 @@ async function onApply(): Promise<void> {
       // If the user is still on this page, refresh the editor body.
       const st = saver.state();
       if (st.kind === 'idle' && S.currentId === st.base.pageId) {
+        // CRITICAL: unload the saver before doSelect. The editor DOM still
+        // shows the user's pre-merge content (= yours); doSelect calls
+        // flushPendingSave → syncEditorIntoSaver → notifyEdit(yours) →
+        // saver transitions to 'dirty' → saves yours with the merged etag,
+        // overwriting the merge we just persisted. Unloading invalidates
+        // the baseline so flushPendingSave is a no-op until doSelect
+        // re-renders the editor with the merged body and re-establishes
+        // the baseline via saver.loadPage().
+        const pageId = st.base.pageId;
+        saver.unload();
         const { doSelect } = await import('./views');
-        await doSelect(st.base.pageId);
+        await doSelect(pageId);
       }
       // Drafts panel may have stale entries
       void import('./drafts-modal').then((m) => m.refreshDraftsBadge?.());
