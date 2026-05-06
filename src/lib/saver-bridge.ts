@@ -14,6 +14,7 @@ import { S } from '../state';
 import { setSave } from '../ui/ui-helpers';
 import { saver, type SaverState } from './saver';
 import { broadcastPageSaved } from './cross-tab-sync';
+import { setPageTitle } from './page-store';
 
 let _attached = false;
 /** Tracks the previous saver state kind so we can detect the
@@ -46,6 +47,18 @@ function onState(s: SaverState): void {
       // load (= idle is also the state right after `loadPage`).
       if (prev === 'saving' || prev === 'merging') {
         broadcastPageSaved(s.base.pageId, s.base.etag, s.base.modified);
+        // Refresh the sidebar's title for the just-saved page. The title
+        // textarea is the source of truth for the user's intent; saver's
+        // `base.title` reflects what we just persisted to SP. Push that
+        // into the in-memory meta and re-render so the tree label tracks
+        // saves. Live-updating on every keystroke caused other-tab
+        // interactions to manifest as visible reorders, so we wait until
+        // the save commits.
+        const m = S.meta.pages.find((p) => p.id === s.base.pageId);
+        if (m && m.title !== s.base.title) {
+          setPageTitle(s.base.pageId, s.base.title);
+          void import('../ui/tree').then((t) => t.renderTree());
+        }
       }
       return;
 

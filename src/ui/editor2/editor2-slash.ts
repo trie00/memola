@@ -229,6 +229,26 @@ export function attachSlashMenu(editor: Editor, rootEl: HTMLElement): SlashMenu 
         // Otherwise the empty paragraph the menu opened on would be
         // backspace-merged into the previous block.
         ev.preventDefault();
+        // Also remove the literal '/' that opened the menu — backspace
+        // here should fully undo the slash trigger, not leave a stray
+        // '/' behind. The trigger block always contains exactly '/' at
+        // this point (open() guards on text === '/' and any filter
+        // chars are deleted via the let-through Backspace path before
+        // we reach query.length === 0).
+        const id = triggerBlockId;
+        if (id) {
+          editor.applyMutation((s) => {
+            const idx = s.blocks.findIndex((b) => b.id === id);
+            if (idx < 0) return s;
+            const blocks = s.blocks.slice();
+            const cur = blocks[idx];
+            if ('inline' in cur) {
+              blocks[idx] = { ...cur, inline: [] } as Block;
+            }
+            return { ...s, blocks,
+              selection: { kind: 'caret' as const, blockId: id, offset: 0 } };
+          }, 'structural');
+        }
         close();
         return;
       }

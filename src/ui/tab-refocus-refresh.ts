@@ -32,6 +32,15 @@ async function refresh(): Promise<void> {
   if (_inFlight) return;
   if (Date.now() - _lastRefreshTs < MIN_INTERVAL_MS) return;
   if (saver.isBusy()) return;
+  // Skip refresh entirely when the user has unsaved local edits.
+  // apiGetPages replaces S.meta.pages with the SP snapshot, which clobbers
+  // any in-memory title edits (= the live tree update from title-wiring).
+  // The user perceives this as "the page I just typed a title for shows up
+  // as 無題 again after switching tabs", and worse, when their newly-created
+  // page hasn't propagated to SP yet, the refreshed list may not include it
+  // — leaving the tree in a confusing state. The next save naturally
+  // un-dirties the saver and a future tab refocus picks up cross-tab edits.
+  if (saver.isDirty()) return;
   _inFlight = true;
   try {
     // Refresh the tree only — page additions / deletions in other tabs
@@ -52,7 +61,6 @@ async function refresh(): Promise<void> {
     // in other tabs leave the UI showing ghost rows. The page editor
     // path doesn't have that problem (its body is the Saver baseline,
     // updated on every save).
-    if (saver.isDirty()) return;
     if (!S.currentId) return;
     if (S.currentType === 'database' && !S.currentRow) {
       const dbPage = S.pages.find((p) => p.Id === S.currentId);
