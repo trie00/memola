@@ -1054,3 +1054,8 @@ export function emptyTable(rows = 2, cols = 3): Block {
   }
   return { id: newBlockId(), kind: 'table', hrow: true, hcol: false, rows: grid };
 }
+
+/** Linked-DB embed pointing at the given DB page id. */
+export function linkedDb(dbId: string): Block {
+  return { id: newBlockId(), kind: 'linkdb', dbId, view: 'table', filter: '', sort: '' };
+}

@@ -13,10 +13,11 @@ import {
   changeBlockKind,
   insertBlockAfter,
   callout, codeBlock, rule, bulletList, orderedList, quote,
-  paragraph,
+  paragraph, emptyTable, linkedDb,
   type EditorState,
 } from './editor-state';
 import type { Block } from '../../lib/blocks';
+import { showPagePicker } from '../page-picker';
 
 interface SlashItem {
   cmd: string;
@@ -24,8 +25,14 @@ interface SlashItem {
   desc: string;
   hint?: string;
   /** Apply the command to a state. The block id is the one currently
-   *  containing the caret (= the empty block that triggered the slash). */
-  apply: (state: EditorState, currentBlockId: string) => EditorState;
+   *  containing the caret (= the empty block that triggered the slash).
+   *  Mutually exclusive with `pickAndApply`. */
+  apply?: (state: EditorState, currentBlockId: string) => EditorState;
+  /** Async variant: when set, called instead of `apply`. The handler is
+   *  responsible for clearing the trigger block (= the '/foo' text) and
+   *  applying its mutation, typically after opening a picker. The slash
+   *  menu closes itself before invoking this. */
+  pickAndApply?: (editor: Editor, currentBlockId: string) => void;
 }
 
 const ITEMS: SlashItem[] = [
@@ -51,7 +58,46 @@ const ITEMS: SlashItem[] = [
     apply: (s, id) => replaceWithBlock(s, id, codeBlock()) },
   { cmd: 'hr', label: '区切り線', desc: 'セクション区切り', hint: '---',
     apply: (s, id) => insertBlockAfter(replaceWithBlock(s, id, rule()), id, paragraph('')) },
+  { cmd: 'table', label: '表', desc: '簡易表 (3×2)・セル編集可',
+    apply: (s, id) => replaceWithBlock(s, id, emptyTable(2, 3)) },
+  { cmd: 'inlinedb', label: 'インラインDB', desc: 'ページに DB を埋め込む (DB を選択)',
+    pickAndApply: openInlineDbPicker },
 ];
+
+/** Open the page picker (DB-only) to choose a DB to embed, then replace
+ *  the slash-trigger block with a fresh linkdb pointing at the chosen DB.
+ *  Anchors the picker below the trigger block's row so it lands where
+ *  the user just typed. */
+function openInlineDbPicker(editor: Editor, blockId: string): void {
+  // Compute anchor from the trigger block's element rect (caret rect
+  // would also work but the block top-left is more visually predictable
+  // after the slash menu has already closed).
+  const blockEl = document.querySelector<HTMLElement>(
+    '[data-block-id="' + CSS.escape(blockId) + '"]',
+  );
+  const rect = blockEl?.getBoundingClientRect();
+  const anchor = rect
+    ? { bottom: rect.bottom, left: rect.left }
+    : { bottom: window.innerHeight / 2, left: window.innerWidth / 2 };
+  showPagePicker({
+    anchor,
+    dbsOnly: true,
+    onSelect: (p) => {
+      editor.applyMutation((s) => {
+        const idx = s.blocks.findIndex((b) => b.id === blockId);
+        if (idx < 0) return s;
+        const next = linkedDb(p.Id);
+        const blocks = s.blocks.slice();
+        blocks[idx] = next;
+        return {
+          ...s,
+          blocks,
+          selection: { kind: 'caret' as const, blockId: next.id, offset: 0 },
+        };
+      }, 'structural');
+    },
+  });
+}
 
 /** Replace a block with a fresh one (preserves position, drops content). */
 function replaceWithBlock(state: EditorState, blockId: string, block: Block): EditorState {
@@ -173,11 +219,23 @@ export function attachSlashMenu(editor: Editor, rootEl: HTMLElement): SlashMenu 
   function commit(item: SlashItem): void {
     if (!triggerBlockId) { close(); return; }
     const id = triggerBlockId;
+    // pickAndApply items (= those that need a follow-up picker, like
+    // inline-DB) own the whole flow: close the menu, open the picker,
+    // and on selection issue their own applyMutation. The slash trigger
+    // block ('/foo') is cleared at applyMutation time inside the
+    // pickAndApply callback.
+    if (item.pickAndApply) {
+      close();
+      item.pickAndApply(editor, id);
+      return;
+    }
+    if (!item.apply) { close(); return; }
+    const apply = item.apply;
     // Clear the trigger text ('/foo') from the block first, then
     // apply the command. Single mutation = one undo step.
     editor.applyMutation((s) => {
       const idx = s.blocks.findIndex((b) => b.id === id);
-      if (idx < 0) return item.apply(s, id);
+      if (idx < 0) return apply(s, id);
       const blocks = s.blocks.slice();
       const cur = blocks[idx];
       if ('inline' in cur) {
@@ -185,7 +243,7 @@ export function attachSlashMenu(editor: Editor, rootEl: HTMLElement): SlashMenu 
       }
       const cleared = { ...s, blocks,
         selection: { kind: 'caret' as const, blockId: id, offset: 0 } };
-      return item.apply(cleared, id);
+      return apply(cleared, id);
     }, 'structural');
     close();
   }
