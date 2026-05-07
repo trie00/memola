@@ -35,6 +35,11 @@ export interface Editor {
    *  firing the autosave scheduler (Codex review O2). */
   setBlocks(blocks: Block[], opts?: { silent?: boolean }): void;
   getBlocks(): Block[];
+  /** Read the current selection state. Returns null when nothing is
+   *  selected. Used by feature modules (e.g. table cell-range copy /
+   *  delete) that need to inspect selection synchronously without
+   *  going through `applyMutation`. */
+  getSelection(): EditorState['selection'];
   subscribe(fn: (blocks: Block[]) => void): () => void;
   destroy(): void;
   /** Force a fresh render (= reapply current state to the DOM).
@@ -213,6 +218,9 @@ export function createEditor(rootEl: HTMLElement, opts: EditorOpts = {}): Editor
     },
     getBlocks(): Block[] {
       return state.blocks;
+    },
+    getSelection(): EditorState['selection'] {
+      return state.selection;
     },
     subscribe(fn): () => void {
       subscribers.add(fn);

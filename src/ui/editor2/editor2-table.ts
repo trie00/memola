@@ -12,6 +12,8 @@ import {
   tableAddRow, tableAddCol, tableRemoveRow, tableRemoveCol, tableSetCell,
 } from './editor-state';
 import type { Inline } from '../../lib/blocks';
+import { inlineToPlainText } from '../../lib/blocks';
+import { escapeHtml } from '../../lib/html-escape';
 
 /** Visual gap between the table edge and the hover +row/+col buttons.
  *  Notion-style: buttons stay visually attached to the table (no big
@@ -140,6 +142,20 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
   // Shift+Enter falls through to the browser's native `<br>` insertion so
   // multi-line cells still work.
   const onCellKeydown = (e: KeyboardEvent): void => {
+    // First: when a table-cells range is the active selection, intercept
+    // Backspace / Delete to clear the cells in the range. Without this
+    // the keystroke falls through to native and either does nothing
+    // (cell is contenteditable=false at the wrap level) or deletes from
+    // a single anchor cell, ignoring the range.
+    const cur = editor.getSelection();
+    if (cur && cur.kind === 'table-cells'
+      && (e.key === 'Backspace' || e.key === 'Delete')) {
+      e.preventDefault();
+      e.stopPropagation();
+      clearCellRange(cur);
+      return;
+    }
+
     const t = e.target as HTMLElement | null;
     if (!t || t.tagName !== 'TD') return;
     const cell = t;
@@ -353,6 +369,47 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     return s.replace(/[^a-zA-Z0-9_-]/g, (ch) => '\\' + ch);
   }
 
+  /** Clear the contents of every cell inside a `table-cells`
+   *  selection. Single mutation = one undo step; selection collapses
+   *  to a caret in the anchor cell so the user can keep typing. */
+  function clearCellRange(sel: { kind: 'table-cells'; blockId: string; anchor: { row: number; col: number }; focus: { row: number; col: number } }): void {
+    const r0 = Math.min(sel.anchor.row, sel.focus.row);
+    const r1 = Math.max(sel.anchor.row, sel.focus.row);
+    const c0 = Math.min(sel.anchor.col, sel.focus.col);
+    const c1 = Math.max(sel.anchor.col, sel.focus.col);
+    editor.applyMutation((s) => {
+      const idx = s.blocks.findIndex((b) => b.id === sel.blockId);
+      if (idx < 0) return s;
+      const cur = s.blocks[idx];
+      if (cur.kind !== 'table') return s;
+      const newRows = cur.rows.map((row, ri) => {
+        if (ri < r0 || ri > r1) return row;
+        return row.map((cell, ci) => (ci < c0 || ci > c1) ? cell : []);
+      });
+      const blocks = s.blocks.slice();
+      blocks[idx] = { ...cur, rows: newRows };
+      // Collapse selection to a caret in the anchor cell so subsequent
+      // typing has a sensible target.
+      return { ...s, blocks, selection: null };
+    }, 'delete');
+    // Refocus the anchor cell so typing continues there.
+    void Promise.resolve().then(() => {
+      const blockEl = rootEl.querySelector<HTMLElement>(
+        '[data-block-id="' + cssEscape(sel.blockId) + '"]',
+      );
+      const tbody = blockEl?.querySelector<HTMLElement>('tbody');
+      const cell = tbody?.children[sel.anchor.row]?.children[sel.anchor.col] as HTMLElement | undefined;
+      if (cell) {
+        cell.focus();
+        const range = document.createRange();
+        range.selectNodeContents(cell);
+        range.collapse(true);
+        const ws = window.getSelection();
+        if (ws) { ws.removeAllRanges(); ws.addRange(range); }
+      }
+    });
+  }
+
   const onCellBlur = (e: FocusEvent): void => {
     const cell = e.target as HTMLElement | null;
     if (!cell || cell.tagName !== 'TD') return;
@@ -379,6 +436,94 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     editor.applyMutation((s) => tableSetCell(s, blockId, rowIdx, colIdx, inline), 'typing');
   };
 
+  // ── Cell range selection (drag across cells) ─────────
+  // mousedown on a cell records an "anchor"; subsequent mousemove
+  // events with button-1 held that LAND ON A DIFFERENT CELL trigger a
+  // `table-cells` selection — overriding the browser's default text-
+  // selection behaviour. Single-click without drag falls through and
+  // the browser's caret placement runs as normal.
+  let _dragAnchor: { blockId: string; row: number; col: number } | null = null;
+  let _dragging = false;
+
+  const onTableMousedown = (e: MouseEvent): void => {
+    if (e.button !== 0) return;
+    const t = e.target as HTMLElement | null;
+    if (!t || typeof t.closest !== 'function') return;
+    const cell = t.closest<HTMLElement>('td');
+    if (!cell || !rootEl.contains(cell)) return;
+    const pos = findCellPos(cell);
+    const blockId = cell.closest<HTMLElement>('[data-block-id]')?.dataset.blockId;
+    if (!pos || !blockId) return;
+    _dragAnchor = { blockId, row: pos.row, col: pos.col };
+    _dragging = false;
+  };
+
+  const onTableMousemoveForRange = (e: MouseEvent): void => {
+    if (!_dragAnchor) return;
+    if ((e.buttons & 1) === 0) { _dragAnchor = null; _dragging = false; return; }
+    const t = e.target as HTMLElement | null;
+    if (!t || typeof t.closest !== 'function') return;
+    const cell = t.closest<HTMLElement>('td');
+    if (!cell || !rootEl.contains(cell)) return;
+    const pos = findCellPos(cell);
+    const blockId = cell.closest<HTMLElement>('[data-block-id]')?.dataset.blockId;
+    if (!pos || !blockId || blockId !== _dragAnchor.blockId) return;
+    const sameAsAnchor = pos.row === _dragAnchor.row && pos.col === _dragAnchor.col;
+    if (sameAsAnchor && !_dragging) return;
+    if (!_dragging) {
+      _dragging = true;
+      // Take over from the browser's text-selection. From this moment
+      // forward we own the visual indicator via `.memola-itbl-selcel`.
+      const ws = window.getSelection();
+      if (ws) ws.removeAllRanges();
+    }
+    e.preventDefault();
+    const anchor = { row: _dragAnchor.row, col: _dragAnchor.col };
+    const focus = { row: pos.row, col: pos.col };
+    editor.applyMutation((s) => ({
+      ...s,
+      selection: { kind: 'table-cells' as const, blockId: _dragAnchor!.blockId, anchor, focus },
+    }), 'selection');
+  };
+
+  const onTableMouseup = (): void => {
+    _dragAnchor = null;
+    // Keep `_dragging` so the next click that lands outside any cell
+    // can detect "we just finished a range select" if needed; reset
+    // whenever a fresh mousedown starts.
+  };
+
+  // Copy: when a `table-cells` selection is active, serialise the
+  // rectangle as TSV (text/plain) + as a minimal HTML <table>. Same
+  // shape as Excel / Sheets / legacy inline-table.
+  const onCopy = (e: ClipboardEvent): void => {
+    const sel = editor.getSelection();
+    if (!sel || sel.kind !== 'table-cells') return;
+    const block = editor.getBlocks().find((b) => b.id === sel.blockId);
+    if (!block || block.kind !== 'table') return;
+    const r0 = Math.min(sel.anchor.row, sel.focus.row);
+    const r1 = Math.max(sel.anchor.row, sel.focus.row);
+    const c0 = Math.min(sel.anchor.col, sel.focus.col);
+    const c1 = Math.max(sel.anchor.col, sel.focus.col);
+    const grid: string[][] = [];
+    for (let r = r0; r <= r1; r++) {
+      const row: string[] = [];
+      for (let c = c0; c <= c1; c++) {
+        const inline = block.rows[r]?.[c] || [];
+        const text = inlineToPlainText(inline).replace(/\t/g, ' ').replace(/\n/g, ' ');
+        row.push(text);
+      }
+      grid.push(row);
+    }
+    const tsv = grid.map((r) => r.join('\t')).join('\n');
+    const html = '<table>' + grid.map((r) =>
+      '<tr>' + r.map((c) => '<td>' + escapeHtml(c) + '</td>').join('') + '</tr>',
+    ).join('') + '</table>';
+    e.preventDefault();
+    e.clipboardData?.setData('text/plain', tsv);
+    e.clipboardData?.setData('text/html', html);
+  };
+
   document.addEventListener('mousemove', onMouseMove);
   rootEl.addEventListener('blur', onCellBlur, true);
   // Capture-phase keydown so we run BEFORE editor2's own beforeinput /
@@ -386,11 +531,22 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
   // <br> for Enter, advance the focus to the next focusable element
   // for Tab, etc).
   rootEl.addEventListener('keydown', onCellKeydown, true);
+  rootEl.addEventListener('mousedown', onTableMousedown);
+  rootEl.addEventListener('mousemove', onTableMousemoveForRange);
+  document.addEventListener('mouseup', onTableMouseup);
+  // Copy is a document-level event so both the editor body and the
+  // surrounding overlay can capture it. We attach to document with
+  // capture so we run before the browser's native copy.
+  document.addEventListener('copy', onCopy, true);
 
   return (): void => {
     document.removeEventListener('mousemove', onMouseMove);
     rootEl.removeEventListener('blur', onCellBlur, true);
     rootEl.removeEventListener('keydown', onCellKeydown, true);
+    rootEl.removeEventListener('mousedown', onTableMousedown);
+    rootEl.removeEventListener('mousemove', onTableMousemoveForRange);
+    document.removeEventListener('mouseup', onTableMouseup);
+    document.removeEventListener('copy', onCopy, true);
     cancelHide();
     // Codex review U8: hide isn't enough — the elements would
     // accumulate in the overlay across editor remounts. Remove them.

@@ -33,6 +33,16 @@ export type EditorSelection =
       anchorOffset: number;
       focusBlockId: BlockId;
       focusOffset: number;
+    }
+  | {
+      /** Cell-range selection inside a `table` block (Notion-style
+       *  drag-select across multiple cells). The renderer uses this to
+       *  highlight the rectangle anchor↔focus; cell-range copy and
+       *  Delete/Backspace are dispatched against the same shape. */
+      kind: 'table-cells';
+      blockId: BlockId;
+      anchor: { row: number; col: number };
+      focus: { row: number; col: number };
     };
 
 export interface EditorState {

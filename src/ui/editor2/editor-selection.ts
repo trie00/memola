@@ -219,12 +219,28 @@ function lastTextNodeIn(el: Node): Node | null {
 
 /** Apply an EditorSelection to the browser's selection so the caret
  *  appears in the right place. Idempotent — safe to call after every
- *  render. */
+ *  render. Also paints the `.memola-itbl-selcel` highlight for the
+ *  `table-cells` selection kind; kept in sync here so a re-render
+ *  always restores the visual state from the canonical selection. */
 export function applySelection(
   editorEl: HTMLElement,
   selection: EditorSelection | null,
 ): void {
+  // Always clear the cell-range highlight first; whoever owns the
+  // current selection will re-paint it below if applicable.
+  editorEl.querySelectorAll<HTMLElement>('.memola-itbl-selcel').forEach((el) => {
+    el.classList.remove('memola-itbl-selcel');
+  });
   if (!selection) return;
+  if (selection.kind === 'table-cells') {
+    paintTableCellRange(editorEl, selection);
+    // Also clear browser selection so it doesn't fight with the
+    // class-based highlight (= user dragged across cells; we own the
+    // visual indicator).
+    const sel = window.getSelection();
+    if (sel) sel.removeAllRanges();
+    return;
+  }
   const sel = window.getSelection();
   if (!sel) return;
   if (selection.kind === 'caret') {
@@ -262,6 +278,34 @@ export function applySelection(
     range.setEnd(f.node, f.offset);
     sel.removeAllRanges();
     sel.addRange(range);
+  }
+}
+
+/** Add `.memola-itbl-selcel` to every cell inside the rectangle
+ *  defined by `selection.anchor` / `selection.focus`. The actual
+ *  styling lives in the app stylesheet; this helper just toggles the
+ *  class so re-renders can rebuild the highlight from canonical state. */
+function paintTableCellRange(
+  editorEl: HTMLElement,
+  sel: { kind: 'table-cells'; blockId: string; anchor: { row: number; col: number }; focus: { row: number; col: number } },
+): void {
+  const block = editorEl.querySelector<HTMLElement>(
+    '[data-block-id="' + cssEscape(sel.blockId) + '"]',
+  );
+  const tbody = block?.querySelector<HTMLElement>('table.memola-itbl tbody');
+  if (!tbody) return;
+  const r0 = Math.min(sel.anchor.row, sel.focus.row);
+  const r1 = Math.max(sel.anchor.row, sel.focus.row);
+  const c0 = Math.min(sel.anchor.col, sel.focus.col);
+  const c1 = Math.max(sel.anchor.col, sel.focus.col);
+  for (let r = r0; r <= r1; r++) {
+    const tr = tbody.children[r] as HTMLElement | undefined;
+    if (!tr) continue;
+    for (let c = c0; c <= c1; c++) {
+      const cell = tr.children[c] as HTMLElement | undefined;
+      if (!cell) continue;
+      cell.classList.add('memola-itbl-selcel');
+    }
   }
 }
 

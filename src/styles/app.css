@@ -1529,10 +1529,18 @@
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 1.5px var(--accent);
 }
-/* セル範囲選択ハイライト (外周 accent border は JS が inline box-shadow で付与) */
+/* セル範囲選択ハイライト (legacy: 外周 accent border を JS が inline box-shadow で付与) */
 #memola-overlay .memola-itbl td.memola-itbl-selected,
 #memola-overlay .memola-itbl th.memola-itbl-selected {
   background: var(--accent-soft);
+}
+/* editor2 controlled-rendering 版: state.selection.kind = 'table-cells'
+   のときに `applySelection` が範囲内のセルへ class 付与 */
+#memola-overlay .memola-itbl td.memola-itbl-selcel,
+#memola-overlay .memola-itbl th.memola-itbl-selcel {
+  background: var(--accent-soft);
+  /* 範囲内全セルに薄い inset border を入れて Notion 風の塗りつぶし範囲感を出す */
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 /* 単一 focus 時のフルセル accent inset と、複数選択時の外周 inline box-shadow が
    両立できるように、selected には CSS 側で box-shadow を強制しない */
