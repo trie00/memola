@@ -257,49 +257,72 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     }
   }
 
-  /** Move caret from `fromCell` to (row, col). When the destination
-   *  doesn't exist, optionally append a new row first (so Enter-at-
-   *  last-row creates a new row Notion-style). */
+  /** Look up a cell by (block, row, col) inside the live editor DOM.
+   *  Returns null when the block / row / col doesn't exist. */
+  function findCellInBlock(blockId: string, row: number, col: number): HTMLElement | null {
+    const blockEl = rootEl.querySelector<HTMLElement>(
+      '[data-block-id="' + cssEscape(blockId) + '"]',
+    );
+    const tbody = blockEl?.querySelector<HTMLElement>('tbody');
+    const tr = tbody?.children[row] as HTMLElement | undefined;
+    return (tr?.children[col] as HTMLElement | undefined) || null;
+  }
+
+  /** Move caret from `fromCell` to (row, col). Atomic flow:
+   *    1. Commit any user-typed content in `fromCell` into state
+   *       (= what onCellBlur would normally do at focus change).
+   *    2. Clear `state.selection` so the paint() that follows
+   *       doesn't restore the caret to a stale block-level offset.
+   *       Without this, `applySelection` re-attaches the caret to
+   *       wherever offset-N maps in the new DOM (= source cell
+   *       end → user observes "Enter does nothing / text disappears
+   *       / caret jumps").
+   *    3. Re-query the target cell in the freshly-rendered DOM and
+   *       focus it. The pre-mutation `cell` reference is detached
+   *       once paint() ran, so we MUST re-find.
+   *  When the destination doesn't exist, optionally append a new row
+   *  first (Enter-at-last-row Notion-style behaviour). */
   function moveToCell(
     fromCell: HTMLElement,
     row: number,
     col: number,
     createIfMissing?: 'row',
   ): void {
-    const tbody = fromCell.parentElement?.parentElement as HTMLElement | null;
-    if (!tbody) return;
     const blockEl = fromCell.closest<HTMLElement>('[data-block-id]');
     const blockId = blockEl?.dataset.blockId;
-    const targetTr = tbody.children[row] as HTMLElement | undefined;
-    if (targetTr) {
-      const targetCell = targetTr.children[col] as HTMLElement | undefined;
-      if (targetCell) {
-        focusCellEnd(targetCell);
-        return;
-      }
-      return;
-    }
-    if (createIfMissing === 'row' && blockId) {
-      // Append a fresh row at the end of the table, then focus the new
-      // cell. The mutation re-renders the table synchronously inside
-      // applyMutation (paint() runs before the call returns), so the
-      // new cell is already in the DOM by the time we look for it. We
-      // use a microtask hop (Promise.resolve().then) instead of RAF so
-      // background-tab throttling can't delay the focus call. We also
-      // run it AFTER paint's `applySelection` has restored caret based
-      // on the old block-level offset (which would otherwise land us on
-      // the wrong cell): both happen in the same task, so the microtask
-      // queued from this synchronous code runs after paint completes.
-      editor.applyMutation((s) => tableAddRow(s, blockId, row), 'structural');
-      void Promise.resolve().then(() => {
-        const stillBlock = rootEl.querySelector<HTMLElement>(
-          '[data-block-id="' + cssEscape(blockId) + '"]',
+    if (!blockId) return;
+    const fromPos = findCellPos(fromCell);
+    if (!fromPos) return;
+    const fromInline = readCellInline(fromCell);
+    // Single mutation that does (a) commit source-cell content, and
+    // (b) clear selection. paint() runs synchronously inside.
+    editor.applyMutation((s) => {
+      const idx = s.blocks.findIndex((b) => b.id === blockId);
+      if (idx < 0) return { ...s, selection: null };
+      const cur = s.blocks[idx];
+      if (cur.kind !== 'table') return { ...s, selection: null };
+      const prev = cur.rows[fromPos.row]?.[fromPos.col];
+      const sameContent = !!prev && JSON.stringify(prev) === JSON.stringify(fromInline);
+      let next = s;
+      if (!sameContent) {
+        const newRows = cur.rows.map((r, ri) =>
+          ri === fromPos.row
+            ? r.map((c, ci) => (ci === fromPos.col ? fromInline : c))
+            : r,
         );
-        const stillTbody = stillBlock?.querySelector<HTMLElement>('tbody');
-        const newCell = stillTbody?.children[row]?.children[col] as HTMLElement | undefined;
-        if (newCell) focusCellEnd(newCell);
-      });
+        const blocks = s.blocks.slice();
+        blocks[idx] = { ...cur, rows: newRows };
+        next = { ...s, blocks };
+      }
+      return { ...next, selection: null };
+    }, 'typing');
+    // Re-find the target after paint replaced the DOM.
+    let targetCell = findCellInBlock(blockId, row, col);
+    if (!targetCell && createIfMissing === 'row') {
+      editor.applyMutation((s) => tableAddRow(s, blockId, row), 'structural');
+      targetCell = findCellInBlock(blockId, row, col);
     }
+    if (targetCell) focusCellEnd(targetCell);
   }
 
   // ── Cell caret-position helpers ────────────────────
@@ -413,6 +436,13 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
   const onCellBlur = (e: FocusEvent): void => {
     const cell = e.target as HTMLElement | null;
     if (!cell || cell.tagName !== 'TD') return;
+    // The cell may have been detached from the document by a
+    // re-render (e.g. moveToCell already committed + repainted, then
+    // the browser fires a synthetic blur on the now-orphan DOM node
+    // because focus moved during the synchronous paint). Reading
+    // contents from a detached cell is meaningless and would
+    // duplicate-commit, so bail out.
+    if (!document.contains(cell)) return;
     const tr = cell.parentElement as HTMLElement | null;
     const tbody = tr?.parentElement as HTMLElement | null;
     const tbl = tbody?.parentElement as HTMLElement | null;
