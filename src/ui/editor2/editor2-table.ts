@@ -170,13 +170,21 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
       }
       return;
     }
-    if (k === 'ArrowDown' && atCellLastLine(cell)) {
+    // Notion-style: ArrowUp / ArrowDown ALWAYS jump to the adjacent
+    // cell, regardless of where the caret sits inside the current cell.
+    // The "stay in cell to navigate within multi-line content" pattern
+    // is uncommon in Notion-style table cells (which are usually single-
+    // line). It also makes the navigation predictable: pressing Down
+    // never lands you in a "left/right neighbour" or "previous row's
+    // last cell" by accident, which the browser's native vertical
+    // navigation can do inside a contenteditable=false table.
+    if (k === 'ArrowDown') {
       e.preventDefault();
       e.stopPropagation();
-      moveToCell(cell, pos.row + 1, pos.col);
+      if (pos.row < lastRowOf(cell)) moveToCell(cell, pos.row + 1, pos.col);
       return;
     }
-    if (k === 'ArrowUp' && atCellFirstLine(cell)) {
+    if (k === 'ArrowUp') {
       e.preventDefault();
       e.stopPropagation();
       if (pos.row > 0) moveToCell(cell, pos.row - 1, pos.col);
