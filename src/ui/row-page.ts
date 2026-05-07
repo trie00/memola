@@ -9,12 +9,8 @@ import { setSave, setSavedAt, toast, autoR } from './ui-helpers';
 import { apiUpdateDbRow } from '../api/db';
 import { getListItems } from '../api/sp-list';
 import { getRowBody, setRowBody } from '../api/pages';
-import { htmlToBlocks, blocksToHtml } from '../lib/blocks-html';
 import { mdToBlocks, blocksToMd } from '../lib/blocks-md';
-const mdToHtml = (md: string): string => blocksToHtml(mdToBlocks(md));
-const htmlToMd = (html: string): string => blocksToMd(htmlToBlocks(html));
 import { showView, renderBcCustom } from './views';
-import { reattachInlineTables } from './inline-table';
 import { renderRowProperties } from './row-props';
 import { isDailyList, isDailyTitleFormat, convertDailyToPage, DAILY_DATE_FIELD } from '../api/daily';
 import { formatDateJST } from '../lib/date-utils';
@@ -47,11 +43,19 @@ export async function openRowAsPage(dbId: string, item: ListItem): Promise<void>
   autoR(titleEl);
 
   // Body — pulled from memola-pages (single source of truth for documents).
+  // Mount editor2 (controlled rendering) on row-pages too. Until 2026-05-07
+  // the row-page path used the legacy DOM-direct editor (`ed.innerHTML =
+  // html`), which meant `mountEditor2` never ran for daily notes — so the
+  // slash menu, floating toolbar, page-link picker, drag handles, etc.
+  // were all silently inert. The slash/toolbar bindings live inside
+  // `attachSlashMenu` / `attachFloatingToolbar` / `attachBlockDrag`, all of
+  // which are wired up by `mountEditor2`.
   const bodyMd = await getRowBody(listTitle, item.Id);
-  const html = bodyMd ? mdToHtml(bodyMd) : '';
+  const blocks = bodyMd ? mdToBlocks(bodyMd) : [];
   const ed = getEd();
-  ed.innerHTML = html;
-  reattachInlineTables(ed);
+  const { mountEditor2, loadBlocks } = await import('./editor2/editor2-bridge');
+  mountEditor2(ed);
+  loadBlocks(blocks);
 
   // Properties (Notion-style: Title 以外の各列を編集可能なリストで表示)
   const propsEl = document.getElementById('memola-row-props');
@@ -92,10 +96,14 @@ export async function openRowAsPage(dbId: string, item: ListItem): Promise<void>
 /** Save the row's title (DB list) + body (memola-pages). */
 export async function saveCurrentRow(): Promise<void> {
   if (!S.currentRow) return;
-  const ed = getEd();
   const titleEl = g('ttl') as HTMLTextAreaElement;
   const newTitle = (titleEl.value || '').trim() || '無題';
-  const newBody = htmlToMd(ed.innerHTML || '');
+  // Read blocks from editor2 directly (single source of truth for the
+  // editor's content). Convert to markdown at the boundary because
+  // memola-pages' row body is still a markdown column for now —
+  // blocks-as-storage is reserved for the saver-driven page path.
+  const { getBlocks } = await import('./editor2/editor2-bridge');
+  const newBody = blocksToMd(getBlocks());
   setSave('保存中...');
   const rowRef = S.currentRow;
   try {

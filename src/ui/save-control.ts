@@ -24,6 +24,7 @@ import { htmlToBlocks } from '../lib/blocks-html';
 import { assignStableBlockIds } from '../lib/blocks-stable-ids';
 import { parseBlocksJson, serializeBlocks } from '../api/pages';
 import { isEditor2Enabled, syncEditor2IntoSaver } from './editor2/editor2-bridge';
+import { setSave } from './ui-helpers';
 
 /** Pull the editor's current content (HTML → markdown + title) and
  *  push it to the Saver. Called from every editor mutation site via
@@ -65,9 +66,17 @@ function syncEditorIntoSaver(): void {
 export function schedSave(): void {
   if (!S.currentId || S.currentType === 'database') return;
   if (S.currentRow) {
-    // Row-pages still use the legacy dirty/saving markers; the
-    // row-page editor sets S.dirty itself on input, and the
-    // flushPendingSave path below picks that up at navigate / save time.
+    // Row-pages still use the legacy dirty/saving markers (= the
+    // memola-pages row save path is markdown-based and doesn't go
+    // through the Saver state machine). Mark dirty so the next
+    // flushPendingSave / Ctrl+S / close-app actually persists the
+    // edit; legacy editor.ts did this on every mutation, and after
+    // moving row-pages to editor2 we need to re-establish the same
+    // signal at the editor-subscribe boundary.
+    if (!S.dirty) {
+      S.dirty = true;
+      setSave('未保存');
+    }
     return;
   }
   syncEditorIntoSaver();
