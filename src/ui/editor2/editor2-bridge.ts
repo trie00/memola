@@ -382,6 +382,60 @@ export function closeSlashMenuEditor2(): void {
   document.querySelectorAll('.memola-slash2').forEach((el) => el.remove());
 }
 
+/** Try to detect a tabular shape on the clipboard and return a
+ *  ready-to-insert `TableBlock`. Falls back to null when the clipboard
+ *  doesn't look like a table — caller continues with the regular
+ *  text/markdown paste path. Detected shapes:
+ *    • text/html containing a `<table>` — parsed via DOM
+ *    • text/plain containing multiple tab-separated cells (= Excel /
+ *      Sheets / TSV) — split on `\n` and `\t`
+ *  Single-line text without tabs falls through (= regular paste).
+ *  Mirrors the legacy `gridFromClipboard` heuristics. */
+function tableBlockFromClipboard(dt: DataTransfer): Block | null {
+  const newId = (): string => {
+    // Inline newBlockId — keeps this helper free of cyclic imports.
+    const r = (): string => Math.random().toString(36).slice(2, 8);
+    return 'blk_' + r() + r();
+  };
+  const buildTable = (grid: string[][]): Block => {
+    const cols = Math.max(...grid.map((r) => r.length), 1);
+    const rows = grid.map((row) => {
+      const out: { kind: 'text'; text: string }[][] = [];
+      for (let c = 0; c < cols; c++) {
+        const v = row[c] || '';
+        out.push(v ? [{ kind: 'text', text: v }] : []);
+      }
+      return out;
+    });
+    return { id: newId(), kind: 'table', hrow: true, hcol: false, rows };
+  };
+  // 1) HTML <table>
+  const html = dt.getData('text/html');
+  if (html && /<table[\s\S]*?<\/table>/i.test(html)) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    const tbl = tmp.querySelector('table');
+    if (tbl) {
+      const trs = Array.from(tbl.querySelectorAll('tr'));
+      const grid = trs.map((tr) =>
+        Array.from(tr.children).map((c) =>
+          ((c as HTMLElement).textContent || '').replace(/\s+/g, ' ').trim()),
+      );
+      if (grid.length > 0 && grid.some((r) => r.length > 0)) {
+        return buildTable(grid);
+      }
+    }
+  }
+  // 2) Plain TSV
+  const text = dt.getData('text/plain');
+  if (!text) return null;
+  const lines = text.replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n');
+  if (lines.length === 0) return null;
+  const grid = lines.map((ln) => ln.split('\t'));
+  const isTable = grid.length >= 2 || grid.some((r) => r.length >= 2);
+  return isTable ? buildTable(grid) : null;
+}
+
 /** Paste handler — runs in editor2 mount. Parses clipboard text /
  *  HTML into blocks and inserts them after the current block.
  *  Plaintext → mdToBlocks (so pasted markdown is interpreted as
@@ -390,6 +444,39 @@ function attachPasteHandler(editor: Editor, rootEl: HTMLElement): () => void {
   const onPaste = (ev: ClipboardEvent): void => {
     const dt = ev.clipboardData;
     if (!dt) return;
+    // Skip table-paste detection when the caret lives inside an
+    // existing table cell — let the browser drop the text into the
+    // cell. Legacy inline-table did the same.
+    const target = ev.target as HTMLElement | null;
+    const inExistingTable = !!(target && typeof target.closest === 'function'
+      && target.closest('.memola-itbl-wrap'));
+    if (!inExistingTable) {
+      const tblBlock = tableBlockFromClipboard(dt);
+      if (tblBlock) {
+        ev.preventDefault();
+        editor.applyMutation((s) => {
+          const sel = s.selection;
+          const anchorId = sel?.kind === 'caret' ? sel.blockId
+            : sel?.kind === 'range' ? sel.focusBlockId
+            : (s.blocks[s.blocks.length - 1]?.id);
+          const idx = anchorId ? s.blocks.findIndex((b) => b.id === anchorId) : -1;
+          const blocksOut = s.blocks.slice();
+          // If the caret block is an empty paragraph, REPLACE it
+          // (= same UX as the slash menu's table insert). Otherwise
+          // insert AFTER the current block.
+          const cur = idx >= 0 ? s.blocks[idx] : null;
+          const isEmptyP = cur && cur.kind === 'p' && cur.inline.length === 0;
+          if (isEmptyP && idx >= 0) {
+            blocksOut[idx] = tblBlock;
+          } else {
+            const at = idx >= 0 ? idx + 1 : blocksOut.length;
+            blocksOut.splice(at, 0, tblBlock);
+          }
+          return { ...s, blocks: blocksOut, selection: null };
+        }, 'structural');
+        return;
+      }
+    }
     const html = dt.getData('text/html');
     const text = dt.getData('text/plain');
     let blocks: Block[] = [];
