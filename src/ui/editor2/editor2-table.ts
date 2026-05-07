@@ -577,6 +577,116 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     // whenever a fresh mousedown starts.
   };
 
+  // ── Cell context menu (right-click) ─────────────────
+  // Notion-style cell menu: insert row above/below, insert col left/
+  // right, delete row/col, toggle header row/col. All actions go
+  // through `applyMutation` so undo/redo and autosave just work.
+  const onCellContextMenu = (e: MouseEvent): void => {
+    const t = e.target as HTMLElement | null;
+    if (!t || typeof t.closest !== 'function') return;
+    const cell = t.closest<HTMLElement>('td');
+    if (!cell || !rootEl.contains(cell)) return;
+    const pos = findCellPos(cell);
+    const blockId = cell.closest<HTMLElement>('[data-block-id]')?.dataset.blockId;
+    if (!pos || !blockId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    showCellMenu(blockId, pos.row, pos.col, e.clientX, e.clientY);
+  };
+
+  function showCellMenu(blockId: string, row: number, col: number, x: number, y: number): void {
+    // Close any existing menu first.
+    document.getElementById('memola-tbl-cell-menu')?.remove();
+    const menu = document.createElement('div');
+    menu.id = 'memola-tbl-cell-menu';
+    menu.className = 'memola-tbl-cell-menu';
+    menu.style.cssText = 'position:absolute; z-index:2147483646; background:#fff; border:1px solid #e9e9e7; border-radius:6px; box-shadow:0 6px 24px rgba(0,0,0,0.12); padding:4px 0; min-width:200px; font-size:13px; color:#37352f;';
+    menu.style.left = (x + window.scrollX) + 'px';
+    menu.style.top = (y + window.scrollY) + 'px';
+
+    const block = editor.getBlocks().find((b) => b.id === blockId);
+    const isTable = block && block.kind === 'table';
+    const hrowOn = !!(isTable && block.hrow);
+    const hcolOn = !!(isTable && block.hcol);
+
+    function item(label: string, fn: () => void, danger = false): HTMLElement {
+      const it = document.createElement('div');
+      it.className = 'memola-tbl-cell-menu-item' + (danger ? ' danger' : '');
+      it.style.cssText = 'padding:6px 14px; cursor:pointer;' + (danger ? ' color:#c44;' : '');
+      it.textContent = label;
+      it.addEventListener('mouseenter', () => { it.style.background = '#f1f1ef'; });
+      it.addEventListener('mouseleave', () => { it.style.background = ''; });
+      it.addEventListener('mousedown', (ev) => { ev.preventDefault(); ev.stopPropagation(); fn(); menu.remove(); });
+      return it;
+    }
+    function sep(): HTMLElement {
+      const s = document.createElement('div');
+      s.style.cssText = 'height:1px; background:#e9e9e7; margin:4px 0;';
+      return s;
+    }
+
+    // Row 0 / col 0 → header toggles
+    if (row === 0) {
+      menu.appendChild(item(hrowOn ? '✓ 行見出しを解除' : '行見出しに設定', () => {
+        editor.applyMutation((s) => {
+          const idx = s.blocks.findIndex((b) => b.id === blockId);
+          if (idx < 0) return s;
+          const cur = s.blocks[idx];
+          if (cur.kind !== 'table') return s;
+          const blocks = s.blocks.slice();
+          blocks[idx] = { ...cur, hrow: !cur.hrow };
+          return { ...s, blocks };
+        }, 'structural');
+      }));
+    }
+    if (col === 0) {
+      menu.appendChild(item(hcolOn ? '✓ 列見出しを解除' : '列見出しに設定', () => {
+        editor.applyMutation((s) => {
+          const idx = s.blocks.findIndex((b) => b.id === blockId);
+          if (idx < 0) return s;
+          const cur = s.blocks[idx];
+          if (cur.kind !== 'table') return s;
+          const blocks = s.blocks.slice();
+          blocks[idx] = { ...cur, hcol: !cur.hcol };
+          return { ...s, blocks };
+        }, 'structural');
+      }));
+    }
+    if (row === 0 || col === 0) menu.appendChild(sep());
+
+    menu.appendChild(item('↑ 上に行を追加', () => {
+      editor.applyMutation((s) => tableAddRow(s, blockId, row), 'structural');
+    }));
+    menu.appendChild(item('↓ 下に行を追加', () => {
+      editor.applyMutation((s) => tableAddRow(s, blockId, row + 1), 'structural');
+    }));
+    menu.appendChild(item('行を削除', () => {
+      editor.applyMutation((s) => tableRemoveRow(s, blockId, row), 'structural');
+    }, true));
+    menu.appendChild(sep());
+    menu.appendChild(item('← 左に列を追加', () => {
+      editor.applyMutation((s) => tableAddCol(s, blockId, col), 'structural');
+    }));
+    menu.appendChild(item('→ 右に列を追加', () => {
+      editor.applyMutation((s) => tableAddCol(s, blockId, col + 1), 'structural');
+    }));
+    menu.appendChild(item('列を削除', () => {
+      editor.applyMutation((s) => tableRemoveCol(s, blockId, col), 'structural');
+    }, true));
+
+    (document.getElementById('memola-overlay') || document.body).appendChild(menu);
+
+    // Dismiss on outside click. Use mousedown so the click on a menu
+    // item itself fires before the dismissal handler tears the menu.
+    function dismiss(ev: MouseEvent): void {
+      if (!menu.contains(ev.target as Node)) {
+        menu.remove();
+        document.removeEventListener('mousedown', dismiss, true);
+      }
+    }
+    setTimeout(() => document.addEventListener('mousedown', dismiss, true), 0);
+  }
+
   // Copy: when a `table-cells` selection is active, serialise the
   // rectangle as TSV (text/plain) + as a minimal HTML <table>. Same
   // shape as Excel / Sheets / legacy inline-table.
@@ -618,6 +728,7 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
   rootEl.addEventListener('mousedown', onTableMousedown);
   rootEl.addEventListener('mousemove', onTableMousemoveForRange);
   rootEl.addEventListener('mousemove', onResizeCursorHint);
+  rootEl.addEventListener('contextmenu', onCellContextMenu);
   document.addEventListener('mousemove', onResizeMove);
   document.addEventListener('mouseup', onTableMouseup);
   document.addEventListener('mouseup', onResizeUp);
@@ -633,10 +744,12 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     rootEl.removeEventListener('mousedown', onTableMousedown);
     rootEl.removeEventListener('mousemove', onTableMousemoveForRange);
     rootEl.removeEventListener('mousemove', onResizeCursorHint);
+    rootEl.removeEventListener('contextmenu', onCellContextMenu);
     document.removeEventListener('mousemove', onResizeMove);
     document.removeEventListener('mouseup', onTableMouseup);
     document.removeEventListener('mouseup', onResizeUp);
     document.removeEventListener('copy', onCopy, true);
+    document.getElementById('memola-tbl-cell-menu')?.remove();
     cancelHide();
     // Codex review U8: hide isn't enough — the elements would
     // accumulate in the overlay across editor remounts. Remove them.
