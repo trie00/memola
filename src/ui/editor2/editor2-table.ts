@@ -77,15 +77,25 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
   // descendant element. This is what makes "move from cell to button"
   // possible without the button vanishing mid-motion.
   const onMouseMove = (e: MouseEvent): void => {
-    const t = e.target as HTMLElement | null;
+    // Resolve the actual element under the cursor: e.target is the
+    // element the listener is attached to during mousemove, but for
+    // coordinate-based hit testing we want whatever's at (clientX,
+    // clientY). This also makes the handler work for synthetically-
+    // dispatched events whose target is `document` (which has no
+    // `.closest`).
+    const t = (typeof document.elementFromPoint === 'function'
+      ? document.elementFromPoint(e.clientX, e.clientY)
+      : (e.target as Element | null)) as HTMLElement | null;
     // Hovering the button itself — keep visible, no timer churn.
-    if (t && t.closest('.memola-tbl-btn')) {
+    if (t && typeof t.closest === 'function' && t.closest('.memola-tbl-btn')) {
       cancelHide();
       return;
     }
     // Mouse over a wrap descendant — refresh which row/col is active
     // and clear any pending hide.
-    const overWrap = t?.closest<HTMLElement>('.memola-itbl-wrap');
+    const overWrap = (t && typeof t.closest === 'function')
+      ? t.closest<HTMLElement>('.memola-itbl-wrap')
+      : null;
     if (overWrap && rootEl.contains(overWrap)) {
       const blockEl = overWrap.closest<HTMLElement>('[data-block-id]');
       const blockId = blockEl?.dataset.blockId;
@@ -247,10 +257,17 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     }
     if (createIfMissing === 'row' && blockId) {
       // Append a fresh row at the end of the table, then focus the new
-      // cell. The mutation re-renders the table; we re-query the DOM
-      // after the next frame to find the freshly-rendered cell.
+      // cell. The mutation re-renders the table synchronously inside
+      // applyMutation (paint() runs before the call returns), so the
+      // new cell is already in the DOM by the time we look for it. We
+      // use a microtask hop (Promise.resolve().then) instead of RAF so
+      // background-tab throttling can't delay the focus call. We also
+      // run it AFTER paint's `applySelection` has restored caret based
+      // on the old block-level offset (which would otherwise land us on
+      // the wrong cell): both happen in the same task, so the microtask
+      // queued from this synchronous code runs after paint completes.
       editor.applyMutation((s) => tableAddRow(s, blockId, row), 'structural');
-      requestAnimationFrame(() => {
+      void Promise.resolve().then(() => {
         const stillBlock = rootEl.querySelector<HTMLElement>(
           '[data-block-id="' + cssEscape(blockId) + '"]',
         );
@@ -405,12 +422,24 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     const tbody = tbl.querySelector<HTMLElement>('tbody');
     if (!tbody) return;
 
-    // Find which row/col the cursor is over (or the closest if between)
+    // Find which row/col the cursor is over. When the cursor sits in
+    // the hover buffer (just outside the table — e.g., heading toward
+    // the +row/+col button) we clamp to the nearest edge row/col so
+    // the buttons stay visible and target the last-hovered region.
+    // Without this, a cursor at `tableRect.right + 2 px` would yield
+    // `colIdx = -1` and showButtons would silently hide everything,
+    // making it impossible to actually reach the button.
     const trs = Array.from(tbody.children) as HTMLElement[];
     let rowIdx = -1;
     for (let r = 0; r < trs.length; r++) {
       const rect = trs[r].getBoundingClientRect();
       if (y >= rect.top && y <= rect.bottom) { rowIdx = r; break; }
+    }
+    if (rowIdx < 0 && trs.length > 0) {
+      const firstRect = trs[0].getBoundingClientRect();
+      const lastRect = trs[trs.length - 1].getBoundingClientRect();
+      if (y < firstRect.top) rowIdx = 0;
+      else if (y > lastRect.bottom) rowIdx = trs.length - 1;
     }
     const firstRow = trs[0];
     const cells = firstRow ? Array.from(firstRow.children) as HTMLElement[] : [];
@@ -418,6 +447,12 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     for (let c = 0; c < cells.length; c++) {
       const rect = cells[c].getBoundingClientRect();
       if (x >= rect.left && x <= rect.right) { colIdx = c; break; }
+    }
+    if (colIdx < 0 && cells.length > 0) {
+      const firstRect = cells[0].getBoundingClientRect();
+      const lastRect = cells[cells.length - 1].getBoundingClientRect();
+      if (x < firstRect.left) colIdx = 0;
+      else if (x > lastRect.right) colIdx = cells.length - 1;
     }
 
     // +col button: appears at the right edge of the table, vertically

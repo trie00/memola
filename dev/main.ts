@@ -43,5 +43,13 @@ import css from '../src/styles/app.css';
   attachAll();
   void init();
 
+  // Dev-only: expose the editor2 bridge on window so preview_eval can
+  // drive `applyMutation` / `getBlocks` directly. Real bookmarklet
+  // builds don't include this entry point.
+  void import('../src/ui/editor2/editor2-bridge').then((m) => {
+    (window as unknown as { __memolaDev?: unknown }).__memolaDev = m;
+    console.log('[dev] window.__memolaDev exposed (bridge module)');
+  });
+
   console.log('[dev] Memola mounted. Open #memola-overlay to interact.');
 })();
