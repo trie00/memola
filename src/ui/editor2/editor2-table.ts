@@ -13,28 +13,276 @@ import {
 } from './editor-state';
 import type { Inline } from '../../lib/blocks';
 
-/** Wire per-table hover buttons + cell-blur state sync. Returns a
- *  destroy fn; idempotent — calling twice on the same root re-binds. */
+/** Visual gap between the table edge and the hover +row/+col buttons.
+ *  Smaller values feel cramped (the button visually touches the cell
+ *  border); larger values make the button hard to discover. */
+const BUTTON_GAP_PX = 10;
+/** Extra buffer around the table where the buttons stay visible even
+ *  though the mouse has technically left the cell rect. Without a buffer,
+ *  the user trying to move from a cell to the +row/+col button would
+ *  cross 10 px of "background" pixels, fire the hide handler, and find
+ *  the button gone before they could click it. */
+const HOVER_BUFFER_PX = 36;
+/** Grace period after the mouse leaves the table+buffer zone before the
+ *  buttons actually disappear. Same intent as `HOVER_BUFFER_PX`: gives
+ *  the user a moment to land on the button after a slightly imprecise
+ *  hover. Re-entering the table or the button cancels the timer. */
+const HIDE_GRACE_MS = 250;
+
+/** Wire per-table hover buttons + cell-blur state sync + cell-level
+ *  keyboard navigation (Enter / Tab / Arrow). Returns a destroy fn;
+ *  idempotent — calling twice on the same root re-binds. */
 export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => void {
-  // Single document-level mouseover delegate so we don't re-bind on
+  // Single document-level mousemove delegate so we don't re-bind on
   // every render. The table elements live inside rootEl as
   // memola-itbl-wrap descendants of `[data-block-id]` blocks.
-  // Codex review U2: when the cursor moves OVER the +/× buttons
-  // themselves they are not inside any `.memola-itbl-wrap`, so the
-  // previous code immediately hid them — making them un-clickable.
-  // Treat the button itself as "still hovering the active table".
-  const onMouseOver = (e: MouseEvent): void => {
-    const t = e.target as HTMLElement | null;
-    if (!t) return;
-    if (t.closest('.memola-tbl-btn')) return;     // hovering a button — keep current state
-    const wrap = t.closest<HTMLElement>('.memola-itbl-wrap');
-    if (!wrap) {
+  let _activeWrap: HTMLElement | null = null;
+  let _hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const cancelHide = (): void => {
+    if (_hideTimer) { clearTimeout(_hideTimer); _hideTimer = null; }
+  };
+  const scheduleHide = (): void => {
+    if (_hideTimer) return;
+    _hideTimer = setTimeout(() => {
+      _hideTimer = null;
       hideButtons();
+      _activeWrap = null;
+    }, HIDE_GRACE_MS);
+  };
+
+  // Use mousemove (not just mouseover) so we can do coordinate-based
+  // hot-zone checks: the buttons stay visible when the mouse is anywhere
+  // within the table rect ± HOVER_BUFFER_PX, not only over an actual
+  // descendant element. This is what makes "move from cell to button"
+  // possible without the button vanishing mid-motion.
+  const onMouseMove = (e: MouseEvent): void => {
+    const t = e.target as HTMLElement | null;
+    // Hovering the button itself — keep visible, no timer churn.
+    if (t && t.closest('.memola-tbl-btn')) {
+      cancelHide();
       return;
     }
-    if (!rootEl.contains(wrap)) return;
-    showButtons(wrap, e.clientX, e.clientY);
+    // Mouse over a wrap descendant — refresh which row/col is active
+    // and clear any pending hide.
+    const overWrap = t?.closest<HTMLElement>('.memola-itbl-wrap');
+    if (overWrap && rootEl.contains(overWrap)) {
+      cancelHide();
+      _activeWrap = overWrap;
+      showButtons(overWrap, e.clientX, e.clientY);
+      return;
+    }
+    // Coordinate-based hot zone: even when mouseover target is the page
+    // background, treat (table.rect ± HOVER_BUFFER_PX) as "still hovering".
+    if (_activeWrap) {
+      const r = _activeWrap.getBoundingClientRect();
+      const inHotZone =
+        e.clientX >= r.left - HOVER_BUFFER_PX &&
+        e.clientX <= r.right + HOVER_BUFFER_PX &&
+        e.clientY >= r.top - HOVER_BUFFER_PX &&
+        e.clientY <= r.bottom + HOVER_BUFFER_PX;
+      if (inHotZone) {
+        cancelHide();
+        showButtons(_activeWrap, e.clientX, e.clientY);
+        return;
+      }
+    }
+    // Truly out — start the grace timer (if not already running).
+    scheduleHide();
   };
+
+  // Cell-level keyboard navigation. Captures Enter / Tab / Arrow keys
+  // BEFORE they reach the editor's beforeinput / native contenteditable
+  // handlers so that:
+  //   - Enter moves the caret to the cell directly below (Notion / Excel
+  //     convention). At the last row a fresh row is appended first.
+  //   - Tab / Shift+Tab walks cells left-to-right, wrapping rows; at the
+  //     last cell of the table, Tab appends a new row.
+  //   - Arrow keys (Up / Down / Left / Right) navigate between cells when
+  //     the caret is at the corresponding edge of the cell content.
+  // Shift+Enter falls through to the browser's native `<br>` insertion so
+  // multi-line cells still work.
+  const onCellKeydown = (e: KeyboardEvent): void => {
+    const t = e.target as HTMLElement | null;
+    if (!t || t.tagName !== 'TD') return;
+    const cell = t;
+    if (!rootEl.contains(cell)) return;
+    const pos = findCellPos(cell);
+    if (!pos) return;
+
+    if (e.isComposing || e.keyCode === 229) return;        // IME — let the browser handle
+
+    const k = e.key;
+    if (k === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      moveToCell(cell, pos.row + 1, pos.col, /*createIfMissing*/ 'row');
+      return;
+    }
+    if (k === 'Tab') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey) {
+        if (pos.col > 0) moveToCell(cell, pos.row, pos.col - 1);
+        else if (pos.row > 0) moveToCell(cell, pos.row - 1, lastColOf(cell));
+        // else: at top-left — no-op
+      } else {
+        const lastCol = lastColOf(cell);
+        if (pos.col < lastCol) moveToCell(cell, pos.row, pos.col + 1);
+        else moveToCell(cell, pos.row + 1, 0, 'row');
+      }
+      return;
+    }
+    if (k === 'ArrowDown' && atCellLastLine(cell)) {
+      e.preventDefault();
+      e.stopPropagation();
+      moveToCell(cell, pos.row + 1, pos.col);
+      return;
+    }
+    if (k === 'ArrowUp' && atCellFirstLine(cell)) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (pos.row > 0) moveToCell(cell, pos.row - 1, pos.col);
+      return;
+    }
+    if (k === 'ArrowLeft' && atCellStart(cell)) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (pos.col > 0) moveToCell(cell, pos.row, pos.col - 1);
+      else if (pos.row > 0) moveToCell(cell, pos.row - 1, lastColOf(cell));
+      return;
+    }
+    if (k === 'ArrowRight' && atCellEnd(cell)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const lastCol = lastColOf(cell);
+      if (pos.col < lastCol) moveToCell(cell, pos.row, pos.col + 1);
+      else if (pos.row < lastRowOf(cell)) moveToCell(cell, pos.row + 1, 0);
+      return;
+    }
+  };
+
+  /** Find which row/column index `td` occupies inside its `<tbody>`. */
+  function findCellPos(td: HTMLElement): { tbody: HTMLElement; row: number; col: number } | null {
+    const tr = td.parentElement;
+    if (!tr || tr.tagName !== 'TR') return null;
+    const tbody = tr.parentElement;
+    if (!tbody || tbody.tagName !== 'TBODY') return null;
+    const row = Array.from(tbody.children).indexOf(tr);
+    const col = Array.from(tr.children).indexOf(td);
+    if (row < 0 || col < 0) return null;
+    return { tbody: tbody as HTMLElement, row, col };
+  }
+
+  function lastColOf(td: HTMLElement): number {
+    const tr = td.parentElement as HTMLElement | null;
+    return tr ? tr.children.length - 1 : 0;
+  }
+  function lastRowOf(td: HTMLElement): number {
+    const tbody = td.parentElement?.parentElement as HTMLElement | null;
+    return tbody ? tbody.children.length - 1 : 0;
+  }
+
+  /** Place caret at the END of `cell` and focus it. */
+  function focusCellEnd(cell: HTMLElement): void {
+    cell.focus();
+    const range = document.createRange();
+    range.selectNodeContents(cell);
+    range.collapse(false);
+    const sel = window.getSelection();
+    if (sel) {
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }
+
+  /** Move caret from `fromCell` to (row, col). When the destination
+   *  doesn't exist, optionally append a new row first (so Enter-at-
+   *  last-row creates a new row Notion-style). */
+  function moveToCell(
+    fromCell: HTMLElement,
+    row: number,
+    col: number,
+    createIfMissing?: 'row',
+  ): void {
+    const tbody = fromCell.parentElement?.parentElement as HTMLElement | null;
+    if (!tbody) return;
+    const blockEl = fromCell.closest<HTMLElement>('[data-block-id]');
+    const blockId = blockEl?.dataset.blockId;
+    const targetTr = tbody.children[row] as HTMLElement | undefined;
+    if (targetTr) {
+      const targetCell = targetTr.children[col] as HTMLElement | undefined;
+      if (targetCell) {
+        focusCellEnd(targetCell);
+        return;
+      }
+      return;
+    }
+    if (createIfMissing === 'row' && blockId) {
+      // Append a fresh row at the end of the table, then focus the new
+      // cell. The mutation re-renders the table; we re-query the DOM
+      // after the next frame to find the freshly-rendered cell.
+      editor.applyMutation((s) => tableAddRow(s, blockId, row), 'structural');
+      requestAnimationFrame(() => {
+        const stillBlock = rootEl.querySelector<HTMLElement>(
+          '[data-block-id="' + cssEscape(blockId) + '"]',
+        );
+        const stillTbody = stillBlock?.querySelector<HTMLElement>('tbody');
+        const newCell = stillTbody?.children[row]?.children[col] as HTMLElement | undefined;
+        if (newCell) focusCellEnd(newCell);
+      });
+    }
+  }
+
+  // ── Cell caret-position helpers ────────────────────
+  // These tell us whether the caret is at the very start / end / first
+  // line / last line of a cell. For single-line cells (the common case)
+  // first==last line is always true. For multi-line cells with
+  // `<br>`-separated visual lines, we check the caret's vertical
+  // position against the cell's first/last line bounds.
+
+  function atCellStart(cell: HTMLElement): boolean {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return false;
+    const r = sel.getRangeAt(0);
+    if (!r.collapsed) return false;
+    const probe = document.createRange();
+    probe.selectNodeContents(cell);
+    probe.setEnd(r.startContainer, r.startOffset);
+    return probe.toString().length === 0;
+  }
+  function atCellEnd(cell: HTMLElement): boolean {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return false;
+    const r = sel.getRangeAt(0);
+    if (!r.collapsed) return false;
+    const probe = document.createRange();
+    probe.selectNodeContents(cell);
+    probe.setStart(r.endContainer, r.endOffset);
+    return probe.toString().length === 0;
+  }
+  function atCellFirstLine(cell: HTMLElement): boolean {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return false;
+    const caretRect = sel.getRangeAt(0).getBoundingClientRect();
+    const cellRect = cell.getBoundingClientRect();
+    // Within ~one line height of the top edge.
+    const lineH = parseFloat(getComputedStyle(cell).lineHeight) || 20;
+    return caretRect.top - cellRect.top < lineH;
+  }
+  function atCellLastLine(cell: HTMLElement): boolean {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return false;
+    const caretRect = sel.getRangeAt(0).getBoundingClientRect();
+    const cellRect = cell.getBoundingClientRect();
+    const lineH = parseFloat(getComputedStyle(cell).lineHeight) || 20;
+    return cellRect.bottom - caretRect.bottom < lineH;
+  }
+
+  function cssEscape(s: string): string {
+    if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(s);
+    return s.replace(/[^a-zA-Z0-9_-]/g, (ch) => '\\' + ch);
+  }
 
   const onCellBlur = (e: FocusEvent): void => {
     const cell = e.target as HTMLElement | null;
@@ -62,12 +310,19 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     editor.applyMutation((s) => tableSetCell(s, blockId, rowIdx, colIdx, inline), 'typing');
   };
 
-  document.addEventListener('mouseover', onMouseOver);
+  document.addEventListener('mousemove', onMouseMove);
   rootEl.addEventListener('blur', onCellBlur, true);
+  // Capture-phase keydown so we run BEFORE editor2's own beforeinput /
+  // contenteditable native handlers (which would otherwise insert a
+  // <br> for Enter, advance the focus to the next focusable element
+  // for Tab, etc).
+  rootEl.addEventListener('keydown', onCellKeydown, true);
 
   return (): void => {
-    document.removeEventListener('mouseover', onMouseOver);
+    document.removeEventListener('mousemove', onMouseMove);
     rootEl.removeEventListener('blur', onCellBlur, true);
+    rootEl.removeEventListener('keydown', onCellKeydown, true);
+    cancelHide();
     // Codex review U8: hide isn't enough — the elements would
     // accumulate in the overlay across editor remounts. Remove them.
     ['add-row', 'add-col', 'rm-row', 'rm-col'].forEach((cls) => {
@@ -124,12 +379,15 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     // +col button: appears at the right edge of the table, vertically
     // centred on the hovered row. Geometric intuition: extending
     // horizontally → adds a column to the right of the hovered column.
+    // Uses BUTTON_GAP_PX (10px) gap; the mousemove hot-zone buffer
+    // is large enough that the button stays visible while the user
+    // moves from cell → button.
     const addColBtn = ensureButton('add-col', '+', '列を追加');
     if (rowIdx >= 0 && colIdx >= 0 && trs[rowIdx] && cells[colIdx]) {
       const rr = trs[rowIdx].getBoundingClientRect();
       const tr = tbl.getBoundingClientRect();
       addColBtn.style.top = (rr.top + window.scrollY + (rr.height - 20) / 2) + 'px';
-      addColBtn.style.left = (tr.right + window.scrollX + 4) + 'px';
+      addColBtn.style.left = (tr.right + window.scrollX + BUTTON_GAP_PX) + 'px';
       addColBtn.style.display = 'block';
       addColBtn.onclick = () => {
         editor.applyMutation((s) => tableAddCol(s, blockId, colIdx + 1), 'structural');
@@ -146,7 +404,7 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     if (rowIdx >= 0 && colIdx >= 0 && cells[colIdx]) {
       const cr = cells[colIdx].getBoundingClientRect();
       const tr = tbl.getBoundingClientRect();
-      addRowBtn.style.top = (tr.bottom + window.scrollY + 4) + 'px';
+      addRowBtn.style.top = (tr.bottom + window.scrollY + BUTTON_GAP_PX) + 'px';
       addRowBtn.style.left = (cr.left + window.scrollX + (cr.width - 20) / 2) + 'px';
       addRowBtn.style.display = 'block';
       addRowBtn.onclick = () => {
