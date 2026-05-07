@@ -11,11 +11,15 @@ import { S, type Page } from '../state';
 import { g } from './dom';
 import { toast } from './ui-helpers';
 import { mdToBlocks, blocksToMd } from '../lib/blocks-md';
-import { htmlToBlocks, blocksToHtml } from '../lib/blocks-html';
-const mdToHtml = (md: string): string => blocksToHtml(mdToBlocks(md));
+import { blocksToHtml } from '../lib/blocks-html';
 import {
   listAll, deleteDraft, type Draft,
 } from './draft-store';
+
+/** Read-only HTML rendering of a draft body for preview. The
+ *  controlled-rendering editor handles its own DOM; this is just a
+ *  detached `<div>` showing what the draft would look like. */
+const previewHtml = (md: string): string => blocksToHtml(mdToBlocks(md));
 import { escapeHtml } from '../lib/html-escape';
 import { formatRelativeTime } from '../lib/date-utils';
 import { subscriberModal } from './lib/modal';
@@ -296,7 +300,7 @@ function showPreview(draft: Draft): void {
         '<span class="memola-drafts-title">プレビュー: ' + escapeHtml(draft.title || '無題') + '</span>' +
         '<button class="memola-drafts-close">×</button>' +
       '</div>' +
-      '<div class="memola-drafts-preview">' + mdToHtml(draft.body) + '</div>' +
+      '<div class="memola-drafts-preview">' + previewHtml(draft.body) + '</div>' +
     '</div>';
   (document.getElementById('memola-overlay') || document.body).appendChild(w);
   const close = (): void => { w.remove(); };
@@ -311,13 +315,15 @@ async function restoreDraft(draft: Draft): Promise<void> {
     '続行しますか？',
   )) return;
 
-  // 1. If we're currently on a page with dirty edits, snapshot those first
-  //    so the restore itself doesn't destroy them.
+  // 1. If we're currently on a page with dirty edits, snapshot those
+  //    first so the restore itself doesn't destroy them. Read blocks
+  //    directly from editor2 (canonical source of truth) and serialise
+  //    to markdown for the draft body.
   const { saver } = await import('../lib/saver');
   if (saver.isDirty() && S.currentId) {
     const { saveDraft } = await import('./draft-store');
-    const ed = (await import('./dom')).getEd();
-    const md = blocksToMd(htmlToBlocks(ed.innerHTML));
+    const { getBlocks } = await import('./editor2/editor2-bridge');
+    const md = blocksToMd(getBlocks());
     const titleEl = g('ttl') as HTMLTextAreaElement;
     saveDraft({
       pageId: S.currentId,
@@ -332,10 +338,14 @@ async function restoreDraft(draft: Draft): Promise<void> {
   const { doSelect } = await import('./views');
   await doSelect(draft.pageId);
 
-  // 3. Replace editor content with the draft body — keep dirty so user
-  //    can review and decide whether to save.
-  const ed = (await import('./dom')).getEd();
-  ed.innerHTML = mdToHtml(draft.body);
+  // 3. Replace editor content with the draft body via the
+  //    controlled-rendering bridge — keep dirty so the user can review
+  //    and decide whether to save. Going through `loadBlocks` (instead
+  //    of the legacy `ed.innerHTML = mdToHtml(...)` path) is what makes
+  //    table cells / page-link chips / etc. fully interactive after
+  //    restore.
+  const { loadBlocks } = await import('./editor2/editor2-bridge');
+  loadBlocks(mdToBlocks(draft.body));
   const titleEl = g('ttl') as HTMLTextAreaElement;
   if (draft.title) titleEl.value = draft.title;
   // Push the draft content into the Saver — it transitions to 'dirty'
@@ -343,7 +353,6 @@ async function restoreDraft(draft: Draft): Promise<void> {
   // updates the status bar via saver-bridge.
   const { schedSave: nudgeSaver } = await import('./save-control');
   nudgeSaver();
-  void import('./inline-table').then((m) => m.reattachInlineTables(ed));
 
   // 4. Remove the draft we just restored (it's now in the editor)
   deleteDraft(draft.key);
