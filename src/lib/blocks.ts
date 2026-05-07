@@ -116,6 +116,11 @@ export interface TableBlock extends BlockBase {
   hrow: boolean;
   hcol: boolean;
   rows: Inline[][][];   // rows × cols × inline run
+  /** Per-column widths in CSS pixels. Optional — when undefined or
+   *  shorter than the column count, missing entries fall back to the
+   *  table's natural auto-layout. The drag-resize handle on a cell's
+   *  right edge writes here via `applyMutation`. */
+  colWidths?: number[];
 }
 
 /** Linked-DB embed. Renders as a live table view of another DB. */

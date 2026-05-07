@@ -436,6 +436,86 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     editor.applyMutation((s) => tableSetCell(s, blockId, rowIdx, colIdx, inline), 'typing');
   };
 
+  // ── Column resize (drag the right edge of a cell) ────
+  // Within ~6 px of a cell's right edge we treat the mousedown as a
+  // resize operation. While the button is held, mousemove updates the
+  // table's `colWidths[colIdx]` via `applyMutation` — the renderer
+  // emits the new width into the <col> element on the next paint.
+  // mouseup ends the drag (and persists via the autosave subscriber).
+  const RESIZE_HOTSPOT_PX = 6;
+  let _resizeState: {
+    blockId: string;
+    colIdx: number;
+    startX: number;
+    startW: number;
+  } | null = null;
+
+  /** Are we within the resize-hotspot strip on the right edge of `cell`?
+   *  Used by both the cursor hint and the actual mousedown trigger. */
+  function nearRightEdge(cell: HTMLElement, clientX: number): boolean {
+    const r = cell.getBoundingClientRect();
+    const fromRight = r.right - clientX;
+    return fromRight <= RESIZE_HOTSPOT_PX && fromRight >= -2;
+  }
+
+  const onTableMousedownResize = (e: MouseEvent): boolean => {
+    if (e.button !== 0) return false;
+    const t = e.target as HTMLElement | null;
+    if (!t || typeof t.closest !== 'function') return false;
+    const cell = t.closest<HTMLElement>('td');
+    if (!cell || !rootEl.contains(cell)) return false;
+    if (!nearRightEdge(cell, e.clientX)) return false;
+    const pos = findCellPos(cell);
+    const blockId = cell.closest<HTMLElement>('[data-block-id]')?.dataset.blockId;
+    if (!pos || !blockId) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    _resizeState = {
+      blockId,
+      colIdx: pos.col,
+      startX: e.clientX,
+      startW: cell.offsetWidth,
+    };
+    document.body.style.cursor = 'col-resize';
+    return true;
+  };
+
+  const onResizeMove = (e: MouseEvent): void => {
+    if (!_resizeState) return;
+    if ((e.buttons & 1) === 0) { onResizeUp(); return; }
+    const dx = e.clientX - _resizeState.startX;
+    const w = Math.max(60, _resizeState.startW + dx);
+    const { blockId, colIdx } = _resizeState;
+    editor.applyMutation((s) => {
+      const idx = s.blocks.findIndex((b) => b.id === blockId);
+      if (idx < 0) return s;
+      const cur = s.blocks[idx];
+      if (cur.kind !== 'table') return s;
+      const cols = cur.rows[0]?.length || 0;
+      const widths = (cur.colWidths || []).slice();
+      while (widths.length < cols) widths.push(0);
+      widths[colIdx] = w;
+      const blocks = s.blocks.slice();
+      blocks[idx] = { ...cur, colWidths: widths };
+      return { ...s, blocks };
+    }, 'structural');
+  };
+
+  const onResizeUp = (): void => {
+    if (!_resizeState) return;
+    _resizeState = null;
+    document.body.style.cursor = '';
+  };
+
+  // Cursor hint: subtle col-resize cursor when hovering the right edge.
+  const onResizeCursorHint = (e: MouseEvent): void => {
+    const t = e.target as HTMLElement | null;
+    if (!t || typeof t.closest !== 'function') return;
+    const cell = t.closest<HTMLElement>('td');
+    if (!cell || !rootEl.contains(cell)) return;
+    cell.style.cursor = nearRightEdge(cell, e.clientX) ? 'col-resize' : '';
+  };
+
   // ── Cell range selection (drag across cells) ─────────
   // mousedown on a cell records an "anchor"; subsequent mousemove
   // events with button-1 held that LAND ON A DIFFERENT CELL trigger a
@@ -447,6 +527,10 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
 
   const onTableMousedown = (e: MouseEvent): void => {
     if (e.button !== 0) return;
+    // Resize takes precedence: if the mousedown is on the right-edge
+    // hotspot of a cell, hand off to the resize path and skip the
+    // range-select setup.
+    if (onTableMousedownResize(e)) return;
     const t = e.target as HTMLElement | null;
     if (!t || typeof t.closest !== 'function') return;
     const cell = t.closest<HTMLElement>('td');
@@ -533,7 +617,10 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
   rootEl.addEventListener('keydown', onCellKeydown, true);
   rootEl.addEventListener('mousedown', onTableMousedown);
   rootEl.addEventListener('mousemove', onTableMousemoveForRange);
+  rootEl.addEventListener('mousemove', onResizeCursorHint);
+  document.addEventListener('mousemove', onResizeMove);
   document.addEventListener('mouseup', onTableMouseup);
+  document.addEventListener('mouseup', onResizeUp);
   // Copy is a document-level event so both the editor body and the
   // surrounding overlay can capture it. We attach to document with
   // capture so we run before the browser's native copy.
@@ -545,7 +632,10 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     rootEl.removeEventListener('keydown', onCellKeydown, true);
     rootEl.removeEventListener('mousedown', onTableMousedown);
     rootEl.removeEventListener('mousemove', onTableMousemoveForRange);
+    rootEl.removeEventListener('mousemove', onResizeCursorHint);
+    document.removeEventListener('mousemove', onResizeMove);
     document.removeEventListener('mouseup', onTableMouseup);
+    document.removeEventListener('mouseup', onResizeUp);
     document.removeEventListener('copy', onCopy, true);
     cancelHide();
     // Codex review U8: hide isn't enough — the elements would

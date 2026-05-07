@@ -191,13 +191,26 @@ function paintBlockContent(el: HTMLElement, b: Block): void {
       // Inline-table island. Render as a contenteditable=false wrapper;
       // the cells inside become contenteditable=true so the user can
       // type into them. Each cell mutation is propagated back to state
-      // by the host integration layer (a future pass — for now cell
-      // edits go through the legacy DOM-walker on save).
+      // via `tableSetCell` on cell blur.
       el.contentEditable = 'false';
       const tbl = document.createElement('table');
       tbl.className = 'memola-itbl';
       tbl.dataset.hrow = b.hrow ? '1' : '0';
       tbl.dataset.hcol = b.hcol ? '1' : '0';
+      // colgroup: emit per-column widths from `b.colWidths` so user-
+      // set widths persist across renders. Missing entries leave the
+      // <col> width unset (= auto layout per natural cell content).
+      const cols = b.rows[0]?.length || 0;
+      if (cols > 0) {
+        const cg = document.createElement('colgroup');
+        for (let i = 0; i < cols; i++) {
+          const colEl = document.createElement('col');
+          const w = b.colWidths?.[i];
+          if (typeof w === 'number' && w > 0) colEl.style.width = w + 'px';
+          cg.appendChild(colEl);
+        }
+        tbl.appendChild(cg);
+      }
       const tbody = document.createElement('tbody');
       for (const row of b.rows) {
         const tr = document.createElement('tr');
