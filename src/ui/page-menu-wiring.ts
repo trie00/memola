@@ -8,7 +8,7 @@
 // 「Web 公開」 / 「Web 公開を解除」.
 
 import { S } from '../state';
-import { g, getEd } from './dom';
+import { g } from './dom';
 import { setLoad, toast } from './ui-helpers';
 import { renderTree } from './tree';
 import { showView, doSelect } from './views';
@@ -160,11 +160,11 @@ async function togglePublish(): Promise<void> {
     // the Site Page mirror can't diverge from the source row.
     await flushPendingSave();
     const titleEl = g('ttl') as HTMLTextAreaElement | null;
-    const ed = getEd();
     const title = (titleEl?.value || '').trim() || '無題';
-    const { htmlToBlocks } = await import('../lib/blocks-html');
+    // Pull body from editor2's canonical block state, not the live DOM.
+    const { getBlocks } = await import('./editor2/editor2-bridge');
     const { blocksToMd } = await import('../lib/blocks-md');
-    const bodyMd = blocksToMd(htmlToBlocks(ed.innerHTML || ''));
+    const bodyMd = blocksToMd(getBlocks());
     try {
       const url = await m.publishPage(id, title, bodyMd);
       try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }

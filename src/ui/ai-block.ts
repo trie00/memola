@@ -6,9 +6,8 @@ import { getEd } from './dom';
 import { toast } from './ui-helpers';
 import { schedSave } from './save-control';
 import { callClaude } from '../api/anthropic';
-import { htmlToBlocks } from '../lib/blocks-html';
 import { blocksToMd } from '../lib/blocks-md';
-const htmlToMd = (html: string): string => blocksToMd(htmlToBlocks(html));
+import { getBlocks } from './editor2/editor2-bridge';
 import { escapeHtml } from '../lib/html-escape';
 
 const ACTIONS: Array<{ key: string; label: string; prompt: string }> = [
@@ -97,8 +96,9 @@ function attachActionHandlers(wrap: HTMLElement): void {
 }
 
 async function runAction(wrap: HTMLElement, cfg: { key: string; label: string; prompt: string }): Promise<void> {
-  const ed = getEd();
-  const ctx = htmlToMd(ed.innerHTML);
+  // Read editor body from editor2's canonical state, not the live DOM —
+  // the controlled-rendering source of truth is `getBlocks()`.
+  const ctx = blocksToMd(getBlocks());
   wrap.innerHTML =
     '<div class="memola-aib-head">' +
       '<span class="memola-aib-title">✦ ' + escapeHtml(cfg.label) + '</span>' +

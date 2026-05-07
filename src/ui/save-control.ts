@@ -20,10 +20,7 @@ import { S } from '../state';
 import { g, getEd } from './dom';
 import { saver } from '../lib/saver';
 import { cancelAutosave } from '../lib/autosave';
-import { htmlToBlocks } from '../lib/blocks-html';
-import { assignStableBlockIds } from '../lib/blocks-stable-ids';
-import { parseBlocksJson, serializeBlocks } from '../api/pages';
-import { isEditor2Enabled, syncEditor2IntoSaver } from './editor2/editor2-bridge';
+import { syncEditor2IntoSaver } from './editor2/editor2-bridge';
 import { setSave } from './ui-helpers';
 
 /** Pull the editor's current content (HTML → markdown + title) and
@@ -41,23 +38,10 @@ function syncEditorIntoSaver(): void {
   const ed = getEd();
   if (!te || !ed) return;
   const title = te.value.trim() || '無題';
-  // Phase 2c: when editor2 owns the DOM, pull blocks from its state
-  // directly (no htmlToBlocks parse — the state IS the blocks).
-  if (isEditor2Enabled()) {
-    syncEditor2IntoSaver(title);
-    return;
-  }
-  // Phase 2 (legacy editor path): Saver body = JSON-serialized
-  // Block[]. Walk the editor DOM into blocks, then stabilize block
-  // IDs against the previously saved blocks so block-id 3-way merge
-  // sees "edited block X" instead of "deleted X, inserted Y".
-  const newBlocks = htmlToBlocks(ed.innerHTML);
-  const baseJson = saver.state().kind === 'unloaded' ? '' :
-    (saver.state() as { base?: { body: string } }).base?.body || '';
-  const baseBlocks = parseBlocksJson(baseJson);
-  const stable = assignStableBlockIds(baseBlocks, newBlocks);
-  const body = serializeBlocks(stable);
-  saver.notifyEdit(body, title);
+  // editor2 (controlled-rendering) owns the editor DOM — pull blocks
+  // straight from its canonical state. The legacy htmlToBlocks parse
+  // path was deleted in Phase 2c-5 along with editor.ts.
+  syncEditor2IntoSaver(title);
 }
 
 /** Editor-input hook — debounced autosave. Pulls the current editor

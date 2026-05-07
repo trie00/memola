@@ -15,13 +15,11 @@ import {
   apiSetTitle,
 } from '../api/pages';
 import { mdToBlocks } from '../lib/blocks-md';
-import { blocksToHtml } from '../lib/blocks-html';
-const mdToHtml = (md: string): string => blocksToHtml(mdToBlocks(md));
 import { renderTree } from '../ui/tree';
 import { confirmPageUpdate } from '../ui/diff-modal';
 import { collectDescendantIds } from '../lib/page-tree';
 import { addPage, removePages, setPageTitle } from '../lib/page-store';
-import { g, getEd } from '../ui/dom';
+import { g } from '../ui/dom';
 import { autoR } from '../ui/ui-helpers';
 import * as db from './db-tool-exec';
 
@@ -146,11 +144,14 @@ async function handleUpdatePage(input: { id: string; title?: string; body?: stri
   renderTree();
 
   // If the user is currently viewing this page in the editor, refresh it so
-  // the change is visible without manual reload.
+  // the change is visible without manual reload. Push through editor2's
+  // controlled-rendering bridge so the slash menu / hover handles / etc.
+  // re-bind correctly — the legacy `ed.innerHTML = mdToHtml(...)` path
+  // bypassed editor2 and left the rendered DOM disconnected from state.
   if (S.currentId === id && !S.currentRow) {
     if (input.body != null) {
-      const ed = getEd();
-      if (ed) ed.innerHTML = mdToHtml(newBody || '');
+      const { loadBlocks } = await import('../ui/editor2/editor2-bridge');
+      loadBlocks(mdToBlocks(newBody || ''));
     }
     if (newTitle !== oldTitle) {
       const titleEl = g('ttl') as HTMLTextAreaElement | null;

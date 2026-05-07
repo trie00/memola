@@ -2,10 +2,8 @@
 // app. Owns the lazily-created singleton `Editor` instance and wires
 // it to the Saver via debounced subscribe.
 //
-// **Phase 2c gating** — switched on by `prefEditor2.get() === '1'`.
-// When off, the legacy attachEditor path runs (DOM-direct edits via
-// htmlToBlocks at save time). This lets the user A/B test the new
-// editor in a real browser without committing to the full migration.
+// editor2 is the only editor — the legacy DOM-direct `editor.ts` was
+// deleted in Phase 2c-5 along with its A/B feature flag.
 
 import type { Block } from '../../lib/blocks';
 import { newBlockId } from '../../lib/blocks';
@@ -14,7 +12,6 @@ import { parseBlocksJson, serializeBlocks } from '../../api/pages';
 import { mdToBlocks } from '../../lib/blocks-md';
 import { htmlToBlocks } from '../../lib/blocks-html';
 import { saver } from '../../lib/saver';
-import { prefEditor2 } from '../../lib/prefs';
 import { attachSlashMenu } from './editor2-slash';
 import { attachWikiTrigger } from './editor2-wiki';
 import { attachImageHandlers } from './editor2-image';
@@ -43,14 +40,6 @@ let _bottomClickCleanup: (() => void) | null = null;
  *  schedSave() could land on a different page than the one the user
  *  is now on. */
 let _generation = 0;
-
-/** True unless the user has explicitly opted out of editor2. After
- *  Phase 2c-5 (legacy removal) this is effectively always true —
- *  the legacy editor.ts was deleted, the flag stays in source for
- *  documentation purposes only. */
-export function isEditor2Enabled(): boolean {
-  return prefEditor2.get() !== '0';
-}
 
 /** Mount editor2 on the given root, replacing any prior instance.
  *  Wires the editor's state changes to the autosave scheduler via

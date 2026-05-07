@@ -11,7 +11,7 @@
 // in api/pages.ts; we mirror that here.
 
 import { S } from '../state';
-import { g, getEd } from './dom';
+import { g } from './dom';
 import { toast } from './ui-helpers';
 
 let _outsideHandler: ((e: MouseEvent) => void) | null = null;
@@ -101,11 +101,11 @@ async function runSync(): Promise<void> {
   await flushPendingSave();
   const tag = document.getElementById('memola-pub-tag');
   const titleEl = g('ttl') as HTMLTextAreaElement | null;
-  const ed = getEd();
   const title = (titleEl?.value || '').trim() || '無題';
-  const { htmlToBlocks } = await import('../lib/blocks-html');
+  // Pull body from editor2's canonical block state.
+  const { getBlocks } = await import('./editor2/editor2-bridge');
   const { blocksToMd } = await import('../lib/blocks-md');
-  const bodyMd = blocksToMd(htmlToBlocks(ed.innerHTML || ''));
+  const bodyMd = blocksToMd(getBlocks());
   const labelEl = tag?.querySelector<HTMLElement>('.memola-pub-tag-label');
   const prevLabel = labelEl?.textContent || '';
   if (tag) tag.classList.add('busy');

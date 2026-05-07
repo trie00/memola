@@ -1,13 +1,12 @@
 // AI chat panel: right-side slide-out powered by direct Claude API calls.
 
 import { S } from '../state';
-import { g, getEd } from './dom';
+import { g } from './dom';
 import { toast } from './ui-helpers';
 import { getApiKey, type ApiMessage, type ContentBlock, type TextBlock, type ToolUseBlock } from '../api/anthropic';
 import { runAgent } from '../ai/run-agent';
-import { htmlToBlocks } from '../lib/blocks-html';
 import { blocksToMd } from '../lib/blocks-md';
-const htmlToMd = (html: string): string => blocksToMd(htmlToBlocks(html));
+import { getBlocks } from './editor2/editor2-bridge';
 import { escapeHtml } from '../lib/html-escape';
 import { nowJSTContext } from '../lib/date-utils';
 import { prefAiHistory, prefAiPaneOpen } from '../lib/prefs';
@@ -182,11 +181,11 @@ const QUICK_PROMPTS: Array<{ label: string; prompt: string }> = [
 
 function pageContext(): string {
   const id = S.currentId || '';
-  const ed = getEd();
   const titleEl = g('ttl') as HTMLTextAreaElement | null;
   const title = (titleEl && titleEl.value) || '';
   if (!id) return '';
-  const md = ed && ed.innerHTML.trim() ? htmlToMd(ed.innerHTML) : '';
+  // Pull body from editor2's canonical block state, not the live DOM.
+  const md = blocksToMd(getBlocks());
   const lines = [
     '── 現在開いているページ ──',
     `id: ${id}`,
