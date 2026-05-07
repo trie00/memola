@@ -14,14 +14,16 @@ import {
 import type { Inline } from '../../lib/blocks';
 
 /** Visual gap between the table edge and the hover +row/+col buttons.
- *  Smaller values feel cramped (the button visually touches the cell
- *  border); larger values make the button hard to discover. */
-const BUTTON_GAP_PX = 10;
+ *  Notion-style: buttons stay visually attached to the table (no big
+ *  separation). Combined with the hot-zone buffer below, the user can
+ *  comfortably move the cursor from a cell to the button without it
+ *  disappearing mid-motion. */
+const BUTTON_GAP_PX = 4;
 /** Extra buffer around the table where the buttons stay visible even
  *  though the mouse has technically left the cell rect. Without a buffer,
  *  the user trying to move from a cell to the +row/+col button would
- *  cross 10 px of "background" pixels, fire the hide handler, and find
- *  the button gone before they could click it. */
+ *  cross "background" pixels, the hide handler would fire, and the
+ *  button would be gone before they could click it. */
 const HOVER_BUFFER_PX = 36;
 /** Grace period after the mouse leaves the table+buffer zone before the
  *  buttons actually disappear. Same intent as `HOVER_BUFFER_PX`: gives
@@ -36,7 +38,13 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
   // Single document-level mousemove delegate so we don't re-bind on
   // every render. The table elements live inside rootEl as
   // memola-itbl-wrap descendants of `[data-block-id]` blocks.
-  let _activeWrap: HTMLElement | null = null;
+  // Track by blockId (not DOM reference) so the hover state survives
+  // across re-renders. Cell edits trigger `tableSetCell` → mutation →
+  // full table re-render → the previous DOM nodes are detached. A
+  // detached node's `getBoundingClientRect()` is {0,0,0,0}, which would
+  // make the coordinate-based hot-zone check fail and the buttons
+  // would disappear during normal cell-to-cell typing.
+  let _activeBlockId: string | null = null;
   let _hideTimer: ReturnType<typeof setTimeout> | null = null;
 
   const cancelHide = (): void => {
@@ -47,8 +55,20 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     _hideTimer = setTimeout(() => {
       _hideTimer = null;
       hideButtons();
-      _activeWrap = null;
+      _activeBlockId = null;
     }, HIDE_GRACE_MS);
+  };
+
+  /** Resolve the currently-active table's wrap element by re-querying
+   *  via `_activeBlockId`. Returns null when the block has been
+   *  deleted / re-rendered without the wrap, signalling the caller to
+   *  drop hover state. */
+  const resolveActiveWrap = (): HTMLElement | null => {
+    if (!_activeBlockId) return null;
+    const blockEl = rootEl.querySelector<HTMLElement>(
+      '[data-block-id="' + cssEscape(_activeBlockId) + '"]',
+    );
+    return blockEl?.querySelector<HTMLElement>('.memola-itbl-wrap') || null;
   };
 
   // Use mousemove (not just mouseover) so we can do coordinate-based
@@ -67,15 +87,22 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     // and clear any pending hide.
     const overWrap = t?.closest<HTMLElement>('.memola-itbl-wrap');
     if (overWrap && rootEl.contains(overWrap)) {
-      cancelHide();
-      _activeWrap = overWrap;
-      showButtons(overWrap, e.clientX, e.clientY);
-      return;
+      const blockEl = overWrap.closest<HTMLElement>('[data-block-id]');
+      const blockId = blockEl?.dataset.blockId;
+      if (blockId) {
+        cancelHide();
+        _activeBlockId = blockId;
+        showButtons(overWrap, e.clientX, e.clientY);
+        return;
+      }
     }
     // Coordinate-based hot zone: even when mouseover target is the page
     // background, treat (table.rect ± HOVER_BUFFER_PX) as "still hovering".
-    if (_activeWrap) {
-      const r = _activeWrap.getBoundingClientRect();
+    // Re-resolve the wrap via blockId so a recent re-render (= cell blur
+    // → tableSetCell mutation) doesn't leave us with a detached node.
+    const wrap = resolveActiveWrap();
+    if (wrap) {
+      const r = wrap.getBoundingClientRect();
       const inHotZone =
         e.clientX >= r.left - HOVER_BUFFER_PX &&
         e.clientX <= r.right + HOVER_BUFFER_PX &&
@@ -83,7 +110,7 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
         e.clientY <= r.bottom + HOVER_BUFFER_PX;
       if (inHotZone) {
         cancelHide();
-        showButtons(_activeWrap, e.clientX, e.clientY);
+        showButtons(wrap, e.clientX, e.clientY);
         return;
       }
     }
@@ -261,19 +288,36 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     probe.setStart(r.endContainer, r.endOffset);
     return probe.toString().length === 0;
   }
+  /** True when `cell` has at most a single visual line of content
+   *  — meaning Up/Down arrow should *always* jump to the adjacent cell
+   *  (there's nowhere "above" or "below" within this cell to go to).
+   *  Detected as: no `<br>` and the cell's measured height fits in
+   *  about one line. This catches both empty cells and short text. */
+  function isSingleLineCell(cell: HTMLElement): boolean {
+    if (cell.querySelector('br')) return false;
+    const lineH = parseFloat(getComputedStyle(cell).lineHeight) || 20;
+    const cellRect = cell.getBoundingClientRect();
+    // Allow some slack for cell padding.
+    return cellRect.height <= lineH * 1.8;
+  }
   function atCellFirstLine(cell: HTMLElement): boolean {
+    if (isSingleLineCell(cell)) return true;
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return false;
     const caretRect = sel.getRangeAt(0).getBoundingClientRect();
+    // Empty/zero rects (= caret in an empty text node) — treat as
+    // first line so Up navigates correctly even on the empty case.
+    if (caretRect.top === 0 && caretRect.bottom === 0) return true;
     const cellRect = cell.getBoundingClientRect();
-    // Within ~one line height of the top edge.
     const lineH = parseFloat(getComputedStyle(cell).lineHeight) || 20;
     return caretRect.top - cellRect.top < lineH;
   }
   function atCellLastLine(cell: HTMLElement): boolean {
+    if (isSingleLineCell(cell)) return true;
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return false;
     const caretRect = sel.getRangeAt(0).getBoundingClientRect();
+    if (caretRect.top === 0 && caretRect.bottom === 0) return true;
     const cellRect = cell.getBoundingClientRect();
     const lineH = parseFloat(getComputedStyle(cell).lineHeight) || 20;
     return cellRect.bottom - caretRect.bottom < lineH;
