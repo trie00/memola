@@ -157,13 +157,34 @@ describe('threeWayMergeBlocks — moves', () => {
 
   it('handles edited-on-yours + moved-on-theirs (no conflict — different concerns)', () => {
     const base = [P('1', 'a'), P('2', 'b')];
-    const yours = [P('1', 'EDITED'), P('2', 'b')];
-    const theirs = [P('2', 'b'), P('1', 'a')];      // theirs moved
+    const yours = [P('1', 'EDITED'), P('2', 'b')];  // yours edited content, kept order
+    const theirs = [P('2', 'b'), P('1', 'a')];      // theirs reordered only
     const r = threeWayMergeBlocks(base, yours, theirs);
     expect(r.conflicts).toEqual([]);
-    // Block 1 has yours's EDITED content, ordering follows yours
+    // Block 1 keeps yours's EDITED content (content merge by id) …
     const block1 = r.merged.find((b) => b.id === '1') as unknown as { kind: 'p'; inline: [{ text: string }] };
     expect(block1.inline[0].text).toBe('EDITED');
+    // … and since only theirs reordered, theirs' order is honoured
+    // (base-aware mergeOrderings — previously yours' order wrongly won).
+    expect(r.merged.map((b) => b.id)).toEqual(['2', '1']);
+  });
+
+  it('preserves a reorder-only change made by theirs (I did not reorder)', () => {
+    const base = [P('1', 'a'), P('2', 'b'), P('3', 'c')];
+    const yours = base;                                   // I didn't touch order
+    const theirs = [P('3', 'c'), P('1', 'a'), P('2', 'b')]; // they moved 3 to front
+    const r = threeWayMergeBlocks(base, yours, theirs);
+    expect(r.conflicts).toEqual([]);
+    expect(r.merged.map((b) => b.id)).toEqual(['3', '1', '2']);
+  });
+
+  it('keeps my order when I reordered and theirs did not', () => {
+    const base = [P('1', 'a'), P('2', 'b'), P('3', 'c')];
+    const yours = [P('2', 'b'), P('3', 'c'), P('1', 'a')]; // I moved 1 to end
+    const theirs = base;
+    const r = threeWayMergeBlocks(base, yours, theirs);
+    expect(r.conflicts).toEqual([]);
+    expect(r.merged.map((b) => b.id)).toEqual(['2', '3', '1']);
   });
 });
 

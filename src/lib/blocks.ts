@@ -167,14 +167,25 @@ export type Block =
 
 let _idCounter = 0;
 
-/** Generate a fresh block id. Ids collide-free within a session;
- *  persistence assigns globally-unique ids on save. The counter is
- *  module-level so two calls in the same tick don't collide even
- *  when Math.random would. */
+/** Per-page-load random salt. Different in every browser/tab/session,
+ *  so block ids minted by two concurrent clients can never collide:
+ *  cross-client uniqueness rests on this ~2.2e9-space salt, and
+ *  within-session uniqueness on the monotonic counter. Previously the
+ *  counter alone provided only intra-session uniqueness (both clients
+ *  could be at counter=5), leaving cross-client collision to a bare
+ *  6-char random — vanishingly unlikely but not impossible, and the
+ *  block-merge `add-add` path had to defend against it. The salt makes
+ *  cross-client collision effectively impossible by construction. */
+const _sessionSalt: string =
+  Math.random().toString(36).slice(2, 8) + Math.random().toString(36).slice(2, 6);
+
+/** Generate a fresh block id: `blk_<sessionSalt>-<counter>`.
+ *  - within a session: the counter guarantees uniqueness
+ *  - across sessions/clients: the per-load salt guarantees uniqueness
+ *  So ids are globally unique without any server coordination. */
 export function newBlockId(): BlockId {
   _idCounter += 1;
-  const rnd = Math.random().toString(36).slice(2, 8);
-  return 'blk_' + rnd + _idCounter.toString(36);
+  return 'blk_' + _sessionSalt + '-' + _idCounter.toString(36);
 }
 
 /** Reset the id counter — for tests that want deterministic ids. */

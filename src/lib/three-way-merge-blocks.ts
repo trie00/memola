@@ -128,11 +128,16 @@ export function threeWayMergeBlocks(
   const yoursMoved = detectMoves(base, yours);
   const theirsMoved = detectMoves(base, theirs);
 
-  // Compute merged id ordering. Strategy: walk an LCS of yours and
-  // theirs orderings (using base as the implicit anchor for what was
-  // there before), interleaving each side's exclusive additions in
-  // their relative position.
-  const orderedIds = mergeOrderings(yours.map((b) => b.id), theirs.map((b) => b.id));
+  // Compute merged id ordering. Base-aware: when *only* theirs reordered
+  // (I kept the base order), follow theirs' ordering so their reorder
+  // isn't silently dropped. When I reordered (or both did), keep mine
+  // — local-wins, matching the long-standing tie-break. Without this,
+  // the old `mergeOrderings` favoured my order on ANY disagreement, so
+  // a pure reorder by the other side was always lost.
+  const preferTheirsOrder = yoursMoved.size === 0 && theirsMoved.size > 0;
+  const orderedIds = mergeOrderings(
+    yours.map((b) => b.id), theirs.map((b) => b.id), preferTheirsOrder,
+  );
 
   const conflicts: BlockConflict[] = [];
   let autoMerged = 0;
@@ -275,8 +280,12 @@ function tryRecursiveContainerMerge(
 /** Merge two orderings into a single sequence preserving relative
  *  order of elements that appear in both. When a position is
  *  ambiguous (= both sides have unique elements at the same anchor),
- *  yours's elements come first. */
-function mergeOrderings(yoursIds: BlockId[], theirsIds: BlockId[]): BlockId[] {
+ *  yours's elements come first. `preferTheirs` flips the reorder
+ *  tie-break so theirs' ordering wins (used when only theirs reordered
+ *  — see caller). */
+function mergeOrderings(
+  yoursIds: BlockId[], theirsIds: BlockId[], preferTheirs = false,
+): BlockId[] {
   const yIdx = new Map<BlockId, number>();
   yoursIds.forEach((id, i) => yIdx.set(id, i));
   const tIdx = new Map<BlockId, number>();
@@ -322,11 +331,18 @@ function mergeOrderings(yoursIds: BlockId[], theirsIds: BlockId[]): BlockId[] {
       out.push(t); emitted.add(t); j++;
       continue;
     }
-    // Both heads exist on the other side at later positions.
-    // Tie-break: emit yours head (= local-wins on reorder).
-    out.push(y);
-    emitted.add(y);
-    i++;
+    // Both heads exist on the other side at later positions = a reorder
+    // disagreement. Tie-break: yours by default (local-wins), or theirs
+    // when `preferTheirs` (= only theirs reordered, so honour it).
+    if (preferTheirs) {
+      out.push(t);
+      emitted.add(t);
+      j++;
+    } else {
+      out.push(y);
+      emitted.add(y);
+      i++;
+    }
   }
   return out;
 }
