@@ -19,6 +19,7 @@ const DRAFT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;       // 7 days
 
 export type DraftReason =
   | 'conflict-discarded'   // user picked 「相手の版を表示」 on conflict
+  | 'page-deleted'         // page was deleted by another user while editing
   | 'manual';              // (future: user explicitly saved a draft)
 
 export interface Draft {

@@ -2,15 +2,19 @@
 // somebody else updated the row. Surface a toast with a "今すぐ反映" link.
 
 import { S } from '../state';
-import { apiLoadFileMeta, apiLoadBlocksBody, serializeBlocks } from '../api/pages';
+import { apiLoadFileMeta, apiLoadBlocksBody, serializeBlocks, apiRestorePage } from '../api/pages';
 import { getListItemEditor, getCurrentUser } from '../api/sync';
-import { doSelect } from './views';
+import { doSelect, showView } from './views';
 import { escapeHtml } from '../lib/html-escape';
 import { prefSyncPollMs, prefLastSeenEtag } from '../lib/prefs';
 import { listenPageSaved } from '../lib/cross-tab-sync';
 import { saver } from '../lib/saver';
 import { planLiveSync } from '../lib/live-sync';
 import { getBlocks, reconcileEditorBlocks, isEditorComposing } from './editor2/editor2-bridge';
+import { toast } from './ui-helpers';
+import { removePages } from '../lib/page-store';
+import { renderTree } from './tree';
+import { saveDraft } from './draft-store';
 
 const DEFAULT_POLL_INTERVAL_MS = 30_000;
 
@@ -59,7 +63,13 @@ async function checkOnce(): Promise<void> {
   if (!page || page.Type === 'database') return;
   try {
     const meta = await apiLoadFileMeta(id);
-    if (!meta) return;
+    if (S.currentId !== id) return;        // navigated away during await
+    // The page we're editing was removed by someone else. Editing /
+    // saving into a deleted row is pointless — prompt the user instead of
+    // silently continuing (hard delete) or writing into a trashed row
+    // (soft delete).
+    if (!meta) { await handlePageRemoved(id, 'purged'); return; }
+    if (meta.trashed > 0) { await handlePageRemoved(id, 'trashed'); return; }
     // ETag-based comparison is the source of truth for "did SP advance
     // beyond what we have?". The Saver atomically updates loadedEtag
     // after every successful save (via saver-bridge), so a mismatch
@@ -90,6 +100,84 @@ async function checkOnce(): Promise<void> {
     const sameUser = !!editor && !!me && editor === me;
     showStaleBanner(editor, meta.modified, id, sameUser);
   } catch { /* ignore transient errors */ }
+}
+
+/** Re-entrancy guard so the 30s poll doesn't stack deletion prompts while
+ *  a confirm() dialog is already open. */
+let _removalPromptOpen = false;
+
+/** The page currently open was removed by another user. Prompt the user:
+ *    - 'trashed' (soft delete): offer to RESTORE it and keep editing, or
+ *      bail (saving unsaved edits to a draft first).
+ *    - 'purged' (hard delete / migrated to a new id — unrecoverable):
+ *      offer to save the in-progress edits as a draft, then close.
+ *  Saving into a deleted row is pointless, so we never just continue. */
+async function handlePageRemoved(id: string, mode: 'trashed' | 'purged'): Promise<void> {
+  if (_removalPromptOpen) return;
+  const st = saver.state();
+  // Only act when the Saver is loaded on THIS page with a base snapshot
+  // (idle / dirty). Mid-conflict / mid-merge states resolve on their own.
+  if (st.kind !== 'idle' && st.kind !== 'dirty') return;
+  if (st.base.pageId !== id) return;
+  _removalPromptOpen = true;
+  try {
+    const dirty = saver.isDirty();
+    const title = (st.kind === 'dirty' ? st.title : st.base.title) || '無題';
+    const editorBody = serializeBlocks(getBlocks());
+
+    if (mode === 'trashed') {
+      const ok = window.confirm(
+        'このページは他のユーザーによって削除（ゴミ箱へ移動）されました。\n\n' +
+        '「OK」: 元に戻して編集を続けます。\n' +
+        '「キャンセル」: ' + (dirty ? '編集内容を下書きに退避して' : '') + 'このページを閉じます。',
+      );
+      if (ok) {
+        await apiRestorePage(id);
+        const m = await apiLoadFileMeta(id).catch(() => null);
+        if (m) { S.sync.loadedEtag = m.etag; S.sync.loadedModified = m.modified; }
+        toast('ページを復元しました。編集を続けられます');
+        return;
+      }
+      if (dirty) {
+        stashDraft(id, title, editorBody, st.base.body, st.base.etag);
+        toast('編集内容を下書きに保存しました（📝 下書き から開けます）');
+      }
+      leaveRemovedPage(id);
+      return;
+    }
+
+    // purged — unrecoverable.
+    const save = window.confirm(
+      'このページは完全に削除されました。元に戻せません。\n\n' +
+      '編集内容を下書きとして保存しますか?\n（📝 下書き から後で開けます）',
+    );
+    if (save) {
+      stashDraft(id, title, editorBody, st.base.body, st.base.etag);
+      toast('下書きに保存しました（📝 下書き から開けます）');
+    }
+    leaveRemovedPage(id);
+  } finally {
+    _removalPromptOpen = false;
+  }
+}
+
+function stashDraft(id: string, title: string, body: string, baseBody: string, baseEtag: string): void {
+  try {
+    saveDraft({ pageId: id, pageTitle: title, title, body, baseBody, baseEtag, reason: 'page-deleted' });
+    void import('./drafts-modal').then((m) => m.refreshDraftsBadge()).catch(() => undefined);
+  } catch { /* draft save is best-effort */ }
+}
+
+/** Detach from a removed page: stop polling, unload the Saver, drop the
+ *  stale row from the local cache, and show the empty state. */
+function leaveRemovedPage(id: string): void {
+  stopWatching();
+  saver.unload();
+  removePages([id]);
+  S.currentId = null;
+  S.currentRow = null;
+  renderTree();
+  showView('empty');
 }
 
 /** Attempt a live block-level merge of a detected foreign edit into the

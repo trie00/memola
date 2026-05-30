@@ -511,9 +511,13 @@ export async function apiLoadBlocksBody(id: string): Promise<string> {
   return raw;
 }
 
-export async function apiLoadFileMeta(id: string): Promise<{ modified: string; etag: string } | null> {
-  const r = await fetchOneRow(id, 'Modified');
-  return r ? { modified: r.modified, etag: r.etag } : null;
+export async function apiLoadFileMeta(
+  id: string,
+): Promise<{ modified: string; etag: string; trashed: number } | null> {
+  const r = await fetchOneRow(id, 'Modified,Trashed');
+  if (!r) return null;
+  const t = (r.row as unknown as { Trashed?: number }).Trashed;
+  return { modified: r.modified, etag: r.etag, trashed: typeof t === 'number' ? t : 0 };
 }
 
 /** Atomic Body_blocks + Modified + ETag fetch.
