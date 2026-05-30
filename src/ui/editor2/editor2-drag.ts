@@ -22,6 +22,27 @@ const TURN_INTO_TYPES: Array<{ cmd: TurnIntoKind; label: string }> = [
   { cmd: 'hr', label: '区切り線' },
 ];
 
+/** Viewport rect of a block's FIRST text line. Uses a Range over the
+ *  block's contents — `getClientRects()` returns one rect per line box,
+ *  so the first non-empty one is the first line at its true rendered
+ *  height (which scales with font size / line-height). Falls back to the
+ *  block's own rect (clamped to its computed line-height) when the block
+ *  has no text lines (e.g. an empty or replaced-element block). */
+function firstLineRect(block: HTMLElement): { top: number; height: number } {
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(block);
+    const rects = range.getClientRects();
+    for (let i = 0; i < rects.length; i++) {
+      if (rects[i].height > 0) return { top: rects[i].top, height: rects[i].height };
+    }
+  } catch { /* selectNodeContents can throw on detached nodes — fall through */ }
+  const r = block.getBoundingClientRect();
+  const lh = parseFloat(window.getComputedStyle(block).lineHeight);
+  const h = isFinite(lh) && lh > 0 ? Math.min(lh, r.height) : r.height;
+  return { top: r.top, height: h };
+}
+
 /** Public API — wire / unwire the drag behaviour. */
 export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void {
   // Floating handle DOM
@@ -43,15 +64,20 @@ export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void
     if (block === hoveredBlock) return;
     hoveredBlock = block;
     const rect = block.getBoundingClientRect();
-    // Default vertical anchor: 4px from the block's top so the
-    // handle aligns with the FIRST line of multi-line blocks
-    // (paragraphs, headings, lists). Short atomic blocks (hr) look
-    // off — center the handle on the rule instead.
     const handleH = handle.offsetHeight || 22;
-    const top = block.dataset.blockKind === 'rule'
-      ? rect.top + window.scrollY + (rect.height - handleH) / 2
-      : rect.top + window.scrollY + 4;
-    handle.style.top = top + 'px';
+    // Vertically center the handle on the block's FIRST text line — not a
+    // fixed offset from the top. This keeps it centered whatever the font
+    // size (large headings, todo rows, callouts), instead of riding high
+    // on tall lines. `rule` has no text line, so center on the whole rule.
+    let lineTop: number;
+    let lineH: number;
+    if (block.dataset.blockKind === 'rule') {
+      lineTop = rect.top; lineH = rect.height;
+    } else {
+      const fl = firstLineRect(block);
+      lineTop = fl.top; lineH = fl.height;
+    }
+    handle.style.top = (lineTop + window.scrollY + (lineH - handleH) / 2) + 'px';
     handle.style.left = (rect.left + window.scrollX - 28) + 'px';
     handle.style.opacity = '1';
     handle.style.pointerEvents = 'auto';
