@@ -16,7 +16,7 @@
 
 import {
   insertText, insertBr, deleteRange, splitBlock, mergeWithPrev,
-  paragraph, inlineLength, sliceInline,
+  paragraph, inlineLength, sliceInline, outdentListItem,
   type EditorState,
 } from './editor-state';
 import type { Block } from '../../lib/blocks';
@@ -153,6 +153,13 @@ export function handleBeforeInput(
         if (unwrap) return { next: unwrap, preventDefault: true };
         const removeItem = backspaceRemoveEmptyInner(state, sel.blockId);
         if (removeItem) return { next: removeItem, preventDefault: true };
+        // Backspace at the start of a NESTED list item → outdent one level
+        // (Notion behaviour). Previously nothing happened — the top-level
+        // merge/remove paths can't see nested items, so a nested bullet
+        // felt impossible to delete. outdentListItem is a no-op for
+        // top-level items, which then fall through to the merge path below.
+        const outdent = outdentListItem(state, sel.blockId);
+        if (outdent !== state) return { next: outdent, preventDefault: true };
         const exitCode = backspaceExitEmptyCode(state, sel.blockId);
         if (exitCode) return { next: exitCode, preventDefault: true };
         const merged = backspaceMergeWithPrev(state, sel.blockId);
