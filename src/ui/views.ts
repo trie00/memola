@@ -228,6 +228,7 @@ export async function doSelect(id: string): Promise<void> {
     syncPubTag();
     refreshNavButtons();
     syncDraftBanner();
+    syncTemplateBanner('page');
     syncPresenceForCurrent();
     // Backlinks panel — render lazily after the editor itself is ready.
     void import('./backlinks').then((m) => m.renderBacklinks());
@@ -254,6 +255,27 @@ export function loadLastOpenedPage(): string | null {
 /** Show the 「下書き」 banner above the title when this page is a draft
  *  duplicate (originPageId set). The banner offers an "原本に適用" button
  *  that copies the body back to the origin and deletes the draft. */
+/** Show a prominent banner when the open page/DB is a TEMPLATE, so the
+ *  user knows they're editing the template itself (not a normal page).
+ *  `which` picks the page-view banner or the DB-view banner. */
+function syncTemplateBanner(which: 'page' | 'db'): void {
+  const pageBn = document.getElementById('memola-template-banner');
+  const dbBn = document.getElementById('memola-template-banner-db');
+  // Hide both first so switching views never leaves a stale banner.
+  if (pageBn) { pageBn.style.display = 'none'; pageBn.innerHTML = ''; }
+  if (dbBn) { dbBn.style.display = 'none'; dbBn.innerHTML = ''; }
+  const meta = S.currentId ? metaById(S.currentId) : null;
+  if (!meta?.isTemplate) return;
+  const bn = which === 'db' ? dbBn : pageBn;
+  if (!bn) return;
+  const kind = meta.type === 'database' ? 'DB' : 'ページ';
+  bn.style.display = '';
+  bn.innerHTML =
+    '<span class="memola-template-banner-icon">🧩</span>' +
+    '<span class="memola-template-banner-msg">これは<b>テンプレート</b>の編集画面です。'
+    + 'ここでの変更は、今後このテンプレートから作成する' + kind + 'に反映されます。</span>';
+}
+
 function syncDraftBanner(): void {
   const bn = document.getElementById('memola-draft-banner');
   if (!bn) return;
@@ -371,6 +393,7 @@ export async function doSelectDb(id: string, page: Page): Promise<void> {
     S.dbSort   = { field: null, asc: true };
     void import('./filter-ui').then((m) => m.renderFilterChips());
     renderDbTable();
+    syncTemplateBanner('db');
     // Self-heal: if any rows were trashed in memola-pages but missed the
     // DB-row write (= process kill mid-soft-delete), the Trashed flag is
     // now visible only via memola-pages. Reconcile by re-applying the

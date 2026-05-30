@@ -51,19 +51,24 @@ export async function apiCreateDb(title: string, parentId: string): Promise<Page
   return await apiCreateDbPageRow(title, parentId, listTitle);
 }
 
-/** Clone a database (new backing list with the same columns + a copy of
- *  its rows) into a fresh DB. Used for both directions of DB templates:
- *    - register (asTemplate=true):  source DB → a template DB (hidden)
- *    - create   (asTemplate=false): template DB → a normal DB
+/** Clone a database's COLUMNS into a fresh DB, optionally copying its rows.
+ *  Used for both directions of DB templates:
+ *    - register (asTemplate=true):  existing DB → a template DB. Rows are
+ *      NOT copied — registering captures the column STRUCTURE only, so the
+ *      template starts empty (the user adds curated seed rows by editing
+ *      the template). copyRows defaults to false here.
+ *    - create   (asTemplate=false): template DB → a normal DB. The
+ *      template's (curated) seed rows ARE copied. copyRows defaults to true.
  *  The source is left untouched. Returns the new DB's page row.
  *
- *  Note: rows are copied one-by-one via apiAddDbRow (accepts display-name
- *  keys), so this is O(rows) requests — fine for the small seed sets DB
- *  templates hold. Trashed rows are skipped. */
+ *  Rows are copied one-by-one via apiAddDbRow (accepts display-name keys),
+ *  O(rows) requests — fine for the small seed sets templates hold. Trashed
+ *  rows are skipped. */
 export async function duplicateDb(
   sourceDbId: string,
-  opts: { asTemplate: boolean },
+  opts: { asTemplate: boolean; copyRows?: boolean },
 ): Promise<Page> {
+  const copyRows = opts.copyRows ?? !opts.asTemplate;
   const meta = metaById(sourceDbId);
   if (!meta || meta.type !== 'database' || !meta.list) {
     throw new Error('DB が見つかりません');
@@ -90,17 +95,20 @@ export async function duplicateDb(
   // 3. Registration row in memola-pages (flagged template when asked).
   const scope = meta.scope || 'user';
   const page = await apiCreateDbPageRow(meta.title || '無題', '', newList, scope, opts.asTemplate);
-  // 4. Copy rows (skip trashed). apiAddDbRow takes display-name keys.
-  const rows = await getListItems(srcList);
-  for (const row of rows) {
-    const r = row as unknown as Record<string, unknown>;
-    if (typeof r.Trashed === 'number' && r.Trashed > 0) continue;
-    const data: Record<string, unknown> = { Title: r.Title ?? '' };
-    for (const f of fields) {
-      const v = r[f.InternalName] ?? r[f.Title];
-      if (v !== undefined && v !== null && v !== '') data[f.Title] = v;
+  // 4. Copy rows (skip trashed) — only when requested. Registering an
+  //    existing DB as a template clears all rows/values (copyRows=false).
+  if (copyRows) {
+    const rows = await getListItems(srcList);
+    for (const row of rows) {
+      const r = row as unknown as Record<string, unknown>;
+      if (typeof r.Trashed === 'number' && r.Trashed > 0) continue;
+      const data: Record<string, unknown> = { Title: r.Title ?? '' };
+      for (const f of fields) {
+        const v = r[f.InternalName] ?? r[f.Title];
+        if (v !== undefined && v !== null && v !== '') data[f.Title] = v;
+      }
+      await apiAddDbRow(newList, data).catch(() => undefined);   // best-effort per row
     }
-    await apiAddDbRow(newList, data).catch(() => undefined);   // best-effort per row
   }
   return page;
 }

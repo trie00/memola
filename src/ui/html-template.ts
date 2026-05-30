@@ -115,6 +115,7 @@ export function buildHtml(): string {
           '</div>' +
         '</div>' +
         '<div id="memola-ct">' +
+          '<div id="memola-template-banner" class="memola-template-banner" style="display:none"></div>' +
           '<div id="memola-draft-banner" style="display:none"></div>' +
           '<div id="memola-pg-hd">' +
             '<div id="memola-icon-wrap">' +
@@ -130,6 +131,7 @@ export function buildHtml(): string {
       '</div></div>' +
       '<div id="memola-dv">' +
         '<div id="memola-dv-inner">' +
+          '<div id="memola-template-banner-db" class="memola-template-banner" style="display:none"></div>' +
           '<div id="memola-dv-hd">' +
             '<div id="memola-dv-icon-wrap">' +
               '<span id="memola-dv-pg-icon"></span>' +

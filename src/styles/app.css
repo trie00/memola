@@ -1343,6 +1343,19 @@
 }
 
 /* ── Draft duplicate banner (above title on draft pages) ── */
+/* テンプレート編集中バナー (ページ / DB 両ビュー共通) */
+#memola-overlay .memola-template-banner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; margin-bottom: 16px;
+  background: rgba(99, 91, 255, 0.10);
+  border: 1px solid rgba(99, 91, 255, 0.30);
+  border-radius: var(--r-3);
+  font-size: var(--fs-sm);
+  color: #4b46b8;
+}
+#memola-overlay .memola-template-banner-icon { font-size: 16px; flex-shrink: 0; }
+#memola-overlay .memola-template-banner-msg { line-height: 1.5; }
+
 #memola-overlay #memola-draft-banner {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 14px; margin-bottom: 16px;
