@@ -19,6 +19,15 @@
 import type { Block, Inline } from '../../lib/blocks';
 import { stampReplacer } from '../../lib/block-stamp';
 
+/** Convert a stored link href into a browser-navigable one. A UNC path
+ *  (`\\server\share\dir\file`) becomes `file://server/share/dir/file`;
+ *  without this the backslashes get resolved relative to the current
+ *  page and the link breaks. Everything else passes through unchanged. */
+function anchorHref(raw: string): string {
+  if (/^\\\\/.test(raw)) return 'file://' + raw.slice(2).replace(/\\/g, '/');
+  return raw;
+}
+
 /** Render `blocks` into `container`. Existing children whose
  *  data-block-id matches a block in `blocks` are reused; others are
  *  removed; new blocks are inserted at the right position. */
@@ -359,7 +368,16 @@ function renderInlineNode(i: Inline): Node {
     }
     case 'link': {
       const a = document.createElement('a');
-      a.href = i.href;
+      // Keep the original value (incl. raw UNC `\\server\share`) on the
+      // element so the link-edit prompt can pre-fill it and the click
+      // router can detect external links via `[data-href]`.
+      a.dataset.href = i.href;
+      a.href = anchorHref(i.href);
+      a.title = i.href;
+      if (/^https?:/i.test(a.getAttribute('href') || '')) {
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+      }
       renderInlineInto(a, i.children);
       return a;
     }

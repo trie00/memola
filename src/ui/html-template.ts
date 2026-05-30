@@ -83,6 +83,7 @@ export function buildHtml(): string {
         '<button class="memola-b" data-cmd="italic" title="斜体"><i>I</i></button>' +
         '<button class="memola-b" data-cmd="strike" title="取り消し線"><s>S</s></button>' +
         '<button class="memola-b" data-cmd="code" title="インラインコード">' + ICONS.code + '</button>' +
+        '<button class="memola-b" data-cmd="link" title="リンク（URL / UNCパス）">' + ICONS.link + '</button>' +
         '<span class="memola-bs"></span>' +
         '<button class="memola-b" data-cmd="ul" title="箇条書き">' + ICONS.ul + '</button>' +
         '<button class="memola-b" data-cmd="ol" title="番号付きリスト">' + ICONS.ol + '</button>' +
@@ -239,6 +240,7 @@ export function buildHtml(): string {
       '<button class="memola-fb" data-cmd="italic" title="斜体"><i>I</i></button>' +
       '<button class="memola-fb" data-cmd="strike" title="取り消し線"><s>S</s></button>' +
       '<button class="memola-fb" data-cmd="code" title="インラインコード">' + ICONS.code + '</button>' +
+      '<button class="memola-fb" data-cmd="link" title="リンク（URL / UNCパス）">' + ICONS.link + '</button>' +
       '<span class="memola-fb-sep"></span>' +
       '<button class="memola-fb" data-cmd="h1" title="見出し1"><b>H1</b></button>' +
       '<button class="memola-fb" data-cmd="h2" title="見出し2"><b>H2</b></button>' +

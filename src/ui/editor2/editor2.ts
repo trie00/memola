@@ -21,6 +21,7 @@ import {
   insertText as insertTextStatic,
   applyInlineFormat, insertPagelink, insertBlockAfter,
   indentListItem, outdentListItem,
+  applyLink, insertLinkText,
   type InlineFormatKind,
 } from './editor-state';
 import type { Block as BlockType } from '../../lib/blocks';
@@ -70,6 +71,10 @@ export interface Editor {
   toggleInlineFormat(kind: InlineFormatKind): void;
   /** Insert a `[[pageId]]` page-link at the caret. */
   insertPagelink(pageId: string, alias?: string): void;
+  /** Set (or, with an empty href, clear) a URL link on the current
+   *  selection. With a range it wraps the selected text; with a bare
+   *  caret it inserts the href as link text. */
+  setLink(href: string): void;
   /** Insert a fresh block AFTER the block currently containing the
    *  caret. Useful for slash menu's "insert image / linkdb" etc. */
   insertBlockAfterCurrent(block: BlockType): void;
@@ -335,6 +340,29 @@ export function createEditor(rootEl: HTMLElement, opts: EditorOpts = {}): Editor
       const sel = captureSelection(rootEl);
       if (!sel || sel.kind !== 'caret') return;
       setState(insertPagelink(state, sel.blockId, sel.offset, pageId, alias), 'structural');
+    },
+    setLink(href: string): void {
+      // Mirror toggleInlineFormat's selection handling: a toolbar click can
+      // briefly disturb the live DOM selection (and window.prompt blurs it
+      // entirely), so fall back to the cached state.selection.
+      const live = captureSelection(rootEl);
+      const sel = live ?? state.selection;
+      if (!sel) return;
+      if (sel.kind === 'range' && sel.anchorBlockId === sel.focusBlockId) {
+        const from = Math.min(sel.anchorOffset, sel.focusOffset);
+        const to = Math.max(sel.anchorOffset, sel.focusOffset);
+        const stateWithSel: EditorState = {
+          ...state,
+          selection: {
+            kind: 'range',
+            anchorBlockId: sel.anchorBlockId, anchorOffset: from,
+            focusBlockId: sel.anchorBlockId, focusOffset: to,
+          },
+        };
+        setState(applyLink(stateWithSel, sel.anchorBlockId, from, to, href), 'structural');
+      } else if (sel.kind === 'caret' && href) {
+        setState(insertLinkText(state, sel.blockId, sel.offset, href), 'structural');
+      }
     },
     insertBlockAfterCurrent(block: BlockType): void {
       const sel = captureSelection(rootEl);

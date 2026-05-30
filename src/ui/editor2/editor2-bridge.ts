@@ -168,6 +168,17 @@ function attachBottomClickHandler(editor: Editor, rootEl: HTMLElement): () => vo
 function attachPageLinkClicks(rootEl: HTMLElement): () => void {
   const onClick = (ev: MouseEvent): void => {
     const t = ev.target as HTMLElement | null;
+    // External URL / UNC link (data-href) → open in a new tab. Inside a
+    // contenteditable a plain <a> click only moves the caret, so we open
+    // it ourselves.
+    const ext = t?.closest?.('a[data-href]') as HTMLAnchorElement | null;
+    if (ext && rootEl.contains(ext)) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const url = ext.getAttribute('href') || '';
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
+      return;
+    }
     const a = t?.closest?.('a.memola-page-link') as HTMLAnchorElement | null;
     if (!a || !rootEl.contains(a)) return;
     ev.preventDefault();
@@ -298,6 +309,18 @@ export function editor2ExecCmd(cmd: string): boolean {
     case 'strike':     ed.toggleInlineFormat('strike'); return true;
     case 'codeInline':
     case 'code':       ed.toggleInlineFormat('code');   return true;
+    case 'link': {
+      // Pre-fill with the existing href when the selection sits on a single
+      // link (so the user can edit / clear it). Empty input = unlink.
+      const existing = currentLinkHref();
+      const input = window.prompt(
+        'リンク先 URL を入力（UNC パス \\\\server\\share\\... も可。空欄で解除）',
+        existing,
+      );
+      if (input === null) return true;                 // cancelled
+      ed.setLink(normalizeLinkHref(input.trim()));
+      return true;
+    }
     // Block-kind toggles (paragraph / heading / todo)
     case 'p':
     case 'h1':
@@ -345,6 +368,37 @@ export function editor2ExecCmd(cmd: string): boolean {
     }
   }
   return false;
+}
+
+/** Raw href of the link the caret currently sits in, or '' if none.
+ *  Reads the `data-href` we stamp on rendered link anchors (which holds
+ *  the original, un-normalized value — e.g. a `\\server\share` UNC path),
+ *  so the prompt can pre-fill it for editing. Page/daily links carry
+ *  `data-page-id`/`data-daily-date` instead of `data-href`, so they're
+ *  correctly excluded. */
+function currentLinkHref(): string {
+  const sel = window.getSelection();
+  const node = sel?.anchorNode;
+  const el = node ? (node.nodeType === 1 ? node as Element : node.parentElement) : null;
+  const a = el?.closest<HTMLElement>('a[data-href]');
+  return a?.dataset.href ?? '';
+}
+
+/** Normalize user-entered link text into a stored href.
+ *   - `javascript:` URLs are rejected (returns '' → no link).
+ *   - UNC paths (`\\server\share\…`) are kept verbatim; the renderer
+ *     converts them to a `file://` form for the clickable anchor.
+ *   - Anything with an explicit scheme (http/https/file/mailto/tel/…)
+ *     is kept as-is.
+ *   - A bare domain (`example.com/x`) gets an `https://` prefix.
+ *   - Everything else (relative paths, etc.) is kept as typed. */
+function normalizeLinkHref(s: string): string {
+  if (!s) return '';
+  if (/^javascript:/i.test(s)) return '';
+  if (/^\\\\/.test(s)) return s;                       // UNC — keep raw
+  if (/^[a-zA-Z][\w+.-]*:/.test(s)) return s;          // already has a scheme
+  if (/^[\w-]+(\.[\w-]+)+(\/|$|[?#:])/.test(s)) return 'https://' + s; // bare domain
+  return s;
 }
 
 /** Construct a fresh block instance for one of the block-shape

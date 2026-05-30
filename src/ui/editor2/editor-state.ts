@@ -845,6 +845,72 @@ function mergeAdjacentTextLocal(inline: Inline[]): Inline[] {
   return out;
 }
 
+/** Wrap the range `[fromOffset, toOffset)` of a single block in a URL
+ *  link with `href`. Any existing link wrappers inside the range are
+ *  stripped first (so re-linking replaces the target). An empty `href`
+ *  just unlinks the range. Bold / italic / strike formatting inside the
+ *  range is preserved. */
+export function applyLink(
+  state: EditorState,
+  blockId: BlockId,
+  fromOffset: number,
+  toOffset: number,
+  href: string,
+): EditorState {
+  if (fromOffset >= toOffset) return state;
+  const found = findBlockPath(state, blockId);
+  if (!found) return state;
+  const { block } = found;
+  if (!('inline' in block)) return state;
+  const before = sliceInline(block.inline, 0, fromOffset);
+  const middle = stripLink(sliceInline(block.inline, fromOffset, toOffset));
+  const after = sliceInline(block.inline, toOffset, Infinity);
+  const newMiddle: Inline[] = href && middle.length > 0
+    ? [{ kind: 'link', href, children: middle }]
+    : middle;
+  const merged = sliceInline([...before, ...newMiddle, ...after], 0, Infinity);
+  return setBlockInline(state, blockId, merged);
+}
+
+/** Recursively remove `link` wrappers, keeping their children. Preserves
+ *  bold/italic/strike wrappers (recursing into them). */
+function stripLink(inline: Inline[]): Inline[] {
+  const out: Inline[] = [];
+  for (const i of inline) {
+    if (i.kind === 'link') { out.push(...stripLink(i.children)); continue; }
+    if (i.kind === 'bold' || i.kind === 'italic' || i.kind === 'strike') {
+      out.push({ kind: i.kind, children: stripLink(i.children) });
+      continue;
+    }
+    out.push(i);
+  }
+  return mergeAdjacentTextLocal(out);
+}
+
+/** Insert a fresh link at the caret whose visible text is the href
+ *  itself (used when the link command runs with no text selected, e.g.
+ *  pasting a bare URL/UNC path). Caret lands after the inserted link. */
+export function insertLinkText(
+  state: EditorState,
+  blockId: BlockId,
+  offset: number,
+  href: string,
+): EditorState {
+  if (!href) return state;
+  const found = findBlockPath(state, blockId);
+  if (!found) return state;
+  const { block } = found;
+  if (!('inline' in block)) return state;
+  const before = sliceInline(block.inline, 0, offset);
+  const after = sliceInline(block.inline, offset, Infinity);
+  const link: Inline = { kind: 'link', href, children: [{ kind: 'text', text: href }] };
+  const merged = sliceInline([...before, link, ...after], 0, Infinity);
+  return {
+    ...setBlockInline(state, blockId, merged),
+    selection: { kind: 'caret', blockId, offset: offset + href.length },
+  };
+}
+
 /** Insert a `[[pageId]]` page-link at the caret. The caller (page
  *  picker) is responsible for resolving the alias. */
 export function insertPagelink(
