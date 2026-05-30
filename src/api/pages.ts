@@ -11,6 +11,7 @@ import {
   addListField,
   createListItem,
   updateListItem,
+  updateListItemIfMatch,
   deleteListItem,
   deleteList,
   getListItems,
@@ -640,29 +641,42 @@ async function saveBodyInternal(
   blocksJson: string,
   expectedEtag?: string,
 ): Promise<{ ok: true; etag: string } | { ok: false; reason: 'conflict' }> {
-  if (!pageIdToItemId(id)) throw new Error('invalid page id');
-  if (expectedEtag) {
-    const cur = await fetchOneRow(id, 'Modified');
-    if (cur && cur.etag && cur.etag !== expectedEtag) return { ok: false, reason: 'conflict' };
-  }
+  const itemId = pageIdToItemId(id);
+  if (!itemId) throw new Error('invalid page id');
   const p = metaById(id);
-  // If the page is currently published, this edit creates a divergence with
-  // the Site Page mirror. Mark that *now* (in-memory) so the "公開中" tag
-  // can flip to "未反映" before the SP round-trip finishes. We also persist
-  // it as a column write — auto-sync on save was removed by design; sync is
-  // opt-in via the tag popover.
+  const published = !!p?.published;
+  const fields: Record<string, unknown> = { Title: title, Body_blocks: blocksJson };
+  if (published) fields.PublishedDirty = 1;
+
+  if (expectedEtag) {
+    // Atomic optimistic concurrency: SharePoint rejects the write with
+    // 412 if the row advanced since `expectedEtag` was read. This closes
+    // the TOCTOU window that the old read-then-compare (fetch etag →
+    // compare → blind validateUpdate) left open — two concurrent saves
+    // could both pass the compare and the second would clobber the first.
+    const list = listForPageId(id);
+    const res = await updateListItemIfMatch(list, itemId, fields, expectedEtag);
+    if (!res.ok) return { ok: false, reason: 'conflict' };
+  } else {
+    // No expected etag = deliberate force-overwrite (conflict modal's
+    // 「上書きで保存」). Blind write, no concurrency guard by design.
+    await updatePageRow(id, fields);
+  }
+
+  // Write succeeded — now reflect it in-memory. (Done AFTER the write so
+  // a 412 doesn't leave a phantom title / publishedDirty mark.)
   if (p) {
     p.title = title;
-    if (p.published) p.publishedDirty = true;
+    if (published) p.publishedDirty = true;
   }
-  const fields: Record<string, unknown> = { Title: title, Body_blocks: blocksJson };
-  if (p?.published) fields.PublishedDirty = 1;
-  // Body save is also an memola-pages row update — the funnel handles
-  // ETag tracking + watermark refresh in one place.
-  await updatePageRow(id, fields);
+  // Refresh the foreground-poll watermark so we don't see our own write
+  // as a foreign edit. (updatePageRow does this internally; the If-Match
+  // path needs it explicitly.)
   const fresh = await fetchOneRow(id, 'Modified');
-  // The Saver's baseline (saver.state().base) is updated atomically on
-  // its own save success path; nothing extra needed here.
+  if (fresh && S.sync.pageId === id) {
+    S.sync.loadedEtag = fresh.etag;
+    S.sync.loadedModified = fresh.modified;
+  }
   // Body changed — drop the backlinks cache so the next "リンク元" panel
   // render reflects newly-added / removed `[[..]]` references.
   invalidateBacklinkCache();

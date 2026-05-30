@@ -220,6 +220,18 @@ async function handle(input: RequestInfo | URL, init?: RequestInit): Promise<Res
         return ok();
       }
       if (xMethod === 'MERGE' || xMethod === 'PATCH') {
+        // Honour If-Match for optimistic concurrency so the dev shell can
+        // exercise the 412 conflict path (A1). `If-Match: *` (or absent)
+        // = unconditional. Otherwise compare against the item's etag.
+        const ifMatch = (init?.headers as Record<string, string> | undefined)?.['IF-MATCH']
+          ?? (init?.headers as Record<string, string> | undefined)?.['If-Match']
+          ?? (init?.headers instanceof Headers
+            ? (init.headers.get('IF-MATCH') ?? init.headers.get('If-Match'))
+            : null);
+        const curEtag = (items[idx].__metadata as { etag?: string } | undefined)?.etag;
+        if (ifMatch && ifMatch !== '*' && curEtag && ifMatch !== curEtag) {
+          return new Response('', { status: 412 });
+        }
         const body = init?.body ? JSON.parse(init.body as string) : {};
         STATE.etag++;
         items[idx] = {

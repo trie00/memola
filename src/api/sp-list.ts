@@ -631,6 +631,52 @@ export async function updateListItem(
   await callValidateUpdate(listTitle, itemId, data, /* allowRetry */ true);
 }
 
+/** Atomic optimistic-concurrency update via MERGE + `If-Match: <etag>`.
+ *
+ *  Unlike `updateListItem` (validateUpdateListItem, which ignores the
+ *  ETag and always overwrites), this lets SharePoint reject the write
+ *  *atomically* when the row advanced since `etag` was read — closing
+ *  the read-then-compare TOCTOU window that could silently clobber a
+ *  concurrent save. Returns `{ ok: false, reason: 'conflict' }` on a
+ *  412 Precondition Failed; throws on any other failure.
+ *
+ *  MERGE uses the entity-type schema, so `data` keys must be canonical
+ *  InternalNames. Intended for the body-save path (Title / Body_blocks /
+ *  PublishedDirty — all ASCII names), NOT for Japanese-named DB columns
+ *  (those keep using validateUpdateListItem). `_`-prefixed (encoded
+ *  non-ASCII) keys are OData_-prefixed to match `createListItem`. */
+export async function updateListItemIfMatch(
+  listTitle: string,
+  itemId: number,
+  data: Record<string, unknown>,
+  etag: string,
+): Promise<{ ok: true } | { ok: false; reason: 'conflict' }> {
+  const et = await getListEntityType(listTitle);
+  const d = await getDigest();
+  const payload: Record<string, unknown> = { __metadata: { type: et } };
+  for (const k of Object.keys(data)) {
+    if (k === '__metadata') continue;
+    const outKey = k.startsWith('_') ? 'OData_' + k : k;
+    payload[outKey] = data[k];
+  }
+  const r = await fetch(spListUrl(listTitle, '/items(' + itemId + ')'), {
+    method: 'POST',
+    headers: {
+      ...ODATA_POST_HEADERS,
+      'X-RequestDigest': d,
+      'X-HTTP-Method': 'MERGE',
+      'IF-MATCH': etag,
+    },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  if (r.ok) return { ok: true };
+  if (r.status === 412) return { ok: false, reason: 'conflict' };
+  const txt = await r.text().catch(() => '');
+  const detail = extractSpErrorDetail(txt);
+  throw new Error('更新失敗(If-Match): ' + r.status + (detail ? ' — ' + detail : ''));
+}
+
 async function callValidateUpdate(
   listTitle: string,
   itemId: number,
