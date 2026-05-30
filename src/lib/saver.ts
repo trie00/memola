@@ -39,7 +39,7 @@ import {
 import { blocksToMd, mdToBlocks } from './blocks-md';
 import { parseBlocksJson as parseBlocksJsonLib } from '../api/pages';
 import { threeWayMergeBlocks } from './three-way-merge-blocks';
-import { stampBodyForSave } from './block-stamp';
+import { stampBodyForSave, bodiesContentEqual } from './block-stamp';
 import { S } from '../state';
 
 /** Stamp the to-save body with the current user + now on blocks whose
@@ -255,7 +255,7 @@ class Saver {
       etag: theirs.etag,
       modified: theirs.modified,
     };
-    if (editorBody === newBase.body && editorTitle === newBase.title) {
+    if (bodiesContentEqual(editorBody, newBase.body) && editorTitle === newBase.title) {
       this._set({ kind: 'idle', base: newBase });
     } else {
       this._set({ kind: 'dirty', base: newBase, body: editorBody, title: editorTitle });
@@ -281,11 +281,16 @@ class Saver {
       case 'unloaded':
         return; // no baseline, nothing to compare
       case 'idle':
-        if (body === s.base.body && title === s.base.title) return;
+        // Stamp-insensitive (D2): the editor's blocks are unstamped while
+        // base.body carries per-block lastBy/lastAt from the last save.
+        // Comparing raw strings would flag a spurious "dirty" (and a
+        // spurious save) on any innocuous editor event after a save —
+        // the cause of the 「何も変えてないのに 未保存↔保存中」cycle.
+        if (bodiesContentEqual(body, s.base.body) && title === s.base.title) return;
         this._set({ kind: 'dirty', base: s.base, body, title });
         return;
       case 'dirty':
-        if (body === s.base.body && title === s.base.title) {
+        if (bodiesContentEqual(body, s.base.body) && title === s.base.title) {
           this._set({ kind: 'idle', base: s.base });
         } else {
           this._set({ kind: 'dirty', base: s.base, body, title });
@@ -318,7 +323,7 @@ class Saver {
           // short-circuit until the next save.
           modified: c.base.modified,
         };
-        if (body === base.body && title === base.title) {
+        if (bodiesContentEqual(body, base.body) && title === base.title) {
           this._set({ kind: 'idle', base });
         } else {
           this._set({ kind: 'dirty', base, body, title });
@@ -597,8 +602,8 @@ class Saver {
       etag: c.base.etag,
       modified: c.base.modified,
     };
-    // ours might match base → idle; else dirty
-    if (c.ours.body === base.body && c.ours.title === base.title) {
+    // ours might match base → idle; else dirty (stamp-insensitive)
+    if (bodiesContentEqual(c.ours.body, base.body) && c.ours.title === base.title) {
       this._set({ kind: 'idle', base });
     } else {
       this._set({ kind: 'dirty', base, body: c.ours.body, title: c.ours.title });

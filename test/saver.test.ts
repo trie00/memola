@@ -116,6 +116,20 @@ describe('Saver — edit', () => {
     expect(mod.saver.state().kind).toBe('dirty');
   });
 
+  it('stays idle when only per-block stamps differ (D2 — no spurious dirty)', () => {
+    // base body carries lastBy/lastAt (as after a save); the editor
+    // re-reports the same content WITHOUT stamps. This must NOT be
+    // treated as an edit (else: spurious 未保存→保存中 cycling).
+    const stamped = '[{"id":"b1","kind":"p","inline":[{"kind":"text","text":"x"}],"lastBy":7,"lastAt":99}]';
+    const unstamped = '[{"id":"b1","kind":"p","inline":[{"kind":"text","text":"x"}]}]';
+    mod.saver.loadPage(SNAP({ body: stamped }));
+    mod.saver.notifyEdit(unstamped, 'Page');
+    expect(mod.saver.state().kind).toBe('idle');
+    // a genuine content change is still detected
+    mod.saver.notifyEdit('[{"id":"b1","kind":"p","inline":[{"kind":"text","text":"y"}]}]', 'Page');
+    expect(mod.saver.state().kind).toBe('dirty');
+  });
+
   it('dirty → idle when user undoes back to base', () => {
     mod.saver.notifyEdit('hello world', 'Page');
     mod.saver.notifyEdit('hello', 'Page');
