@@ -98,8 +98,7 @@ export async function toggleCurrentPageScope(): Promise<void> {
 
   // Link-validity warnings. The scope change physically moves the row to a
   // list with different visibility, so cross-scope links break for others.
-  const warn = await scopeChangeLinkWarning(id, next);
-  if (warn && !confirm(warn)) return;
+  if (!await confirmScopeChangeLinks(id, next)) return;
 
   try {
     const { rootId } = await apiSetScope(id, next);
@@ -125,6 +124,15 @@ export async function toggleCurrentPageScope(): Promise<void> {
   } catch (e) {
     toast('スコープ変更に失敗: ' + (e as Error).message, 'err');
   }
+}
+
+/** Shared by every scope-change entry point (scope tag / page menu AND the
+ *  sidebar tree's drag-to-other-scope). Shows the link-invalidation warning
+ *  (if any) and returns false when the user cancels, true to proceed. */
+export async function confirmScopeChangeLinks(id: string, next: PageScope): Promise<boolean> {
+  const warn = await scopeChangeLinkWarning(id, next);
+  if (warn && !window.confirm(warn)) return false;
+  return true;
 }
 
 /** Build a confirmation warning when the scope change would invalidate

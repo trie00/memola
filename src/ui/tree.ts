@@ -95,6 +95,11 @@ async function confirmAndMaybeMigrateScope(
     '続行しますか?',
   );
   if (!ok) return null;
+  // Same link-invalidation warning as the scope tag / page menu: promoting
+  // a page that links to private pages, or demoting one that has inbound
+  // links, breaks those links for other users.
+  const { confirmScopeChangeLinks } = await import('./scope-tag');
+  if (!await confirmScopeChangeLinks(dragId, target)) return null;
   const res = await apiSetScope(dragId, target).catch(() => null);
   // Cross-list migration changes the id — return the new one so the caller
   // moves/reorders the migrated row, not the deleted original.
@@ -479,6 +484,8 @@ function wireSectionDrop(container: HTMLElement, sectionScope: PageScope): void 
           '続行しますか?',
         );
         if (!ok) return;
+        const { confirmScopeChangeLinks } = await import('./scope-tag');
+        if (!await confirmScopeChangeLinks(dragId, sectionScope)) return;
         const res = await apiSetScope(dragId, sectionScope).catch(() => null);
         if (res) movedId = res.rootId;
       }
