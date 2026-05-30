@@ -1149,6 +1149,56 @@ export function tableRemoveCol(
   return replaceBlock(state, found.idx, { ...tbl, rows });
 }
 
+/** Move the row at `at` by `delta` (-1 = up, +1 = down). No-op when the
+ *  destination is out of range. */
+export function tableMoveRow(
+  state: EditorState,
+  blockId: BlockId,
+  at: number,
+  delta: number,
+): EditorState {
+  const found = findBlock(state, blockId);
+  if (!found || found.block.kind !== 'table') return state;
+  const tbl = found.block;
+  const to = at + delta;
+  if (at < 0 || at >= tbl.rows.length || to < 0 || to >= tbl.rows.length) return state;
+  const rows = tbl.rows.slice();
+  const [moved] = rows.splice(at, 1);
+  rows.splice(to, 0, moved);
+  return replaceBlock(state, found.idx, { ...tbl, rows });
+}
+
+/** Move the column at `at` by `delta` (-1 = left, +1 = right). Carries the
+ *  column's width with it. No-op when the destination is out of range. */
+export function tableMoveCol(
+  state: EditorState,
+  blockId: BlockId,
+  at: number,
+  delta: number,
+): EditorState {
+  const found = findBlock(state, blockId);
+  if (!found || found.block.kind !== 'table') return state;
+  const tbl = found.block;
+  const cols = tbl.rows[0]?.length || 0;
+  const to = at + delta;
+  if (at < 0 || at >= cols || to < 0 || to >= cols) return state;
+  const rows = tbl.rows.map((r) => {
+    const next = r.slice();
+    const [m] = next.splice(at, 1);
+    next.splice(to, 0, m);
+    return next;
+  });
+  const next: typeof tbl = { ...tbl, rows };
+  if (tbl.colWidths && tbl.colWidths.length) {
+    const w = tbl.colWidths.slice();
+    while (w.length < cols) w.push(0);
+    const [mw] = w.splice(at, 1);
+    w.splice(to, 0, mw);
+    next.colWidths = w;
+  }
+  return replaceBlock(state, found.idx, next);
+}
+
 /** Update one cell's inline content. */
 export function tableSetCell(
   state: EditorState,

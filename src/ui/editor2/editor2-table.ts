@@ -10,6 +10,7 @@
 import type { Editor } from './editor2';
 import {
   tableAddRow, tableAddCol, tableRemoveRow, tableRemoveCol, tableSetCell,
+  tableMoveRow, tableMoveCol,
 } from './editor-state';
 import type { Inline } from '../../lib/blocks';
 import { inlineToPlainText } from '../../lib/blocks';
@@ -690,6 +691,17 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     menu.appendChild(item('↓ 下に行を追加', () => {
       editor.applyMutation((s) => tableAddRow(s, blockId, row + 1), 'structural');
     }));
+    const rowCount = isTable ? block.rows.length : 0;
+    if (row > 0) {
+      menu.appendChild(item('⤴ 行を上に移動', () => {
+        editor.applyMutation((s) => tableMoveRow(s, blockId, row, -1), 'structural');
+      }));
+    }
+    if (row < rowCount - 1) {
+      menu.appendChild(item('⤵ 行を下に移動', () => {
+        editor.applyMutation((s) => tableMoveRow(s, blockId, row, +1), 'structural');
+      }));
+    }
     menu.appendChild(item('行を削除', () => {
       editor.applyMutation((s) => tableRemoveRow(s, blockId, row), 'structural');
     }, true));
@@ -700,6 +712,17 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     menu.appendChild(item('→ 右に列を追加', () => {
       editor.applyMutation((s) => tableAddCol(s, blockId, col + 1), 'structural');
     }));
+    const colCount = isTable ? (block.rows[0]?.length || 0) : 0;
+    if (col > 0) {
+      menu.appendChild(item('⬅ 列を左に移動', () => {
+        editor.applyMutation((s) => tableMoveCol(s, blockId, col, -1), 'structural');
+      }));
+    }
+    if (col < colCount - 1) {
+      menu.appendChild(item('➡ 列を右に移動', () => {
+        editor.applyMutation((s) => tableMoveCol(s, blockId, col, +1), 'structural');
+      }));
+    }
     menu.appendChild(item('列を削除', () => {
       editor.applyMutation((s) => tableRemoveCol(s, blockId, col), 'structural');
     }, true));
