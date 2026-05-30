@@ -6,7 +6,7 @@ import { apiLoadFileMeta, apiLoadBlocksBody, serializeBlocks } from '../api/page
 import { getListItemEditor, getCurrentUser } from '../api/sync';
 import { doSelect } from './views';
 import { escapeHtml } from '../lib/html-escape';
-import { prefSyncPollMs } from '../lib/prefs';
+import { prefSyncPollMs, prefLastSeenEtag } from '../lib/prefs';
 import { listenPageSaved } from '../lib/cross-tab-sync';
 import { saver } from '../lib/saver';
 import { planLiveSync } from '../lib/live-sync';
@@ -133,6 +133,10 @@ async function tryLiveSync(
     plan.mergedBody,
     editorTitle,
   );
+  // The user has now SEEN this remote version (folded in live), so
+  // advance the since-last-view marker — a later revisit shouldn't
+  // re-notify about an edit already shown.
+  prefLastSeenEtag(id).set(theirsEtag);
   return true;
 }
 

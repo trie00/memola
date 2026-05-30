@@ -14,6 +14,7 @@ import { S } from '../state';
 import { setSave } from '../ui/ui-helpers';
 import { saver, type SaverState } from './saver';
 import { broadcastPageSaved } from './cross-tab-sync';
+import { prefLastSeenEtag } from './prefs';
 
 let _attached = false;
 /** Tracks the previous saver state kind so we can detect the
@@ -54,6 +55,12 @@ function onState(s: SaverState): void {
       // load (= idle is also the state right after `loadPage`).
       if (prev === 'saving' || prev === 'merging') {
         broadcastPageSaved(s.base.pageId, s.base.etag, s.base.modified);
+        // Advance the "last seen etag" past our OWN save so a later
+        // revisit of this page doesn't pop the since-last-view banner
+        // ("前回の表示以降に〈自分〉が更新しました") for the user's own
+        // edit. That marker is otherwise only updated on page load, so
+        // a save → navigate-away → return cycle self-notified.
+        prefLastSeenEtag(s.base.pageId).set(s.base.etag);
         // Refresh the sidebar after every save commit. apiSavePageBlocks
         // already mutates `S.meta.pages[id].title` in place when the
         // title changed, but nothing was triggering a tree re-render —
