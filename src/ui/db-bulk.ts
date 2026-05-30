@@ -7,6 +7,7 @@ import { S } from '../state';
 import { setLoad, toast } from './ui-helpers';
 import { renderDbTable } from './views';
 import { deleteRowWithUndo, addRowWithUndo } from './db-history';
+import { setRowColor, openColorPalette } from './db-view-colors';
 
 let _bar: HTMLElement | null = null;
 
@@ -18,6 +19,7 @@ function ensureBar(): HTMLElement {
   el.className = 'memola-db-bulkbar';
   el.innerHTML =
     '<span class="memola-db-bulkbar-count">0 件選択</span>' +
+    '<button class="memola-db-bulkbar-btn" data-act="color">色</button>' +
     '<button class="memola-db-bulkbar-btn" data-act="dup">複製</button>' +
     '<button class="memola-db-bulkbar-btn danger" data-act="del">削除</button>' +
     '<button class="memola-db-bulkbar-btn ghost" data-act="clr">解除</button>';
@@ -39,6 +41,16 @@ function onClick(e: Event): void {
   }
   if (act === 'del') void doDelete();
   else if (act === 'dup') void doDuplicate();
+  else if (act === 'color') {
+    // View-level highlight of the selected rows (doesn't touch the data).
+    const ids = Array.from(S.dbSelected);
+    if (ids.length === 0) return;
+    const r = (t.getBoundingClientRect());
+    openColorPalette(r.left, r.bottom + 4, (color) => {
+      for (const id of ids) setRowColor(S.dbList, id, color);
+      renderDbTable();
+    });
+  }
 }
 
 async function doDelete(): Promise<void> {

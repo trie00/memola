@@ -59,6 +59,13 @@ function jsonPref<T>(key: string, fallback: T) {
   };
 }
 
+// ── DB view-level colours ──────────────────────────────────────────────
+// Manual highlight overlay stored PER DB LIST (not on the row data, so the
+// structured data stays clean). Shape: { [listTitle]: { rows: {rowId:color},
+// cols: {internalName:color} } }. Applied at render time only.
+export interface DbColorMap { rows?: Record<string, string>; cols?: Record<string, string> }
+export const prefDbViewColors = jsonPref<Record<string, DbColorMap>>('memola.dbViewColors', {});
+
 // ── AI ────────────────────────────────────────────────────────────────
 // (The body of these prefs is wrapped by api/ai-settings.ts which adds
 //  per-pref validation. UI code should prefer api/ai-settings exports.)

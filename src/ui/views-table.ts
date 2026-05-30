@@ -17,6 +17,14 @@ import {
 } from '../lib/db-order';
 import { recordCellChange, recordRowOrderChange, recordColOrderChange, deleteRowWithUndo } from './db-history';
 import { renderBulkBar } from './db-bulk';
+import {
+  getDbColors, gcDbColors, cellOverlay, setColColor, openColorPalette,
+} from './db-view-colors';
+import type { DbColorMap } from '../lib/prefs';
+
+/** View-level colour overlay for the current render pass. Set at the top of
+ *  renderDbTable so mkDbRow / header can read it without re-parsing prefs. */
+let _renderColors: DbColorMap = {};
 
 export function getDbFields(): ListField[] {
   // 2=text, 3=multiline, 4=date, 6=choice, 8=bool, 9=number
@@ -113,6 +121,9 @@ export function renderDbTable(): void {
   const tbody = g('dtb');
   thead.innerHTML = ''; tbody.innerHTML = '';
   const fields = getDbFields();
+  // View-level colour overlay (option A): read once per render, prune stale rows.
+  _renderColors = getDbColors(S.dbList);
+  gcDbColors(S.dbList, S.dbItems.map((it) => it.Id));
 
   // Reflect "any-selected" mode on the table so CSS can switch to always-show
   const dt = g('dt');
@@ -149,6 +160,22 @@ export function renderDbTable(): void {
     headerSpan.className = 'memola-th-label';
     headerSpan.innerHTML = f.Title + (isSorted ? '<span class="sort-arrow">' + (S.dbSort.asc ? '▲' : '▼') + '</span>' : '');
     th.appendChild(headerSpan);
+    // Column colour (view-level overlay) — hover-revealed 🎨 in the header.
+    const colorBtn = document.createElement('button');
+    colorBtn.className = 'memola-th-color';
+    colorBtn.title = '列の色';
+    colorBtn.textContent = '🎨';
+    colorBtn.draggable = false;
+    colorBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
+    colorBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const r = colorBtn.getBoundingClientRect();
+      openColorPalette(r.left, r.bottom + 4, (color) => {
+        setColColor(S.dbList, f.InternalName, color);
+        renderDbTable();
+      });
+    });
+    th.appendChild(colorBtn);
     th.dataset.field = f.InternalName;
     th.dataset.colIdx = String(idx);
     th.draggable = true;            // ← columns are drag-reorderable
@@ -302,6 +329,8 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
   // Leading checkbox cell — visibility controlled via CSS (hover or any-selected)
   const cbTd = document.createElement('td');
   cbTd.className = 'memola-td-cb';
+  const _rowBg = _renderColors.rows?.[String(item.Id)];
+  if (_rowBg) cbTd.style.background = _rowBg;     // colour the whole row, incl. the cb cell
   const cb = document.createElement('input');
   cb.type = 'checkbox';
   cb.className = 'memola-cb';
@@ -350,6 +379,9 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
   tr.appendChild(cbTd);
   fields.forEach((f) => {
     const td = document.createElement('td');
+    // View-level highlight overlay (column colour wins over row colour).
+    const _ovBg = cellOverlay(_renderColors, item.Id, f.InternalName);
+    if (_ovBg) td.style.background = _ovBg;
 
     if (f.FieldTypeKind === 4) {
       // ── Date cell (JST display, JST 0時 → UTC ISO で保存) ──
