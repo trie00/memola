@@ -40,6 +40,13 @@ export interface Editor {
    *  delete) that need to inspect selection synchronously without
    *  going through `applyMutation`. */
   getSelection(): EditorState['selection'];
+  /** Replace the block tree while PRESERVING the caret (unlike
+   *  `setBlocks`, which clears selection + undo). Used to fold in a
+   *  remote merge result live: the keyed renderer repaints only the
+   *  blocks whose content changed, and the caret is restored to the
+   *  same (blockId, offset) when that block still exists. Notifies
+   *  subscribers so the Saver re-syncs. */
+  reconcile(blocks: Block[]): void;
   subscribe(fn: (blocks: Block[]) => void): () => void;
   destroy(): void;
   /** Force a fresh render (= reapply current state to the DOM).
@@ -221,6 +228,16 @@ export function createEditor(rootEl: HTMLElement, opts: EditorOpts = {}): Editor
     },
     getSelection(): EditorState['selection'] {
       return state.selection;
+    },
+    reconcile(blocks: Block[]): void {
+      // Capture the live caret (blockId + offset) so we can restore it
+      // after the keyed re-render. Fall back to the cached selection.
+      const sel = captureSelection(rootEl) ?? state.selection;
+      state = { blocks, selection: sel };
+      // NOT pushed onto the undo stack: a remote merge folded in by the
+      // sync layer isn't the local user's action to undo.
+      paint();
+      notify();
     },
     subscribe(fn): () => void {
       subscribers.add(fn);

@@ -92,6 +92,67 @@ describe('createEditor — applyMutation', () => {
   });
 });
 
+describe('createEditor — reconcile (caret-preserving remote merge fold-in)', () => {
+  const B = (id: string, text: string): Block => ({
+    id, kind: 'p', inline: [{ kind: 'text', text }],
+  });
+
+  it('replaces blocks and reflects them in getBlocks', () => {
+    const r = mkRoot();
+    const ed = createEditor(r);
+    ed.setBlocks([B('b1', 'one'), B('b2', 'two')]);
+    ed.reconcile([B('b1', 'one (remote)'), B('b2', 'two')]);
+    expect(ed.getBlocks().map((b) => (b as unknown as { inline: [{ text: string }] }).inline[0].text))
+      .toEqual(['one (remote)', 'two']);
+    expect(r.textContent).toBe('one (remote)two');
+    ed.destroy();
+  });
+
+  it('preserves the caret in an unchanged block when another block merges in', () => {
+    const r = mkRoot();
+    const ed = createEditor(r);
+    ed.setBlocks([B('b1', 'one'), B('b2', 'two'), B('b3', 'three')]);
+    // Put caret inside b2 at offset 3 ("two|")
+    const b2 = r.querySelector('[data-block-id="b2"]')!;
+    const textNode = b2.querySelector('p')!.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 3);
+    range.collapse(true);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    // Remote changed only b1; b2 (caret) untouched
+    ed.reconcile([B('b1', 'ONE'), B('b2', 'two'), B('b3', 'three')]);
+    // Caret should still be inside b2
+    const after = window.getSelection()!;
+    const caretBlock = (after.anchorNode as Node).parentElement?.closest('[data-block-id]');
+    expect(caretBlock?.getAttribute('data-block-id')).toBe('b2');
+    ed.destroy();
+  });
+
+  it('notifies subscribers so the Saver can re-sync', () => {
+    const r = mkRoot();
+    const ed = createEditor(r);
+    ed.setBlocks([B('b1', 'a')]);
+    let count = 0;
+    ed.subscribe(() => { count += 1; });
+    ed.reconcile([B('b1', 'b')]);
+    expect(count).toBe(1);
+    ed.destroy();
+  });
+
+  it('does not add an undo entry for a reconciled remote change', () => {
+    const r = mkRoot();
+    const ed = createEditor(r);
+    ed.setBlocks([B('b1', 'local')]);
+    // A reconcile (remote merge) should not be locally undoable.
+    ed.reconcile([B('b1', 'remote')]);
+    expect(ed.undo()).toBe(false);
+    expect(r.textContent).toBe('remote');
+    ed.destroy();
+  });
+});
+
 describe('createEditor — undo / redo', () => {
   it('undoes a mutation', () => {
     const r = mkRoot();

@@ -7,6 +7,7 @@
 
 import type { Block } from '../../lib/blocks';
 import { newBlockId } from '../../lib/blocks';
+import { S } from '../../state';
 import { createEditor, type Editor } from './editor2';
 import { parseBlocksJson, serializeBlocks } from '../../api/pages';
 import { mdToBlocks } from '../../lib/blocks-md';
@@ -32,6 +33,7 @@ let _dragCleanup: (() => void) | null = null;
 let _tableCleanup: (() => void) | null = null;
 let _pageLinkCleanup: (() => void) | null = null;
 let _bottomClickCleanup: (() => void) | null = null;
+let _reconcileUnsub: (() => void) | null = null;
 /** Codex review E5: incremented on every mount/destroy. Subscriber
  *  callbacks capture this value; if a deferred async path (e.g. the
  *  dynamic `import('../save-control')`) resolves AFTER the editor was
@@ -73,6 +75,23 @@ export function mountEditor2(rootEl: HTMLElement): Editor {
   _tableCleanup = attachTableHandlers(_editor, rootEl);
   _pageLinkCleanup = attachPageLinkClicks(rootEl);
   _bottomClickCleanup = attachBottomClickHandler(_editor, rootEl);
+  // Fold a remote merge into the live editor. When the Saver reaches
+  // `idle` with a base body that DIVERGES from what the editor shows,
+  // the difference is a merge result (silent auto-merge after a save
+  // conflict, or a future poll-driven sync) that the editor hasn't
+  // rendered yet. Reconcile it in, caret-preserving — the keyed
+  // renderer repaints only the blocks that actually changed. Without
+  // this, the other person's auto-merged block never appeared and a
+  // subsequent edit could overwrite it.
+  _reconcileUnsub = saver.subscribe((st) => {
+    if (myGen !== _generation) return;
+    if (st.kind !== 'idle') return;
+    if (!_editor) return;
+    if (S.currentId !== st.base.pageId) return;
+    const cur = serializeBlocks(_editor.getBlocks());
+    if (cur === st.base.body) return;           // editor already matches base
+    _editor.reconcile(parseBlocksJson(st.base.body));
+  });
   return _editor;
 }
 
@@ -199,6 +218,7 @@ export function destroyEditor2(): void {
   if (_tableCleanup) { _tableCleanup(); _tableCleanup = null; }
   if (_pageLinkCleanup) { _pageLinkCleanup(); _pageLinkCleanup = null; }
   if (_bottomClickCleanup) { _bottomClickCleanup(); _bottomClickCleanup = null; }
+  if (_reconcileUnsub) { _reconcileUnsub(); _reconcileUnsub = null; }
   if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
   if (_editor) { _editor.destroy(); _editor = null; }
 }
