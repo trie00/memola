@@ -16,17 +16,20 @@ import { setLoad, toast } from '../ui-helpers';
 
 const ATTACH_FOLDER = 'attachments';
 
-/** Lazily ensure the attachments sub-folder exists under FOLDER. */
-async function ensureAttachmentsFolder(): Promise<void> {
+/** Ensure ONE folder (given its server-relative URL) exists: GET it, and
+ *  create it on 404. Idempotent. Throws (with the HTTP status) on a hard
+ *  create failure so the caller surfaces a real error instead of a
+ *  silent broken upload. */
+async function ensureFolder(serverRelUrl: string): Promise<void> {
   const url = SITE +
-    "/_api/web/GetFolderByServerRelativeUrl('" + FOLDER + '/' + ATTACH_FOLDER + "')";
+    "/_api/web/GetFolderByServerRelativeUrl('" + serverRelUrl + "')";
   const r = await fetch(url, {
     headers: { Accept: 'application/json;odata=verbose' },
     credentials: 'include',
   });
   if (r.ok) return;
   const d = await getDigest();
-  await fetch(SITE + '/_api/web/folders', {
+  const res = await fetch(SITE + '/_api/web/folders', {
     method: 'POST',
     headers: {
       Accept: 'application/json;odata=verbose',
@@ -36,9 +39,27 @@ async function ensureAttachmentsFolder(): Promise<void> {
     credentials: 'include',
     body: JSON.stringify({
       __metadata: { type: 'SP.Folder' },
-      ServerRelativeUrl: FOLDER + '/' + ATTACH_FOLDER,
+      ServerRelativeUrl: serverRelUrl,
     }),
   });
+  // 409 = already exists (created concurrently) — fine. Anything else
+  // that isn't 2xx is a real failure worth reporting.
+  if (!res.ok && res.status !== 409) {
+    throw new Error('フォルダ作成失敗(' + res.status + '): ' + serverRelUrl);
+  }
+}
+
+/** Ensure the attachments folder (and its parent) exist before upload.
+ *
+ *  In the list-item storage model, pages are SP *list items* — the
+ *  `Shared Documents/memola-pages` document-library FOLDER is never
+ *  otherwise provisioned. SharePoint's `/web/folders` endpoint does NOT
+ *  create missing parent folders, so creating `…/memola-pages/attachments`
+ *  directly failed when `memola-pages` didn't exist → image paste/drop
+ *  upload failed. Create the chain explicitly, parent first. */
+async function ensureAttachmentsFolder(): Promise<void> {
+  await ensureFolder(FOLDER);
+  await ensureFolder(FOLDER + '/' + ATTACH_FOLDER);
 }
 
 /** Upload one File to SP, returning the absolute URL the browser
