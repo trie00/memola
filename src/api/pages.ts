@@ -100,6 +100,7 @@ export interface PageRow {
   AuthorId?: number;        // SP user id of the row creator (auto-populated)
   Scope?: string;           // 'org' = 組織共通 / 'user' = 個人 (default 'user' on creation)
   TrashedBy?: number;       // SP user id of who set the Trashed flag (= deleter)
+  IsTemplate?: number;      // 1 = reusable template row (hidden from tree/library/search)
 }
 
 /** Page-scope discriminator. 'org' = visible to everyone in the workspace,
@@ -136,6 +137,7 @@ const REQUIRED_FIELDS: Array<[string, number]> = [
   ['OriginPageId', 2],
   ['Scope', 2],                  // 'org' | 'user' — see PageScope type
   ['TrashedBy', 9],              // SP user id of who soft-deleted this row
+  ['IsTemplate', 9],             // 1 = this row is a reusable template (hidden from normal views)
 ];
 
 /** Columns to mark `Indexed=true` after schema provisioning. Indexing the
@@ -286,6 +288,7 @@ function rowToMetaWithId(row: PageRow, pageId: string): PageMeta {
   if (row.Scope === 'org' || row.Scope === 'user') m.scope = row.Scope;
   if (row.AuthorId) m.authorId = row.AuthorId;
   if (row.TrashedBy) m.trashedBy = row.TrashedBy;
+  if (row.IsTemplate && row.IsTemplate > 0) m.isTemplate = true;
   return m;
 }
 
@@ -302,7 +305,7 @@ interface FetchedRow {
 async function fetchOneRow(pageId: string, select?: string): Promise<FetchedRow | null> {
   const itemId = pageIdToItemId(pageId);
   if (!itemId) return null;
-  const sel = select || 'Id,Title,ParentId,PageType,Icon,Pinned,Trashed,ListTitle,DbRowId,Body_blocks,Published,PublishedUrl,PublishedPageId,PublishedDirty,OriginDailyDate,OriginPageId,Scope,AuthorId,TrashedBy,Modified,Editor/Title';
+  const sel = select || 'Id,Title,ParentId,PageType,Icon,Pinned,Trashed,ListTitle,DbRowId,Body_blocks,Published,PublishedUrl,PublishedPageId,PublishedDirty,OriginDailyDate,OriginPageId,Scope,AuthorId,TrashedBy,IsTemplate,Modified,Editor/Title';
   // Only $expand=Editor when an Editor sub-field is in $select; otherwise SP
   // returns 400 (expand without matching select).
   const expandPart = /\bEditor\//.test(sel) ? '&$expand=Editor' : '';
@@ -1035,6 +1038,97 @@ export async function apiDuplicateAsDraft(originId: string): Promise<Page> {
     originPageId: originId,
   });
   return { Id: newId, Title: draftTitle, ParentId: '', Type: 'page', IsDraft: true };
+}
+
+// ── Templates ───────────────────────────────────────────────────────────
+//
+// A template is an ordinary memola-pages row flagged `IsTemplate=1`. It is
+// hidden from the tree / library / search / picker / backlinks, and listed
+// only in 「＋新規 → テンプレートから」. Editing a template = opening it
+// normally (it renders as its real page/DB). Creating FROM a template =
+// duplicating it into a normal row. Deleting = removing the template row.
+
+/** All template rows currently known (page templates for now; DB templates
+ *  arrive in phase 2). Sorted by title. */
+export function listTemplates(): PageMeta[] {
+  return S.meta.pages
+    .filter((p) => p.isTemplate && !p.trashed)
+    .sort((a, b) => (a.title || '無題').localeCompare(b.title || '無題', 'ja'));
+}
+
+/** Register an existing page as a reusable template: copy its title + body
+ *  into a new `IsTemplate=1` row. The original page is left untouched.
+ *  Returns the new template's pageId. */
+export async function apiRegisterPageAsTemplate(pageId: string): Promise<string> {
+  await ensurePagesList();
+  const origin = metaById(pageId);
+  if (!origin) throw new Error('ページが見つかりません');
+  if (origin.type === 'database') throw new Error('DB のテンプレ登録は未対応です');
+  const blocksJson = await apiLoadBlocksBody(pageId);
+  const title = origin.title || '無題';
+  const scope: PageScope = origin.scope || 'user';
+  const list = pagesListFor(scope);
+  const created = await createListItem(list, {
+    Title: title,
+    ParentId: '',
+    PageType: 'page',
+    Icon: origin.icon || '',
+    Pinned: 0,
+    Trashed: 0,
+    Body_blocks: blocksJson || '[]',
+    Scope: scope,
+    IsTemplate: 1,
+  });
+  const newId = String(created.Id);
+  SOURCE_LIST_BY_PAGEID.set(newId, list);
+  S.meta.pages.push({
+    id: newId, title, parent: '', type: 'page',
+    icon: origin.icon || '', scope, isTemplate: true,
+  });
+  invalidateBacklinkCache();
+  return newId;
+}
+
+/** Create a brand-new normal page from a template: duplicate the template's
+ *  title + body into a fresh `IsTemplate`-unset row. Returns the new page. */
+export async function apiCreatePageFromTemplate(templateId: string): Promise<Page> {
+  await ensurePagesList();
+  const tpl = metaById(templateId);
+  if (!tpl) throw new Error('テンプレートが見つかりません');
+  if (tpl.type === 'database') throw new Error('DB テンプレからの作成は未対応です');
+  const blocksJson = await apiLoadBlocksBody(templateId);
+  const title = tpl.title || '無題';
+  // New pages default to personal scope (same as the blank-page path).
+  const scope: PageScope = 'user';
+  const list = pagesListFor(scope);
+  const created = await createListItem(list, {
+    Title: title,
+    ParentId: '',
+    PageType: 'page',
+    Icon: tpl.icon || '',
+    Pinned: 0,
+    Trashed: 0,
+    Body_blocks: blocksJson || '[]',
+    Scope: scope,
+  });
+  const newId = String(created.Id);
+  SOURCE_LIST_BY_PAGEID.set(newId, list);
+  S.meta.pages.push({
+    id: newId, title, parent: '', type: 'page', icon: tpl.icon || '', scope,
+  });
+  invalidateBacklinkCache();
+  return { Id: newId, Title: title, ParentId: '', Type: 'page' };
+}
+
+/** Hard-delete a template row (templates skip the trash — they're scratch
+ *  scaffolding, not user content). */
+export async function apiDeleteTemplate(templateId: string): Promise<void> {
+  const itemId = pageIdToItemId(templateId);
+  if (itemId) {
+    await deleteListItem(listForPageId(templateId), itemId).catch(() => undefined);
+  }
+  removePages([templateId]);
+  invalidateBacklinkCache();
 }
 
 /** Apply a draft's contents to its origin page, preserving the origin's

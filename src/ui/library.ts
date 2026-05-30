@@ -86,7 +86,8 @@ async function loadEditorMeta(): Promise<void> {
  *  Pages whose parent is outside the scope surface as roots (parentId ''). */
 function childrenOf(parentId: string): Page[] {
   const inScope = (p: Page): boolean =>
-    !p.IsDraft && ((metaById(p.Id)?.scope === 'org' ? 'org' : 'user') === _scope);
+    !p.IsDraft && !metaById(p.Id)?.isTemplate
+    && ((metaById(p.Id)?.scope === 'org' ? 'org' : 'user') === _scope);
   const idsInScope = new Set(S.pages.filter(inScope).map((p) => p.Id));
   return S.pages
     .filter((p) => {
@@ -160,7 +161,7 @@ function renderRows(): void {
   if (q) {
     // Flat filtered view (no hierarchy) so matches at any depth are visible.
     const matches = S.pages
-      .filter((p) => !p.IsDraft
+      .filter((p) => !p.IsDraft && !metaById(p.Id)?.isTemplate
         && ((metaById(p.Id)?.scope === 'org' ? 'org' : 'user') === _scope)
         && (p.Title || '無題').toLowerCase().includes(q))
       .sort((a, b) => (a.Title || '無題').localeCompare(b.Title || '無題', 'ja'));

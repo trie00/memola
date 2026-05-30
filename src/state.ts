@@ -38,6 +38,10 @@ export interface PageMeta {
   /** Trashed フラグを立てた user id (= 削除実行者)。ゴミ箱モーダルで
    *  「誰が消したか」表示と「他人が削除した行は完全削除しない」判定に使用。 */
   trashedBy?: number;
+  /** true = 再利用テンプレート行。通常のツリー / ライブラリ / 検索 /
+   *  ページピッカー / バックリンクからは除外し、「＋新規 → テンプレート
+   *  から」一覧にのみ出す。編集はテンプレを普通に開く、作成は複製する。 */
+  isTemplate?: boolean;
 }
 
 export interface Meta {

@@ -45,6 +45,7 @@ interface CachedRow {
   Body_blocks?: string;
   PageType?: string;
   OriginPageId?: string;
+  IsTemplate?: number;
   /** Which SP list this row was read from (org-shared vs per-user). Used
    *  to mint the canonical pageId via `pageIdForListItem` so the panel's
    *  click → doSelect navigates (bare numeric ids collide across lists). */
@@ -64,7 +65,7 @@ async function loadBodiesFromList(listTitle: string): Promise<CachedRow[]> {
   const rows: CachedRow[] = [];
   let next: string | undefined = spListUrl(
     listTitle,
-    '/items?$select=Id,Title,Body_blocks,PageType,OriginPageId&$top=500&$orderby=Id',
+    '/items?$select=Id,Title,Body_blocks,PageType,OriginPageId,IsTemplate&$top=500&$orderby=Id',
   );
   let safety = 0;
   while (next && safety++ < 50) {
@@ -123,6 +124,7 @@ export async function getBacklinksFor(
     if (row.PageType === 'draft') continue;               // skip drafts
     if (row.OriginPageId) continue;                        // legacy drafts
     if (row.PageType === 'row') continue;                  // skip DB row bodies (still findable via parent DB)
+    if (row.IsTemplate) continue;                          // skip template rows (not real content)
     const blocksJson = row.Body_blocks || '';
     if (!blocksJson) continue;
     let blocks: Block[];

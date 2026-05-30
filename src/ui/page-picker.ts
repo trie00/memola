@@ -41,10 +41,10 @@ function candidatePool(opts: PickerOptions): Page[] | undefined {
   // The current page is also excluded — a page linking to itself is never
   // useful and just clutters its own backlinks.
   const self = S.currentId;
-  if (opts.dbsOnly) {
-    return S.pages.filter((p) => p.Type === 'database' && !p.IsDraft && p.Id !== self);
-  }
-  return S.pages.filter((p) => !p.IsDraft && p.Id !== self);
+  const linkable = (p: Page): boolean =>
+    !p.IsDraft && p.Id !== self && !metaById(p.Id)?.isTemplate;
+  if (opts.dbsOnly) return S.pages.filter((p) => p.Type === 'database' && linkable(p));
+  return S.pages.filter(linkable);
 }
 
 let _active: ActivePicker | null = null;

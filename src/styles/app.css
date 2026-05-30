@@ -158,6 +158,16 @@
 #memola-overlay .memola-cm-body { display: flex; flex-direction: column; gap: 1px; flex: 1; }
 #memola-overlay .memola-cm-name { font-size: var(--fs-md); }
 #memola-overlay .memola-cm-sub { font-size: var(--fs-xs); color: var(--ink-3); }
+/* テンプレートから: 動的行 + ホバー時のみ出る 編集/削除 ボタン */
+#memola-overlay .memola-cm-tpl .memola-cm-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#memola-overlay .memola-cm-tpl-actions { display: none; gap: 2px; flex-shrink: 0; }
+#memola-overlay .memola-cm-tpl:hover .memola-cm-tpl-actions { display: flex; }
+#memola-overlay .memola-cm-tpl-btn {
+  border: none; background: none; cursor: pointer; font-size: 12px;
+  padding: 2px 5px; border-radius: var(--r-2); color: var(--ink-3);
+}
+#memola-overlay .memola-cm-tpl-btn:hover { background: var(--paper-3); color: var(--ink); }
+#memola-overlay .memola-cm-empty { padding: 8px 14px; font-size: var(--fs-xs); color: var(--ink-3); line-height: 1.5; }
 #memola-overlay .memola-cm-sep {
   height: 0; border-top: 1px dashed var(--paper-3);
   margin: 4px 8px;

@@ -10,6 +10,7 @@ import { g } from './dom';
 import { ancs } from './tree';
 import { doSelect } from './views';
 import { escHtml } from '../lib/search-utils';
+import { metaById } from '../lib/page-store';
 
 interface CmdAction { id: string; label: string; icon: string; key: string; run: () => void; }
 
@@ -43,6 +44,7 @@ export function getPagePath(id: string): string {
 export function renderQs(q: string): void {
   const matchedPages = S.pages.filter((p) => {
     if (p.IsDraft) return false;     // drafts surface only in 「📝 下書き」
+    if (metaById(p.Id)?.isTemplate) return false;   // templates: 「＋新規→テンプレートから」 only
     if (!q) return true;
     return (p.Title || '').toLowerCase().includes(q.toLowerCase());
   });

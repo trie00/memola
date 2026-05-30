@@ -56,6 +56,7 @@ export function attachPageMenuWiring(opts: {
       case 'export-html':         await exportHtml(); break;
       case 'duplicate':           await duplicateCurrent(); break;
       case 'duplicate-as-draft':  await duplicateAsDraftCurrent(); break;
+      case 'register-template':   await registerCurrentAsTemplate(); break;
       case 'version-history':     await openVersionHistoryForCurrent(); break;
       case 'copy-link':           await copyPageLink(); break;
       case 'toggle-scope':        await toggleCurrentPageScope(); break;
@@ -94,6 +95,28 @@ export function attachPageMenuWiring(opts: {
   });
 
   attachPageMenuOutsideClick();
+}
+
+/** Register the currently-open page as a reusable template. (DB templates
+ *  arrive in a later update — for now we tell the user.) */
+async function registerCurrentAsTemplate(): Promise<void> {
+  const id = S.currentId;
+  if (!id || S.currentRow) { toast('ページを開いてから実行してください', 'err'); return; }
+  if (S.currentType === 'database') {
+    toast('DB のテンプレート登録は今後のアップデートで対応します');
+    return;
+  }
+  try {
+    setLoad(true, 'テンプレートに登録中...');
+    await flushPendingSave().catch(() => undefined);     // capture latest edits
+    const { apiRegisterPageAsTemplate } = await import('../api/pages');
+    await apiRegisterPageAsTemplate(id);
+    const { renderCreateMenuTemplates } = await import('./create-menu');
+    renderCreateMenuTemplates();
+    toast('テンプレートとして登録しました(＋新規 →「テンプレートから」)');
+  } catch (e) {
+    toast('テンプレート登録失敗: ' + (e as Error).message, 'err');
+  } finally { setLoad(false); }
 }
 
 /** Refresh the publish/unpublish label every time the menu opens. */

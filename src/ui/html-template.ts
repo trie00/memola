@@ -42,9 +42,7 @@ export function buildHtml(): string {
         '<div class="memola-cm-item" data-cm="new-db"><span class="memola-cm-ic">🗂</span><div class="memola-cm-body"><span class="memola-cm-name">空のDB</span><span class="memola-cm-sub">リスト＋mdフォルダを作成</span></div></div>' +
         '<div class="memola-cm-sep"></div>' +
         '<div class="memola-cm-section">テンプレートから</div>' +
-        '<div class="memola-cm-item" data-cm="tpl-weekly"><span class="memola-cm-ic">📅</span><span class="memola-cm-name">週次ノート</span></div>' +
-        '<div class="memola-cm-item" data-cm="tpl-minutes"><span class="memola-cm-ic">📓</span><span class="memola-cm-name">議事録</span></div>' +
-        '<div class="memola-cm-item" data-cm="tpl-tasks"><span class="memola-cm-ic">✓</span><span class="memola-cm-name">タスクDB</span></div>' +
+        '<div id="memola-cm-templates"></div>' +
       '</div>' +
     '</aside>' +
     '<main id="memola-main">' +
@@ -443,6 +441,7 @@ export function buildHtml(): string {
       '<div class="memola-pgm-sep"></div>' +
       '<div class="memola-pgm-item" data-action="duplicate">' + ICONS.copy + '<span>複製</span></div>' +
       '<div class="memola-pgm-item" data-action="duplicate-as-draft">✏️<span>下書きとして複製</span></div>' +
+      '<div class="memola-pgm-item" data-action="register-template">🧩<span>テンプレートとして登録</span></div>' +
       '<div class="memola-pgm-item" data-action="version-history">📜<span>バージョン履歴</span></div>' +
       '<div class="memola-pgm-item" data-action="copy-link">' + ICONS.link + '<span>リンクをコピー</span></div>' +
       '<div class="memola-pgm-item" data-action="toggle-scope"><span class="memola-pgm-scope-ic">🔒</span><span class="memola-pgm-scope-label">組織に公開</span></div>' +

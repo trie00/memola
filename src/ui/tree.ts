@@ -23,7 +23,8 @@ export function kidsOf(pid: string): Page[] {
   // drag-reorder for this parent. Drafts are hidden — they're accessed
   // exclusively via the 「📝 下書き」 sidebar entry.
   const natural = S.pages
-    .filter((p) => !p.IsDraft && (p.ParentId || '') === (pid || ''))
+    .filter((p) => !p.IsDraft && !metaById(p.Id)?.isTemplate
+      && (p.ParentId || '') === (pid || ''))
     .sort((a, b) => (a.Id < b.Id ? -1 : 1));
   return applySiblingOrder(pid || '', natural);
 }
