@@ -25,6 +25,7 @@ import type { Block } from '../lib/blocks';
 import { collectDescendantIds } from '../lib/page-tree';
 import { getCurrentUserId } from './sync';
 import { invalidateBacklinkCache } from './backlinks';
+import { prefLastSeenEtag } from '../lib/prefs';
 import { removePages, metaById} from '../lib/page-store';
 
 /** Org-shared pages list. Anything `Scope='org'` lives here (visible to
@@ -565,9 +566,19 @@ export async function updatePageRow(
   await updateListItem(list, itemId, fields);
   try {
     const fresh = await fetchOneRow(pageId, 'Modified');
-    if (fresh && S.sync.pageId === pageId) {
-      S.sync.loadedEtag = fresh.etag;
-      S.sync.loadedModified = fresh.modified;
+    if (fresh) {
+      if (S.sync.pageId === pageId) {
+        S.sync.loadedEtag = fresh.etag;
+        S.sync.loadedModified = fresh.modified;
+      }
+      // The current user just wrote this row (rename / move / pin / icon /
+      // trash). Advance the since-last-view marker too, so re-opening the
+      // page later doesn't pop a 「前回の表示以降に誰かが更新しました」 banner
+      // for our OWN metadata change. Body saves are covered separately by
+      // saver-bridge; this is the metadata-write equivalent. Keyed by
+      // pageId regardless of whether the page is currently open, since the
+      // notification fires on the NEXT load.
+      if (fresh.etag) prefLastSeenEtag(pageId).set(fresh.etag);
     }
   } catch { /* fetch failures are non-fatal — just one phantom risk */ }
 }
