@@ -316,11 +316,13 @@ export function splitBlock(
     if (!('inline' in block)) return state;
     return splitInlineBlockTopLevel(state, idx, block, offset);
   }
-  // Nested — locate inside a container.
-  const list = splitInsideList(state, blockId, offset);
-  if (list) return list;
-  const container = splitInsideCalloutOrQuote(state, blockId, offset);
-  if (container) return container;
+  // Nested — recurse into list items / container children. This handles
+  // arbitrarily nested lists (e.g. Enter inside a sub-list item), which
+  // the previous top-level-only scan missed (→ Enter was a no-op there).
+  const res = splitWithin(state.blocks, blockId, offset);
+  if (res) {
+    return { ...state, blocks: res.blocks, selection: { kind: 'caret', blockId: res.newId, offset: 0 } };
+  }
   return state;
 }
 
@@ -356,88 +358,80 @@ function continuationBlock(prev: Block, newId: BlockId, inline: Inline[]): Block
   return { id: newId, kind: 'p', inline } as Block;
 }
 
-/** Split an inner block that lives inside a list item. The first half
- *  stays in the original item; the second half goes into a NEW list
- *  item inserted immediately after. Any sibling blocks that followed
- *  the split target within the original item are migrated to the new
- *  item (so they stay attached to the same logical list entry). */
-function splitInsideList(
-  state: EditorState,
+/** Recursively split an inner block that lives inside a list item or a
+ *  callout/quote — at ANY nesting depth (sub-lists included). Returns the
+ *  rebuilt `Block[]` plus the new block's id (for caret placement), or null
+ *  when `innerId` isn't found in `blocks`.
+ *
+ *  - List item: the first half stays in the original item; the second half
+ *    becomes a NEW item right after, carrying any trailing sibling blocks
+ *    (so they stay attached to the same logical entry). A new item is
+ *    created in the INNERMOST list containing the caret.
+ *  - Callout / quote: split in place as a new sibling child.
+ *  The continuation block preserves kind (todo → todo) via
+ *  `continuationBlock`. */
+function splitWithin(
+  blocks: Block[],
   innerId: BlockId,
   offset: number,
-): EditorState | null {
-  for (let i = 0; i < state.blocks.length; i++) {
-    const list = state.blocks[i];
-    if (list.kind !== 'list') continue;
-    for (let j = 0; j < list.items.length; j++) {
-      const item = list.items[j];
-      const innerIdx = item.findIndex((b) => b.id === innerId);
-      if (innerIdx < 0) continue;
-      const inner = item[innerIdx];
-      if (!('inline' in inner)) return null;
-      const before = sliceInline(inner.inline, 0, offset);
-      const after = sliceInline(inner.inline, offset, Infinity);
-      const newId = newBlockId();
-      const updatedInner: Block = { ...inner, inline: before } as Block;
-      // Preserve the block kind on continuation. Splitting a todo
-      // item inside a list should produce another todo, not a plain
-      // paragraph (mirrors the top-level + callout/quote split paths
-      // which already use `continuationBlock`).
-      const newPara: Block = continuationBlock(inner, newId, after);
-      const newCurrentItem = [...item.slice(0, innerIdx), updatedInner];
-      const newNextItem = [newPara, ...item.slice(innerIdx + 1)];
-      const newItems = [
-        ...list.items.slice(0, j),
-        newCurrentItem,
-        newNextItem,
-        ...list.items.slice(j + 1),
-      ];
-      const updatedList: Block = { ...list, items: newItems };
-      const blocks = state.blocks.slice();
-      blocks[i] = updatedList;
-      return {
-        ...state,
-        blocks,
-        selection: { kind: 'caret', blockId: newId, offset: 0 },
-      };
+): { blocks: Block[]; newId: BlockId } | null {
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (b.kind === 'list') {
+      for (let j = 0; j < b.items.length; j++) {
+        const item = b.items[j];
+        const innerIdx = item.findIndex((x) => x.id === innerId);
+        if (innerIdx >= 0) {
+          const inner = item[innerIdx];
+          if (!('inline' in inner)) return null;
+          const before = sliceInline(inner.inline, 0, offset);
+          const after = sliceInline(inner.inline, offset, Infinity);
+          const newId = newBlockId();
+          const updatedInner: Block = { ...inner, inline: before } as Block;
+          const newPara: Block = continuationBlock(inner, newId, after);
+          const newCurrentItem = [...item.slice(0, innerIdx), updatedInner];
+          const newNextItem = [newPara, ...item.slice(innerIdx + 1)];
+          const newItems = [
+            ...b.items.slice(0, j), newCurrentItem, newNextItem, ...b.items.slice(j + 1),
+          ];
+          const out = blocks.slice();
+          out[i] = { ...b, items: newItems };
+          return { blocks: out, newId };
+        }
+        // Not a direct child — recurse (handles nested lists / containers).
+        const deeper = splitWithin(item, innerId, offset);
+        if (deeper) {
+          const newItems = b.items.slice();
+          newItems[j] = deeper.blocks;
+          const out = blocks.slice();
+          out[i] = { ...b, items: newItems };
+          return { blocks: out, newId: deeper.newId };
+        }
+      }
+    } else if (b.kind === 'callout' || b.kind === 'quote') {
+      const innerIdx = b.children.findIndex((x) => x.id === innerId);
+      if (innerIdx >= 0) {
+        const inner = b.children[innerIdx];
+        if (!('inline' in inner)) return null;
+        const before = sliceInline(inner.inline, 0, offset);
+        const after = sliceInline(inner.inline, offset, Infinity);
+        const newId = newBlockId();
+        const updatedInner: Block = { ...inner, inline: before } as Block;
+        const second = continuationBlock(inner, newId, after);
+        const newChildren = [
+          ...b.children.slice(0, innerIdx), updatedInner, second, ...b.children.slice(innerIdx + 1),
+        ];
+        const out = blocks.slice();
+        out[i] = { ...b, children: newChildren } as Block;
+        return { blocks: out, newId };
+      }
+      const deeper = splitWithin(b.children, innerId, offset);
+      if (deeper) {
+        const out = blocks.slice();
+        out[i] = { ...b, children: deeper.blocks } as Block;
+        return { blocks: out, newId: deeper.newId };
+      }
     }
-  }
-  return null;
-}
-
-/** Split an inner block inside a callout / quote. Splits in place —
- *  the second half is added as a new sibling within the same
- *  container's children. */
-function splitInsideCalloutOrQuote(
-  state: EditorState,
-  innerId: BlockId,
-  offset: number,
-): EditorState | null {
-  for (let i = 0; i < state.blocks.length; i++) {
-    const c = state.blocks[i];
-    if (c.kind !== 'callout' && c.kind !== 'quote') continue;
-    const innerIdx = c.children.findIndex((b) => b.id === innerId);
-    if (innerIdx < 0) continue;
-    const inner = c.children[innerIdx];
-    if (!('inline' in inner)) return null;
-    const before = sliceInline(inner.inline, 0, offset);
-    const after = sliceInline(inner.inline, offset, Infinity);
-    const newId = newBlockId();
-    const updatedInner: Block = { ...inner, inline: before } as Block;
-    const second = continuationBlock(inner, newId, after);
-    const newChildren = [
-      ...c.children.slice(0, innerIdx),
-      updatedInner,
-      second,
-      ...c.children.slice(innerIdx + 1),
-    ];
-    const blocks = state.blocks.slice();
-    blocks[i] = { ...c, children: newChildren } as Block;
-    return {
-      ...state,
-      blocks,
-      selection: { kind: 'caret', blockId: newId, offset: 0 },
-    };
   }
   return null;
 }
