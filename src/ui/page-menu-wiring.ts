@@ -102,15 +102,17 @@ export function attachPageMenuWiring(opts: {
 async function registerCurrentAsTemplate(): Promise<void> {
   const id = S.currentId;
   if (!id || S.currentRow) { toast('ページを開いてから実行してください', 'err'); return; }
-  if (S.currentType === 'database') {
-    toast('DB のテンプレート登録は今後のアップデートで対応します');
-    return;
-  }
   try {
     setLoad(true, 'テンプレートに登録中...');
-    await flushPendingSave().catch(() => undefined);     // capture latest edits
-    const { apiRegisterPageAsTemplate } = await import('../api/pages');
-    await apiRegisterPageAsTemplate(id);
+    if (S.currentType === 'database') {
+      // Clone the DB (columns + rows) into a hidden template DB.
+      const { duplicateDb } = await import('../api/db');
+      await duplicateDb(id, { asTemplate: true });
+    } else {
+      await flushPendingSave().catch(() => undefined);   // capture latest edits
+      const { apiRegisterPageAsTemplate } = await import('../api/pages');
+      await apiRegisterPageAsTemplate(id);
+    }
     const { renderCreateMenuTemplates } = await import('./create-menu');
     renderCreateMenuTemplates();
     toast('テンプレートとして登録しました(＋新規 →「テンプレートから」)');

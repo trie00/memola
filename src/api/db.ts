@@ -23,14 +23,15 @@ export function stripInternalDbFields(fields: ListField[]): ListField[] {
 }
 import {
   ensureList, createListItem, updateListItem,
-  deleteListItem, getListItemById,
-  softDelete, restoreSoftDelete,
+  deleteListItem, getListItemById, getListFields, getListItems,
+  softDelete, restoreSoftDelete, type FieldSpec,
 } from './sp-list';
 // Re-export type so callers don't need to chase imports
 export type { ListField } from '../state';
 import {
   apiCreateDbPageRow, ORG_PAGES_LIST, deleteRowEntry,
 } from './pages';
+import { metaById } from '../lib/page-store';
 import { getCurrentUserId } from './sync';
 import { spListUrl, spGetD } from './sp-rest';
 
@@ -48,6 +49,60 @@ export async function apiCreateDb(title: string, parentId: string): Promise<Page
     ],
   });
   return await apiCreateDbPageRow(title, parentId, listTitle);
+}
+
+/** Clone a database (new backing list with the same columns + a copy of
+ *  its rows) into a fresh DB. Used for both directions of DB templates:
+ *    - register (asTemplate=true):  source DB → a template DB (hidden)
+ *    - create   (asTemplate=false): template DB → a normal DB
+ *  The source is left untouched. Returns the new DB's page row.
+ *
+ *  Note: rows are copied one-by-one via apiAddDbRow (accepts display-name
+ *  keys), so this is O(rows) requests — fine for the small seed sets DB
+ *  templates hold. Trashed rows are skipped. */
+export async function duplicateDb(
+  sourceDbId: string,
+  opts: { asTemplate: boolean },
+): Promise<Page> {
+  const meta = metaById(sourceDbId);
+  if (!meta || meta.type !== 'database' || !meta.list) {
+    throw new Error('DB が見つかりません');
+  }
+  const srcList = meta.list;
+  // 1. Read the source schema → user columns (drop Title + internal).
+  const fields = stripInternalDbFields(await getListFields(srcList))
+    .filter((f) => f.Title !== 'Title' && f.InternalName !== 'Title');
+  const userSpecs: FieldSpec[] = fields.map((f) => ({
+    name: f.Title,
+    kind: f.FieldTypeKind,
+    ...(f.Choices ? { choices: f.Choices } : {}),
+  }));
+  // 2. Create the new backing list with trash columns + the user columns.
+  const newList = 'memola-db-' + Date.now().toString();
+  await ensureList({
+    title: newList,
+    fields: [
+      { name: 'Trashed', kind: 9, indexed: true },
+      { name: 'TrashedBy', kind: 9, indexed: true },
+      ...userSpecs,
+    ],
+  });
+  // 3. Registration row in memola-pages (flagged template when asked).
+  const scope = meta.scope || 'user';
+  const page = await apiCreateDbPageRow(meta.title || '無題', '', newList, scope, opts.asTemplate);
+  // 4. Copy rows (skip trashed). apiAddDbRow takes display-name keys.
+  const rows = await getListItems(srcList);
+  for (const row of rows) {
+    const r = row as unknown as Record<string, unknown>;
+    if (typeof r.Trashed === 'number' && r.Trashed > 0) continue;
+    const data: Record<string, unknown> = { Title: r.Title ?? '' };
+    for (const f of fields) {
+      const v = r[f.InternalName] ?? r[f.Title];
+      if (v !== undefined && v !== null && v !== '') data[f.Title] = v;
+    }
+    await apiAddDbRow(newList, data).catch(() => undefined);   // best-effort per row
+  }
+  return page;
 }
 
 /** Idempotent re-provision for older DB lists that pre-date the trash

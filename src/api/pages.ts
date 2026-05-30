@@ -626,6 +626,7 @@ export async function apiCreateDbPageRow(
   parentId: string,
   listTitle: string,
   scope: PageScope = 'user',
+  isTemplate = false,
 ): Promise<Page> {
   await ensurePagesList();
   const list = pagesListFor(scope);
@@ -639,12 +640,14 @@ export async function apiCreateDbPageRow(
     ListTitle: listTitle,
     Body_blocks: '[]',
     Scope: scope,
+    ...(isTemplate ? { IsTemplate: 1 } : {}),
   });
   const id = String(created.Id);
   SOURCE_LIST_BY_PAGEID.set(id, list);
   S.meta.pages.push({
     id, title, parent: parentId || '',
     type: 'database', list: listTitle, icon: '', scope,
+    ...(isTemplate ? { isTemplate: true } : {}),
   });
   return { Id: id, Title: title, ParentId: parentId || '', Type: 'database' };
 }
@@ -1123,9 +1126,15 @@ export async function apiCreatePageFromTemplate(templateId: string): Promise<Pag
 /** Hard-delete a template row (templates skip the trash — they're scratch
  *  scaffolding, not user content). */
 export async function apiDeleteTemplate(templateId: string): Promise<void> {
+  const meta = metaById(templateId);
   const itemId = pageIdToItemId(templateId);
   if (itemId) {
     await deleteListItem(listForPageId(templateId), itemId).catch(() => undefined);
+  }
+  // A DB template owns a backing SP list — drop it too so we don't leak
+  // orphan lists. (Page templates have no backing list.)
+  if (meta?.type === 'database' && meta.list) {
+    await deleteList(meta.list).catch(() => undefined);
   }
   removePages([templateId]);
   invalidateBacklinkCache();

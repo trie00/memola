@@ -101,14 +101,27 @@ export function attachCreateMenu(doNewDb: (parentId: string) => Promise<void>): 
 }
 
 async function createFromTemplate(templateId: string): Promise<void> {
+  const tpl = S.meta.pages.find((p) => p.id === templateId);
   try {
     setLoad(true, 'テンプレートから作成中...');
-    const { apiCreatePageFromTemplate } = await import('../api/pages');
-    const page = await apiCreatePageFromTemplate(templateId);
-    renderTree();
-    const v = await import('./views');
-    await v.doSelect(page.Id);
-    toast('テンプレートからページを作成しました');
+    let newId: string;
+    if (tpl?.type === 'database') {
+      // Clone the template DB (columns + rows) into a fresh normal DB.
+      const { duplicateDb } = await import('../api/db');
+      const page = await duplicateDb(templateId, { asTemplate: false });
+      newId = page.Id;
+      renderTree();
+      const v = await import('./views');
+      await v.doSelectDb(newId, page);
+    } else {
+      const { apiCreatePageFromTemplate } = await import('../api/pages');
+      const page = await apiCreatePageFromTemplate(templateId);
+      newId = page.Id;
+      renderTree();
+      const v = await import('./views');
+      await v.doSelect(newId);
+    }
+    toast('テンプレートから作成しました');
   } catch (e) {
     toast('作成失敗: ' + (e as Error).message, 'err');
   } finally { setLoad(false); }
