@@ -69,18 +69,19 @@ function renderScopeSection(container: HTMLElement, scope: PageScope): void {
 
 /** Confirm with the user when a move would put a page under a parent of
  *  a different scope. If they accept, migrate the dragged subtree to the
- *  parent's scope. Returns true if the move should proceed. */
+ *  parent's scope. Returns the (possibly NEW, post-migration) drag id to
+ *  proceed with, or null to abort. */
 async function confirmAndMaybeMigrateScope(
   dragId: string, newParentId: string,
-): Promise<boolean> {
+): Promise<string | null> {
   const target = scopeMismatchOnMove(dragId, newParentId);
-  if (target === null) return true;
+  if (target === null) return dragId;
   const dragMeta = metaById(dragId);
   // Daily DB is locked to personal scope. Refuse cross-scope moves
   // outright instead of asking for confirmation.
   if (target === 'org' && dragMeta?.type === 'database' && dragMeta.list === 'memola-daily') {
     toast('デイリーノート DB は組織に公開できません', 'err');
-    return false;
+    return null;
   }
   const parentMeta = metaById(newParentId);
   const childCount = countDescendantsLocal(dragId);
@@ -93,9 +94,11 @@ async function confirmAndMaybeMigrateScope(
     '配下の ' + childCount + ' ページも一緒に「' + targetLabel + '」になります。\n\n' +
     '続行しますか?',
   );
-  if (!ok) return false;
-  await apiSetScope(dragId, target).catch(() => undefined);
-  return true;
+  if (!ok) return null;
+  const res = await apiSetScope(dragId, target).catch(() => null);
+  // Cross-list migration changes the id — return the new one so the caller
+  // moves/reorders the migrated row, not the deleted original.
+  return res ? res.rootId : dragId;
 }
 
 function countDescendantsLocal(rootId: string): number {
@@ -326,8 +329,9 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
     const z = zoneFor(e.clientY - r.top, r.height);
     try {
       if (z === 'into') {
-        if (!await confirmAndMaybeMigrateScope(dragId, page.Id)) return;
-        await apiMovePage(dragId, page.Id);
+        const movedId = await confirmAndMaybeMigrateScope(dragId, page.Id);
+        if (!movedId) return;
+        await apiMovePage(movedId, page.Id);
         S.expanded.add(page.Id);
         renderTree();
         toast('移動しました');
@@ -338,9 +342,12 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
       const newParent = ancestorAtDepth(page, targetDepth);
       const dragPage = S.pages.find((p) => p.Id === dragId);
       if (!dragPage) return;
+      let movedId = dragId;
       if ((dragPage.ParentId || '') !== newParent) {
-        if (!await confirmAndMaybeMigrateScope(dragId, newParent)) return;
-        await apiMovePage(dragId, newParent);
+        const m = await confirmAndMaybeMigrateScope(dragId, newParent);
+        if (!m) return;
+        movedId = m;                       // may be a new id after migration
+        await apiMovePage(movedId, newParent);
       }
       // Determine the *anchor* in the new parent's siblings.
       // If dropping at the same depth, anchor is `page`.
@@ -353,7 +360,7 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
         .sort((a, b) => (a.Id < b.Id ? -1 : 1));
       const reordered = applySiblingOrder(newParent, siblings);
       if (anchorId) {
-        const newOrder = computeReorder(reordered, dragId, anchorId, z === 'before');
+        const newOrder = computeReorder(reordered, movedId, anchorId, z === 'before');
         saveSiblingOrder(newParent, newOrder);
       }
       renderTree();
@@ -449,6 +456,7 @@ function wireSectionDrop(container: HTMLElement, sectionScope: PageScope): void 
     try {
       const dragPage = S.pages.find((p) => p.Id === dragId);
       if (!dragPage) return;
+      let movedId = dragId;       // updated if a cross-list migration changes the id
       // Cross-scope drop on empty area: migrate scope before moving.
       const dragScope = pageScope(dragPage);
       if (dragScope !== sectionScope) {
@@ -471,20 +479,21 @@ function wireSectionDrop(container: HTMLElement, sectionScope: PageScope): void 
           '続行しますか?',
         );
         if (!ok) return;
-        await apiSetScope(dragId, sectionScope).catch(() => undefined);
+        const res = await apiSetScope(dragId, sectionScope).catch(() => null);
+        if (res) movedId = res.rootId;
       }
       // Move to root if not already there
       if ((dragPage.ParentId || '') !== '') {
-        await apiMovePage(dragId, '');
+        await apiMovePage(movedId, '');
       }
       // Reorder: insert at top or end of root list among same-scope siblings.
       const allRoot = S.pages
         .filter((p) => (p.ParentId || '') === '')
         .sort((a, b) => (a.Id < b.Id ? -1 : 1));
       const reordered = applySiblingOrder('', allRoot);
-      const order = reordered.map((p) => p.Id).filter((id) => id !== dragId);
-      if (pos === 'top') order.unshift(dragId);
-      else order.push(dragId);
+      const order = reordered.map((p) => p.Id).filter((id) => id !== movedId);
+      if (pos === 'top') order.unshift(movedId);
+      else order.push(movedId);
       saveSiblingOrder('', order);
       renderTree();
     } catch (err) { toast('移動失敗: ' + (err as Error).message, 'err'); }

@@ -41,8 +41,18 @@ function candidatePool(opts: PickerOptions): Page[] | undefined {
   // The current page is also excluded — a page linking to itself is never
   // useful and just clutters its own backlinks.
   const self = S.currentId;
-  const linkable = (p: Page): boolean =>
-    !p.IsDraft && p.Id !== self && !metaById(p.Id)?.isTemplate;
+  // When the page we're linking FROM is org-scoped, private (user-scope)
+  // pages are not linkable: the link would resolve to a page other workspace
+  // members can't open (an org page is meant to be shareable). Private
+  // source pages may link to anything.
+  const fromOrg = !!self && metaById(self)?.scope === 'org';
+  const linkable = (p: Page): boolean => {
+    if (p.IsDraft || p.Id === self) return false;
+    const m = metaById(p.Id);
+    if (m?.isTemplate) return false;
+    if (fromOrg && m?.scope !== 'org') return false;       // org → private: blocked
+    return true;
+  };
   if (opts.dbsOnly) return S.pages.filter((p) => p.Type === 'database' && linkable(p));
   return S.pages.filter(linkable);
 }

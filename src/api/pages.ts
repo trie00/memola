@@ -15,13 +15,14 @@ import {
   deleteListItem,
   deleteList,
   getListItems,
+  getListItemById,
   setColumnIndexed,
   applyOwnerOnlyAcl,
 } from './sp-list';
 import { spListUrl, spGetD } from './sp-rest';
 import { mdToBlocks, blocksToMd } from '../lib/blocks-md';
 import { blocksToHtml } from '../lib/blocks-html';
-import type { Block } from '../lib/blocks';
+import type { Block, Inline } from '../lib/blocks';
 import { collectDescendantIds } from '../lib/page-tree';
 import { getCurrentUserId } from './sync';
 import { invalidateBacklinkCache } from './backlinks';
@@ -936,44 +937,136 @@ export async function apiSetIcon(id: string, emoji: string): Promise<void> {
  *
  *  Returns the affected ids (caller can use this to re-render or to know
  *  what was touched). */
+/** Result of a scope change. `rootId` is the (possibly new) id of the page
+ *  the caller acted on — after a cross-list migration the SP item id
+ *  changes, so callers must navigate / re-reference via this. `idMap` maps
+ *  every old subtree id → its new id (identity map when no move happened). */
+export interface ScopeChangeResult {
+  rootId: string;
+  idMap: Record<string, string>;
+}
+
 export async function apiSetScope(
   id: string,
   scope: PageScope,
   cascadeChildren = true,
-): Promise<string[]> {
+): Promise<ScopeChangeResult> {
   if (scope === 'org') {
     const m = metaById(id);
     if (m?.type === 'database' && m.list === 'memola-daily') {
       throw new Error('デイリーノート DB は組織に公開できません (個人専用)');
     }
   }
+  // `collectDescendantIds` returns parent-before-child (DFS pre-order), so
+  // when we migrate the subtree we always know a parent's NEW id before we
+  // create its children (→ ParentId remaps correctly).
   const ids = cascadeChildren ? collectIds(id) : [id];
-  // Codex review PS2: capture the source list BEFORE mutating meta,
-  // then update on the source list, THEN flip meta. The previous
-  // sequence (mutate meta → updatePageRow → listForPageId(meta)) sent
-  // the write to the destination list (= the new scope's list), where
-  // the row didn't yet exist — silently 404'd via the .catch and left
-  // a memory-only scope change that vanished on next reload.
-  //
-  // Cross-list migration of the row itself (= delete from old, create
-  // in new) is deferred to PS1 (pageId GUID redesign). For now the row
-  // stays in its origin list with the new Scope field; the SP-side
-  // ACL of the origin list still applies, so an org->user demotion
-  // doesn't accidentally widen access — and a user->org promotion is
-  // limited to the author until proper migration lands.
+  const destList = pagesListFor(scope);
+
+  // Does any row actually need to change lists? When the per-user list
+  // can't be resolved (myUserId unknown) destList collapses to the org
+  // list, and there's nothing to move — fall back to an in-place Scope
+  // field flip (legacy behaviour).
+  const needMove = ids.some((pid) => listForPageId(pid) !== destList);
+  if (!needMove) {
+    for (const pid of ids) {
+      const itemId = pageIdToItemId(pid);
+      if (itemId) {
+        await updateListItem(listForPageId(pid), itemId, { Scope: scope }).catch(() => undefined);
+      }
+      const meta = metaById(pid);
+      if (meta) meta.scope = scope;
+    }
+    const idMap: Record<string, string> = {};
+    for (const pid of ids) idMap[pid] = pid;
+    return { rootId: id, idMap };
+  }
+
+  // ── Cross-list migration ────────────────────────────────────────────
+  // Move each row from its source list to `destList`: create the new row
+  // first (so a mid-flight failure leaves a recoverable duplicate, never a
+  // hole), then delete the old. Page identity (= SP item id) changes, so
+  // we remap ParentId within the subtree and rebuild the meta cache.
+  // Inbound [[links]] FROM OTHER pages to a moved page break by design —
+  // the UI warns the user before calling this.
+  const migrating = new Set(ids);
+  const idMap: Record<string, string> = {};
+  const CARRY = ['Title', 'PageType', 'Icon', 'Pinned', 'Trashed', 'ListTitle',
+    'DbRowId', 'Body_blocks', 'Published', 'PublishedUrl', 'PublishedPageId',
+    'PublishedDirty', 'OriginDailyDate', 'OriginPageId', 'IsTemplate'] as const;
   for (const pid of ids) {
-    const sourceList = listForPageId(pid);
-    // Composite ids ('memola-pages-user:42') need pageIdToItemId; the
-    // raw `parseInt` returned NaN and silently skipped the SP write.
+    const srcList = listForPageId(pid);
     const itemId = pageIdToItemId(pid);
     if (!itemId) continue;
-    try {
-      await updateListItem(sourceList, itemId, { Scope: scope });
-    } catch { /* tolerate transient failure; meta update below kept consistent */ }
-    const meta = metaById(pid);
-    if (meta) meta.scope = scope;
+    const row = await getListItemById(srcList, itemId).catch(() => null);
+    if (!row) continue;
+    const r = row as unknown as Record<string, unknown>;
+    const oldParent = (r.ParentId as string) || '';
+    const newParent = migrating.has(oldParent) ? (idMap[oldParent] ?? '') : oldParent;
+    const payload: Record<string, unknown> = { ParentId: newParent, Scope: scope };
+    for (const k of CARRY) {
+      if (r[k] !== undefined && r[k] !== null) payload[k] = r[k];
+    }
+    const created = await createListItem(destList, payload);
+    const newId = String(created.Id);
+    idMap[pid] = newId;
+    SOURCE_LIST_BY_PAGEID.set(newId, destList);
+    await deleteListItem(srcList, itemId).catch(() => undefined);
+    SOURCE_LIST_BY_PAGEID.delete(pid);
   }
-  return ids;
+  // Rebuild S.meta.pages: drop the old ids, push fresh metas under the new
+  // ids with remapped parents + the new scope.
+  const oldMetas = new Map<string, PageMeta | null>(ids.map((pid) => [pid, metaById(pid)]));
+  removePages(ids);
+  for (const pid of ids) {
+    const om = oldMetas.get(pid);
+    const newId = idMap[pid];
+    if (!om || !newId) continue;
+    const newParent = migrating.has(om.parent) ? (idMap[om.parent] ?? '') : om.parent;
+    S.meta.pages.push({ ...om, id: newId, parent: newParent, scope });
+  }
+  invalidateBacklinkCache();
+  return { rootId: idMap[id] ?? id, idMap };
+}
+
+/** Titles of PRIVATE (non-org) pages that `pageId`'s body links to,
+ *  EXCLUDING ids in `exclude` (= the subtree being promoted together,
+ *  which stays mutually linkable). Used to warn before promoting a page to
+ *  org: those [[links]] would resolve to pages other people can't open.
+ *  Links to unknown ids are ignored (can't classify). */
+export async function findOutgoingPrivateLinks(
+  pageId: string,
+  exclude: Set<string> = new Set(),
+): Promise<string[]> {
+  const body = await apiLoadBlocksBody(pageId).catch(() => null);
+  if (!body) return [];
+  let blocks: Block[];
+  try { blocks = parseBlocksJson(body); } catch { return []; }
+  const titles: string[] = [];
+  const seen = new Set<string>();
+  const visitRun = (run: Inline[]): void => {
+    for (const n of run) {
+      if (n.kind === 'pagelink') {
+        const t = n.pageId;
+        if (seen.has(t) || exclude.has(t)) continue;
+        const m = metaById(t);
+        if (m && m.scope !== 'org') { seen.add(t); titles.push(m.title || n.alias || t); }
+      } else if (n.kind === 'bold' || n.kind === 'italic'
+        || n.kind === 'strike' || n.kind === 'link') {
+        visitRun(n.children);
+      }
+    }
+  };
+  const visit = (bs: Block[]): void => {
+    for (const b of bs) {
+      if ('inline' in b && Array.isArray(b.inline)) visitRun(b.inline);
+      if (b.kind === 'table') for (const r of b.rows) for (const c of r) visitRun(c);
+      if (b.kind === 'quote' || b.kind === 'callout') visit(b.children);
+      if (b.kind === 'list') for (const item of b.items) visit(item);
+    }
+  };
+  visit(blocks);
+  return titles;
 }
 
 /** Persist title-only metadata change (used when title is edited live).

@@ -96,29 +96,68 @@ export async function toggleCurrentPageScope(): Promise<void> {
     'よろしいですか?';
   if (!confirm(confirmMsg)) return;
 
+  // Link-validity warnings. The scope change physically moves the row to a
+  // list with different visibility, so cross-scope links break for others.
+  const warn = await scopeChangeLinkWarning(id, next);
+  if (warn && !confirm(warn)) return;
+
   try {
-    await apiSetScope(id, next);
-    // Move to root if it was nested — root accepts both scopes and the
-    // user can see the page at the top of its new section without
-    // navigating into a parent that may now belong to the other scope.
+    const { rootId } = await apiSetScope(id, next);
+    // The id may have changed (cross-list migration). Operate on rootId.
     if (meta.parent) {
-      await apiMovePage(id, '');
+      await apiMovePage(rootId, '');
     }
-    // Place at the very top of the root sibling order so the user
-    // sees where it landed (provisional placement — they can drag it
-    // wherever afterwards).
     const rootIds = S.pages
       .filter((p) => (p.ParentId || '') === '')
       .map((p) => p.Id);
-    const reordered = [id, ...rootIds.filter((x) => x !== id)];
+    const reordered = [rootId, ...rootIds.filter((x) => x !== rootId)];
     saveSiblingOrder('', reordered);
 
-    syncScopeTag();
     const { renderTree } = await import('./tree');
     renderTree();
+    // Navigate to the (possibly new) id so the open page tracks the move.
+    if (rootId !== id || S.currentId === id) {
+      const { doSelect } = await import('./views');
+      await doSelect(rootId);
+    }
+    syncScopeTag();
     toast(next === 'org' ? '組織に公開しました' : 'プライベートに戻しました');
   } catch (e) {
     toast('スコープ変更に失敗: ' + (e as Error).message, 'err');
+  }
+}
+
+/** Build a confirmation warning when the scope change would invalidate
+ *  links for other users, or '' when there's nothing to warn about.
+ *    - promote (→org): this page links to PRIVATE pages others can't open.
+ *    - demote (→user): OTHER pages link TO this page and will break. */
+async function scopeChangeLinkWarning(id: string, next: PageScope): Promise<string> {
+  try {
+    if (next === 'org') {
+      // Exclude the subtree being promoted together (it stays mutually
+      // linkable since those pages become org at the same time).
+      const { collectDescendantIds } = await import('../lib/page-tree');
+      const subtree = new Set<string>(collectDescendantIds(S.pages, id));
+      const { findOutgoingPrivateLinks } = await import('../api/pages');
+      const titles = await findOutgoingPrivateLinks(id, subtree);
+      if (titles.length === 0) return '';
+      const list = titles.slice(0, 8).map((t) => '・' + t).join('\n')
+        + (titles.length > 8 ? `\n…他 ${titles.length - 8} 件` : '');
+      return '⚠ このページは次の「プライベート」ページにリンクしています:\n\n'
+        + list + '\n\n組織に公開すると、これらのリンクは他のメンバーには'
+        + '無効(開けない)になります。続行しますか?';
+    }
+    // demote → private
+    const { getBacklinksFor } = await import('../api/backlinks');
+    const back = await getBacklinksFor(id, (pid) => metaById(pid)?.title || null);
+    if (back.length === 0) return '';
+    const list = back.slice(0, 8).map((b) => '・' + b.pageTitle).join('\n')
+      + (back.length > 8 ? `\n…他 ${back.length - 8} 件` : '');
+    return '⚠ 次のページがこのページにリンクしています:\n\n'
+      + list + '\n\nプライベートに変更すると、これらのリンクは他のメンバーには'
+      + '無効(開けない)になります。続行しますか?';
+  } catch {
+    return '';   // detection failure shouldn't block the operation
   }
 }
 
