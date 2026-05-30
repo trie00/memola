@@ -142,6 +142,12 @@ export function createEditor(rootEl: HTMLElement, opts: EditorOpts = {}): Editor
    *  the committed text at compositionend. */
   const onCompositionStart = (): void => {
     composing = true;
+    // Hide the "ここから始めます" placeholder the instant the user starts
+    // composing (IME). State isn't updated until compositionend (the
+    // browser owns the DOM mid-composition), so without this the
+    // placeholder lingers BEHIND the in-progress IME text until 確定.
+    // The next render (on compositionend) re-evaluates the class.
+    rootEl.classList.remove('memola-editor-empty');
     const sel = captureSelection(rootEl);
     if (sel?.kind === 'caret') {
       compositionStart = { blockId: sel.blockId, offset: sel.offset };

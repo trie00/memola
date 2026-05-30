@@ -22,6 +22,26 @@ import { saver } from '../lib/saver';
 import { cancelAutosave } from '../lib/autosave';
 import { syncEditor2IntoSaver } from './editor2/editor2-bridge';
 import { setSave } from './ui-helpers';
+import { SAVE_MS } from '../config';
+
+// Row-pages (DB row bodies) don't go through the Saver state machine, so
+// the Saver-driven autosave scheduler never fires for them. We run a small
+// debounced timer here instead so edits to a DB row's body autosave just
+// like a normal page (they previously only persisted on Ctrl+S / nav / close).
+let _rowSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function clearRowSaveTimer(): void {
+  if (_rowSaveTimer) { clearTimeout(_rowSaveTimer); _rowSaveTimer = null; }
+}
+
+function armRowAutosave(): void {
+  clearRowSaveTimer();
+  _rowSaveTimer = setTimeout(() => {
+    _rowSaveTimer = null;
+    if (!S.currentRow || !S.dirty || S.saving) return;
+    void import('./row-page').then((m) => m.saveCurrentRow()).catch(() => undefined);
+  }, SAVE_MS);
+}
 
 /** Pull the editor's current content (HTML → markdown + title) and
  *  push it to the Saver. Called from every editor mutation site via
@@ -61,6 +81,10 @@ export function schedSave(): void {
       S.dirty = true;
       setSave('未保存');
     }
+    // Debounced autosave for row-pages (previously these only saved on
+    // explicit flush — Ctrl+S / nav / close — so quietly-edited DB rows
+    // were never auto-persisted).
+    armRowAutosave();
     return;
   }
   syncEditorIntoSaver();
@@ -69,6 +93,7 @@ export function schedSave(): void {
 /** Cancel any pending autosave timer. Used by close / nav teardown. */
 export function clearSaveTimer(): void {
   cancelAutosave();
+  clearRowSaveTimer();
 }
 
 /** Robust "save right now and don't lose anything" flush. Used by:
@@ -85,12 +110,15 @@ export async function flushPendingSave(): Promise<void> {
   // row-page Ctrl+S, page-nav flush and close-app flush were all
   // no-ops (the lower syncEditorIntoSaver early-returns when
   // `S.currentRow` is set), silently dropping unsaved row edits.
-  if (S.currentRow && S.dirty && !S.saving) {
-    S.saving = true;
-    try {
-      const m = await import('./row-page');
-      await m.saveCurrentRow();
-    } finally { S.saving = false; }
+  if (S.currentRow) {
+    clearRowSaveTimer();     // a debounced row autosave may be pending — supersede it
+    if (S.dirty && !S.saving) {
+      S.saving = true;
+      try {
+        const m = await import('./row-page');
+        await m.saveCurrentRow();
+      } finally { S.saving = false; }
+    }
     return;
   }
   syncEditorIntoSaver();
