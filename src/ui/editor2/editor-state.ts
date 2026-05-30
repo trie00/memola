@@ -1133,6 +1133,80 @@ export function image(src: string, alt = ''): Block {
   return { id: newBlockId(), kind: 'image', src, alt };
 }
 
+// ── Turn-into (block-handle menu) ────────────────────────
+
+/** Block kinds the block-handle menu can convert a block into. */
+export type TurnIntoKind =
+  | 'p' | 'h1' | 'h2' | 'h3' | 'todo' | 'ul' | 'ol' | 'quote' | 'callout' | 'pre' | 'hr';
+
+/** Pull a representative inline run out of any block so a turn-into can
+ *  carry the text across instead of dropping it. Containers contribute
+ *  their first paragraph; code contributes its text; rule/atoms nothing. */
+function extractInline(b: Block): Inline[] {
+  if ('inline' in b && Array.isArray((b as { inline?: Inline[] }).inline)) {
+    return (b as { inline: Inline[] }).inline;
+  }
+  if (b.kind === 'quote' || b.kind === 'callout') {
+    const first = b.children?.[0];
+    if (first && 'inline' in first) return (first as { inline: Inline[] }).inline;
+  }
+  if (b.kind === 'list') {
+    const first = b.items?.[0]?.[0];
+    if (first && 'inline' in first) return (first as { inline: Inline[] }).inline;
+  }
+  if (b.kind === 'code') return b.text ? [{ kind: 'text', text: b.text }] : [];
+  return [];
+}
+
+function paraWithInline(inline: Inline[]): Block {
+  return { id: newBlockId(), kind: 'p', inline } as Block;
+}
+
+/** Caret target inside a (possibly container) block after a turn-into. */
+function focusTargetId(b: Block): BlockId | null {
+  if (b.kind === 'list') return b.items[0]?.[0]?.id ?? null;
+  if (b.kind === 'callout' || b.kind === 'quote') return b.children[0]?.id ?? null;
+  if ('inline' in b || b.kind === 'code') return b.id;
+  return null;
+}
+
+/** Convert the top-level block `blockId` into `kind`, preserving its
+ *  text where the shapes allow. For inline-to-inline kinds (paragraph,
+ *  headings, todo) this keeps the block id (and caret) via
+ *  changeBlockKind; otherwise it rebuilds the block and moves the caret
+ *  to the new block's editable slot. No-op if `blockId` isn't top-level. */
+export function turnIntoBlock(state: EditorState, blockId: BlockId, kind: TurnIntoKind): EditorState {
+  const idx = state.blocks.findIndex((b) => b.id === blockId);
+  if (idx < 0) return state;
+  const src = state.blocks[idx];
+  if ((kind === 'p' || kind === 'h1' || kind === 'h2' || kind === 'h3' || kind === 'todo') && 'inline' in src) {
+    return changeBlockKind(state, blockId, kind);
+  }
+  const inline = extractInline(src);
+  let made: Block;
+  switch (kind) {
+    case 'p':       made = { id: newBlockId(), kind: 'p', inline } as Block; break;
+    case 'h1':
+    case 'h2':
+    case 'h3':      made = { id: newBlockId(), kind, inline } as Block; break;
+    case 'todo':    made = { id: newBlockId(), kind: 'todo', checked: false, inline } as Block; break;
+    case 'ul':      made = bulletList([[paraWithInline(inline)]]); break;
+    case 'ol':      made = orderedList([[paraWithInline(inline)]]); break;
+    case 'quote':   made = quote([paraWithInline(inline)]); break;
+    case 'callout': made = callout('💡', [paraWithInline(inline)]); break;
+    case 'pre':     made = codeBlock(inlineToPlainText(inline)); break;
+    case 'hr':      made = rule(); break;
+  }
+  const blocks = state.blocks.slice();
+  blocks[idx] = made;
+  const focusId = focusTargetId(made);
+  return {
+    ...state,
+    blocks,
+    selection: focusId ? { kind: 'caret', blockId: focusId, offset: 0 } : state.selection,
+  };
+}
+
 // ── Table mutations ──────────────────────────────────────
 
 /** Insert a row into the given table block. `at` is the row index to

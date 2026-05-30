@@ -920,6 +920,27 @@
 }
 #memola-overlay .memola-block-placeholder::before { left: -4px; }
 #memola-overlay .memola-block-placeholder::after  { right: -4px; }
+/* Block-handle menu (click the ⋮⋮ handle): 追加 + 種類変更 */
+#memola-overlay .memola-blk-menu {
+  position: absolute; z-index: 2147483647;
+  background: var(--paper, #fff);
+  border: 1px solid var(--line, rgba(55, 53, 47, 0.15));
+  border-radius: var(--r-3, 8px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  padding: 4px; min-width: 184px; max-height: 70vh; overflow-y: auto;
+  font-size: var(--fs-sm, 13px);
+}
+#memola-overlay .memola-blk-menu-item {
+  display: block; width: 100%; text-align: left;
+  background: none; border: none; cursor: pointer;
+  padding: 6px 10px; border-radius: var(--r-2, 4px);
+  color: var(--ink, #37352f); font-family: inherit; font-size: var(--fs-sm, 13px);
+}
+#memola-overlay .memola-blk-menu-item:hover { background: var(--paper-2, rgba(55, 53, 47, 0.08)); }
+#memola-overlay .memola-blk-menu-hd {
+  padding: 8px 10px 3px; font-size: var(--fs-xs, 11px);
+  color: var(--ink-3, #9b9a97); font-weight: 500;
+}
 @keyframes memola-ph-pulse {
   0%,100% { opacity: 1; }
   50%     { opacity: 0.65; }

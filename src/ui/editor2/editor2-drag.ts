@@ -5,7 +5,22 @@
 // produces the new DOM in one shot.
 
 import type { Editor } from './editor2';
-import { moveBlock } from './editor-state';
+import { moveBlock, turnIntoBlock, insertBlockAfter, paragraph, type TurnIntoKind } from './editor-state';
+
+/** Block kinds offered by the handle menu's 「種類を変更」 section. */
+const TURN_INTO_TYPES: Array<{ cmd: TurnIntoKind; label: string }> = [
+  { cmd: 'p', label: 'テキスト' },
+  { cmd: 'h1', label: '見出し1' },
+  { cmd: 'h2', label: '見出し2' },
+  { cmd: 'h3', label: '見出し3' },
+  { cmd: 'todo', label: 'ToDo リスト' },
+  { cmd: 'ul', label: '箇条書きリスト' },
+  { cmd: 'ol', label: '番号付きリスト' },
+  { cmd: 'quote', label: '引用' },
+  { cmd: 'callout', label: 'コールアウト' },
+  { cmd: 'pre', label: 'コードブロック' },
+  { cmd: 'hr', label: '区切り線' },
+];
 
 /** Public API — wire / unwire the drag behaviour. */
 export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void {
@@ -15,12 +30,14 @@ export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void
   handle.style.cssText = 'position:absolute; cursor:grab; user-select:none; opacity:0; pointer-events:none; z-index:2147483646; padding:2px 4px; color:#9b9a97; font-size:18px; line-height:1; transition:opacity 0.1s;';
   handle.textContent = '⋮⋮';
   handle.draggable = true;
-  handle.title = 'ドラッグして並べ替え';
+  handle.title = 'ドラッグで移動 / クリックでメニュー';
   (document.getElementById('memola-overlay') || document.body).appendChild(handle);
 
   let hoveredBlock: HTMLElement | null = null;
   let dragSourceId: string | null = null;
   let placeholder: HTMLElement | null = null;
+  let menu: HTMLElement | null = null;
+  let dragged = false;       // set on dragstart so the trailing click doesn't open the menu
 
   const showHandle = (block: HTMLElement): void => {
     if (block === hoveredBlock) return;
@@ -41,10 +58,85 @@ export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void
   };
 
   const hideHandle = (): void => {
+    if (menu) return;          // keep the handle while its menu is open
     hoveredBlock = null;
     handle.style.opacity = '0';
     handle.style.pointerEvents = 'none';
   };
+
+  // ── Block menu (click the handle) ───────────────────────
+
+  const onMenuOutside = (e: MouseEvent): void => {
+    if (menu && !menu.contains(e.target as Node) && e.target !== handle) closeMenu();
+  };
+  const onMenuKey = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') { e.preventDefault(); closeMenu(); }
+  };
+  function closeMenu(): void {
+    if (menu) { menu.remove(); menu = null; }
+    document.removeEventListener('mousedown', onMenuOutside, true);
+    document.removeEventListener('keydown', onMenuKey, true);
+  }
+
+  const addMenuItem = (label: string, run: () => void): HTMLElement => {
+    const b = document.createElement('button');
+    b.className = 'memola-blk-menu-item';
+    b.textContent = label;
+    // mousedown (not click) so we act before the editor loses/refocuses
+    // selection; preventDefault keeps the editor's caret intact.
+    b.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      closeMenu();
+      run();
+    });
+    return b;
+  };
+
+  const openMenu = (block: HTMLElement): void => {
+    const blockId = block.dataset.blockId;
+    if (!blockId) return;
+    closeMenu();
+    menu = document.createElement('div');
+    menu.className = 'memola-blk-menu';
+    menu.appendChild(addMenuItem('＋ 下にブロックを追加', () => {
+      editor.applyMutation((s) => insertBlockAfter(s, blockId, paragraph('')), 'structural');
+    }));
+    const hd = document.createElement('div');
+    hd.className = 'memola-blk-menu-hd';
+    hd.textContent = '種類を変更';
+    menu.appendChild(hd);
+    for (const t of TURN_INTO_TYPES) {
+      menu.appendChild(addMenuItem(t.label, () => {
+        editor.applyMutation((s) => turnIntoBlock(s, blockId, t.cmd), 'structural');
+      }));
+    }
+    (document.getElementById('memola-overlay') || document.body).appendChild(menu);
+    // Anchor to the right of the handle; flip / clamp to stay on-screen.
+    const hr = handle.getBoundingClientRect();
+    menu.style.left = (hr.right + window.scrollX + 4) + 'px';
+    menu.style.top = (hr.top + window.scrollY) + 'px';
+    const mr = menu.getBoundingClientRect();
+    if (mr.right > window.innerWidth) {
+      menu.style.left = (hr.left + window.scrollX - mr.width - 4) + 'px';
+    }
+    if (mr.bottom > window.innerHeight) {
+      menu.style.top = (window.innerHeight - mr.height - 8 + window.scrollY) + 'px';
+    }
+    setTimeout(() => {
+      document.addEventListener('mousedown', onMenuOutside, true);
+      document.addEventListener('keydown', onMenuKey, true);
+    }, 0);
+  };
+
+  const onHandleClick = (e: MouseEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (dragged) { dragged = false; return; }   // trailing click after a drag
+    if (menu) { closeMenu(); return; }           // toggle
+    if (hoveredBlock) openMenu(hoveredBlock);
+  };
+  handle.addEventListener('click', onHandleClick);
 
   const blockUnderCursor = (clientX: number, clientY: number): HTMLElement | null => {
     // Find a top-level block whose bounding rect contains (x,y), with a
@@ -117,6 +209,8 @@ export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void
 
   const onDragStart = (e: DragEvent): void => {
     if (!hoveredBlock) { e.preventDefault(); return; }
+    dragged = true;            // suppress the trailing click → menu
+    closeMenu();
     dragSourceId = hoveredBlock.dataset.blockId || null;
     if (!dragSourceId) { e.preventDefault(); return; }
     hoveredBlock.classList.add('memola-block-dragging');
@@ -138,6 +232,9 @@ export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void
     if (placeholder?.parentNode) placeholder.parentNode.removeChild(placeholder);
     placeholder = null;
     dragSourceId = null;
+    // Clear the click-suppress flag after the (possible) trailing click
+    // has been dispatched, so the next genuine click opens the menu.
+    setTimeout(() => { dragged = false; }, 0);
     document.removeEventListener('dragover', onDragOver);
     document.removeEventListener('drop', onDrop);
   };
@@ -205,6 +302,7 @@ export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void
     // strip, document listener removal). Otherwise the placeholder
     // and `.memola-block-dragging` class linger in the DOM.
     onDragEnd();
+    closeMenu();
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('selectionchange', onSelectionChange);
     document.removeEventListener('dragover', onDragOver);
