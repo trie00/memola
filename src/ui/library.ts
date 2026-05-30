@@ -23,6 +23,7 @@ import {
   ORG_PAGES_LIST, getMyPagesList, pageIdForListItem, type PageScope,
 } from '../api/pages';
 import { spListUrl, spGetD } from '../api/sp-rest';
+import { createFloatingHandle, isCursorOverWithExtend, type FloatingHandle } from '../lib/floating-handle';
 
 let _filter = '';
 let _scope: PageScope = 'user';
@@ -352,9 +353,65 @@ async function bulkDelete(): Promise<void> {
   } finally { setLoad(false); }
 }
 
+// ── Floating row handle (the SAME ⋮⋮ component as the DB list) ──────────
+// The library is a read-only, title-sorted page list (not a manually
+// ordered DB grid), so the handle isn't drag-to-reorder — it's a
+// hover-revealed grip that CLICKS to (de)select the row for bulk actions,
+// matching the DB list's handle look exactly via the shared scaffold.
+let _libHandle: FloatingHandle | null = null;
+let _libHoveredRow: HTMLElement | null = null;
+let _libHandleWired = false;
+
+function libVisible(): boolean {
+  const el = document.getElementById('memola-lib');
+  return !!el && getComputedStyle(el).display !== 'none';
+}
+
+function ensureLibHandle(): FloatingHandle {
+  if (_libHandle) return _libHandle;
+  _libHandle = createFloatingHandle({
+    id: 'memola-lib-row-handle',
+    title: 'クリックで選択',
+    centred: true,
+    onDragStart: (e) => e.preventDefault(),     // not reorderable (title-sorted)
+    onDragEnd: () => undefined,
+    onMouseLeave: (e) => {
+      const rt = (e as MouseEvent).relatedTarget as HTMLElement | null;
+      if (rt && _libHoveredRow && _libHoveredRow.contains(rt)) return;
+      _libHandle?.hide(); _libHoveredRow = null;
+    },
+  });
+  _libHandle.el.addEventListener('click', () => {
+    const id = _libHoveredRow?.dataset.pageId || '';
+    if (!id) return;
+    if (_selected.has(id)) _selected.delete(id); else _selected.add(id);
+    renderRows();
+  });
+  return _libHandle;
+}
+
+function attachLibraryRowHandle(): void {
+  if (_libHandleWired) return;
+  _libHandleWired = true;
+  document.addEventListener('mousemove', (e) => {
+    if (!libVisible()) { _libHandle?.hide(); _libHoveredRow = null; return; }
+    if (_libHandle && _libHandle.isCursorOnHandle(e.clientX, e.clientY)) return;
+    const tbody = document.getElementById('memola-lib-tbody');
+    if (!tbody) { _libHandle?.hide(); return; }
+    let found: HTMLElement | null = null;
+    for (const r of Array.from(tbody.querySelectorAll<HTMLElement>('.memola-lib-row'))) {
+      if (isCursorOverWithExtend(r, e.clientX, e.clientY)) { found = r; break; }
+    }
+    if (found) {
+      if (found !== _libHoveredRow) { _libHoveredRow = found; ensureLibHandle().positionAt(found); }
+    } else { _libHandle?.hide(); _libHoveredRow = null; }
+  });
+}
+
 /** Wire the sidebar 「ライブラリ」 entry. Idempotent. */
 export function attachLibrary(): void {
   document.getElementById('memola-sb-library')?.addEventListener('click', () => {
     void openLibrary();
   });
+  attachLibraryRowHandle();
 }
