@@ -47,6 +47,10 @@ export interface Editor {
    *  same (blockId, offset) when that block still exists. Notifies
    *  subscribers so the Saver re-syncs. */
   reconcile(blocks: Block[]): void;
+  /** True while an IME composition is in progress. Callers that mutate
+   *  the editor from outside (e.g. live remote sync) must skip during
+   *  composition to avoid corrupting the in-flight input. */
+  isComposing(): boolean;
   subscribe(fn: (blocks: Block[]) => void): () => void;
   destroy(): void;
   /** Force a fresh render (= reapply current state to the DOM).
@@ -238,6 +242,9 @@ export function createEditor(rootEl: HTMLElement, opts: EditorOpts = {}): Editor
       // sync layer isn't the local user's action to undo.
       paint();
       notify();
+    },
+    isComposing(): boolean {
+      return composing;
     },
     subscribe(fn): () => void {
       subscribers.add(fn);

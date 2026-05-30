@@ -236,6 +236,32 @@ class Saver {
     this._set({ kind: 'unloaded' });
   }
 
+  /** Advance the baseline onto a freshly-observed remote version after a
+   *  live poll-merge (C). `theirs` is SP's current snapshot; `editorBody`
+   *  is what the editor now shows (= the merge of my unsaved edits + the
+   *  remote changes). If they match, I have nothing unsaved → idle.
+   *  Otherwise stay dirty against the NEW base so my next save uses the
+   *  new etag (and merges cleanly). No-op unless a page is loaded for
+   *  the same id and no save is mid-flight. */
+  rebaseOnto(theirs: PageSnapshot, editorBody: string, editorTitle: string): void {
+    const s = this._state;
+    if (s.kind !== 'idle' && s.kind !== 'dirty') return;   // don't disturb saving/conflict/merging
+    const base = s.kind === 'idle' ? s.base : s.base;
+    if (base.pageId !== theirs.pageId) return;
+    const newBase: PageSnapshot = {
+      pageId: theirs.pageId,
+      body: theirs.body,
+      title: theirs.title,
+      etag: theirs.etag,
+      modified: theirs.modified,
+    };
+    if (editorBody === newBase.body && editorTitle === newBase.title) {
+      this._set({ kind: 'idle', base: newBase });
+    } else {
+      this._set({ kind: 'dirty', base: newBase, body: editorBody, title: editorTitle });
+    }
+  }
+
   // ── Editor input ───────────────────────────────────────────────────
 
   /** The editor reports new content. Saver decides whether this is

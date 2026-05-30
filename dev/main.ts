@@ -50,6 +50,12 @@ import css from '../src/styles/app.css';
     (window as unknown as { __memolaDev?: unknown }).__memolaDev = m;
     console.log('[dev] window.__memolaDev exposed (bridge module)');
   });
+  // Dev-only: expose saver + global state for inspecting sync/conflict
+  // behaviour from preview_eval.
+  void Promise.all([import('../src/lib/saver'), import('../src/state')]).then(([sv, st]) => {
+    (window as unknown as { __memolaSaver?: unknown }).__memolaSaver = sv.saver;
+    (window as unknown as { __memolaState?: unknown }).__memolaState = st.S;
+  });
 
   console.log('[dev] Memola mounted. Open #memola-overlay to interact.');
 })();

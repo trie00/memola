@@ -238,6 +238,21 @@ export function syncEditor2IntoSaver(title: string): void {
   saver.notifyEdit(body, title);
 }
 
+/** Live-sync (C): fold a remote merge into the mounted editor,
+ *  caret-preserving. No-op (returns false) when no editor is mounted.
+ *  The keyed renderer repaints only the blocks whose content changed. */
+export function reconcileEditorBlocks(blocks: Block[]): boolean {
+  if (!_editor) return false;
+  _editor.reconcile(blocks);
+  return true;
+}
+
+/** True while the mounted editor is mid-IME-composition — live sync
+ *  must skip then. False when no editor is mounted. */
+export function isEditorComposing(): boolean {
+  return _editor ? _editor.isComposing() : false;
+}
+
 /** Toolbar / shortcut command dispatcher. Returns true when editor2
  *  handled the command, false otherwise. */
 export function editor2ExecCmd(cmd: string): boolean {

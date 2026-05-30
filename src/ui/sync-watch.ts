@@ -2,12 +2,15 @@
 // somebody else updated the row. Surface a toast with a "今すぐ反映" link.
 
 import { S } from '../state';
-import { apiLoadFileMeta } from '../api/pages';
+import { apiLoadFileMeta, apiLoadBlocksBody, serializeBlocks } from '../api/pages';
 import { getListItemEditor, getCurrentUser } from '../api/sync';
 import { doSelect } from './views';
 import { escapeHtml } from '../lib/html-escape';
 import { prefSyncPollMs } from '../lib/prefs';
 import { listenPageSaved } from '../lib/cross-tab-sync';
+import { saver } from '../lib/saver';
+import { planLiveSync } from '../lib/live-sync';
+import { getBlocks, reconcileEditorBlocks, isEditorComposing } from './editor2/editor2-bridge';
 
 const DEFAULT_POLL_INTERVAL_MS = 30_000;
 
@@ -48,7 +51,10 @@ async function checkOnce(): Promise<void> {
   if (S.sync.suppressBannerUntilFocus) return;          // user opted out for this visit
   const id = S.sync.pageId;
   if (!id || S.currentId !== id) return;                // page changed — skip
-  if (S.saving || S.dirty) return;                      // local save in flight — skip
+  if (S.saving) return;                                  // local save in flight — skip
+  // Note: we DON'T skip when dirty. A foreign edit to a DIFFERENT block
+  // can be folded into my unsaved edits live (tryLiveSync); only a
+  // same-block clash falls back to the banner.
   const page = S.pages.find((p) => p.Id === id);
   if (!page || page.Type === 'database') return;
   try {
@@ -73,15 +79,61 @@ async function checkOnce(): Promise<void> {
     const etagSame = !!meta.etag && meta.etag === S.sync.loadedEtag;
     const modifiedSame = !!meta.modified && meta.modified === S.sync.loadedModified;
     if (etagSame || modifiedSame) return;
-    // Foreign edit detected — surface the banner. We distinguish
-    // "another tab of this user" vs "another user" so the message can
-    // be clearer.
+    // Foreign edit detected. Try to fold it into the live editor
+    // block-by-block (C). Only a same-block clash (or a non-structural
+    // body) falls through to the manual banner.
+    const applied = await tryLiveSync(id, meta.etag, meta.modified);
+    if (applied) return;
     const editor = await getListItemEditor(id).catch(() => '');
     const me = await getCurrentUser().catch(() => '');
     if (S.currentId !== id) return;        // and again before painting
     const sameUser = !!editor && !!me && editor === me;
     showStaleBanner(editor, meta.modified, id, sameUser);
   } catch { /* ignore transient errors */ }
+}
+
+/** Attempt a live block-level merge of a detected foreign edit into the
+ *  mounted editor (C). Returns true when handled (merged in, or nothing
+ *  to do) so the caller skips the banner; false when the caller should
+ *  fall back to the manual "今すぐ反映" banner (same-block conflict,
+ *  non-structural body, or saver mid-flow).
+ *
+ *  Flow: 3-way merge base/ours/theirs by block id →
+ *    - no conflict → reconcile the editor (caret-preserving) + rebase
+ *      the Saver onto theirs so the watermark/etag advance and any
+ *      unsaved edits stay dirty against the new base.
+ *    - conflict / unmergeable → false (banner). */
+async function tryLiveSync(
+  id: string,
+  theirsEtag: string,
+  theirsModified: string,
+): Promise<boolean> {
+  const st = saver.state();
+  // Only fold in when a page is loaded and we're not mid-save/merge.
+  if (st.kind !== 'idle' && st.kind !== 'dirty') return false;
+  if (st.base.pageId !== id) return false;
+  if (isEditorComposing()) return true;   // skip this tick; retry next poll (no banner)
+
+  const theirsBody = await apiLoadBlocksBody(id).catch(() => null);
+  if (theirsBody === null) return false;
+  if (S.currentId !== id) return true;    // navigated away during fetch
+
+  const baseBody = st.base.body;
+  const oursBody = serializeBlocks(getBlocks());
+  const editorTitle = st.kind === 'dirty' ? st.title : st.base.title;
+
+  const plan = planLiveSync(baseBody, oursBody, theirsBody);
+  if (plan.kind === 'conflict' || plan.kind === 'noop') return false;   // → banner
+
+  // Clean merge. Fold into the editor only if the visible content
+  // actually changed (avoids a no-op reconcile).
+  if (plan.changed) reconcileEditorBlocks(plan.merged);
+  saver.rebaseOnto(
+    { pageId: id, body: theirsBody, title: editorTitle, etag: theirsEtag, modified: theirsModified },
+    plan.mergedBody,
+    editorTitle,
+  );
+  return true;
 }
 
 function showStaleBanner(editor: string, modified: string, pageId: string, sameUser = false): void {
@@ -166,11 +218,17 @@ export function attachCrossTabSync(): void {
     if (S.currentId !== msg.pageId) return;
     if (msg.etag && msg.etag === S.sync.loadedEtag) return;
     if (S.sync.suppressBannerUntilFocus) return;
-    // BroadcastChannel only delivers same-origin same-user same-browser
-    // messages, so we can label the banner "別のタブ (あなた)" without
-    // a network round-trip to confirm the editor identity. (The poll
-    // path still asks SP because it sees real foreign-user edits too.)
-    showStaleBanner('', msg.modified, msg.pageId, /*sameUser*/ true);
+    if (S.saving) return;
+    void (async () => {
+      // Same as the poll path: try to fold the sibling-tab edit into the
+      // live editor block-by-block; only fall back to the banner on a
+      // same-block clash. BroadcastChannel is same-user-same-browser, so
+      // the banner is always the "別のタブ (あなた)" flavour.
+      const applied = await tryLiveSync(msg.pageId, msg.etag, msg.modified);
+      if (applied) return;
+      if (S.currentId !== msg.pageId) return;
+      showStaleBanner('', msg.modified, msg.pageId, /*sameUser*/ true);
+    })();
   });
 }
 
