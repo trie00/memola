@@ -8,11 +8,12 @@
 import { S } from '../state';
 import { getBacklinksFor, type BacklinkEntry } from '../api/backlinks';
 import { escapeHtml } from '../lib/html-escape';
+import { metaById } from '../lib/page-store';
 
 const CONTAINER_ID = 'memola-backlinks';
 
 function resolveTitle(id: string): string | null {
-  const m = S.meta.pages.find((p) => p.id === id);
+  const m = metaById(id);
   return m ? m.title : null;
 }
 
@@ -62,7 +63,7 @@ export async function renderBacklinks(): Promise<void> {
   const body = el.querySelector<HTMLElement>('.memola-bl-body');
   if (!body) return;
   body.innerHTML = entries.map((e) => {
-    const meta = S.meta.pages.find((p) => p.id === e.pageId);
+    const meta = metaById(e.pageId);
     const icon = meta?.icon || '📄';
     const badge = e.count > 1 ? '<span class="memola-bl-badge">×' + e.count + '</span>' : '';
     return '<div class="memola-bl-item" data-page-id="' + escapeHtml(e.pageId) + '">' +

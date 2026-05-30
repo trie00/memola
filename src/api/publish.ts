@@ -18,9 +18,8 @@ import { S } from '../state';
 import { SITE } from '../config';
 import { getDigest } from './digest';
 import { updatePageRow } from './pages';
-import { mdToBlocks } from '../lib/blocks-md';
-import { blocksToHtml } from '../lib/blocks-html';
-const mdToHtml = (md: string): string => blocksToHtml(mdToBlocks(md));
+import { mdToHtml } from '../lib/blocks-html';
+import { metaById } from '../lib/page-store';
 
 interface SitePageRef {
   id: number;
@@ -280,14 +279,14 @@ async function deleteSitePage(id: number): Promise<void> {
 
 /** Browser-accessible URL for the published page (Site Page .aspx). */
 export function publishedUrlFor(pageId: string): string {
-  const meta = S.meta.pages.find((p) => p.id === pageId);
+  const meta = metaById(pageId);
   return meta?.publishedUrl || '';
 }
 
 /** Mark the page as published and create / refresh its Site Page mirror.
  *  Also clears the "未反映" dirty flag — the mirror now matches memola. */
 export async function publishPage(pageId: string, title: string, bodyMd: string): Promise<string> {
-  const meta = S.meta.pages.find((p) => p.id === pageId);
+  const meta = metaById(pageId);
   const content = buildCanvasContent(bodyMd);
   let ref: SitePageRef;
   const existingId = meta?.publishedSitePageId || 0;
@@ -315,7 +314,7 @@ export async function publishPage(pageId: string, title: string, bodyMd: string)
 
 /** Clear the published flag and remove the Site Page mirror (best-effort). */
 export async function unpublishPage(pageId: string): Promise<void> {
-  const meta = S.meta.pages.find((p) => p.id === pageId);
+  const meta = metaById(pageId);
   const sitePageId = meta?.publishedSitePageId || 0;
   if (sitePageId) {
     try { await deleteSitePage(sitePageId); } catch { /* ignore */ }
@@ -338,7 +337,7 @@ export async function unpublishPage(pageId: string): Promise<void> {
  *  the dirty flag. Caller decides when this runs (no auto-sync on save).
  *  Throws on failure so the UI can surface it. */
 export async function syncPublishedPage(pageId: string, title: string, bodyMd: string): Promise<void> {
-  const meta = S.meta.pages.find((p) => p.id === pageId);
+  const meta = metaById(pageId);
   if (!meta?.published) throw new Error('not_published');
   const content = buildCanvasContent(bodyMd);
   const sitePageId = meta.publishedSitePageId || 0;
@@ -362,6 +361,6 @@ export async function syncPublishedPage(pageId: string, title: string, bodyMd: s
 }
 
 export function isPagePublished(pageId: string): boolean {
-  const meta = S.meta.pages.find((p) => p.id === pageId);
+  const meta = metaById(pageId);
   return !!meta?.published;
 }

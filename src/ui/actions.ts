@@ -20,7 +20,7 @@ import { getDbFields, mkDbRow } from './views';
 import { saver } from '../lib/saver';
 import { flushPendingSave, clearSaveTimer } from './save-control';
 import { onKey } from './keymap';
-import { addPage, removePages } from '../lib/page-store';
+import { addPage, removePages, metaById} from '../lib/page-store';
 
 export async function doNew(parentId: string): Promise<void> {
   try {
@@ -45,7 +45,7 @@ export async function doDel(id: string): Promise<void> {
   // Showing the user a "delete?" confirm here even with strong warnings
   // turned out to invite accidental loss + reproduce the duplicate-DB
   // bug on restore. Just refuse outright.
-  const meta = S.meta.pages.find((p) => p.id === id);
+  const meta = metaById(id);
   const isDailyDb = meta?.type === 'database' && meta.list === 'memola-daily';
   if (isDailyDb) {
     toast(

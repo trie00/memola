@@ -22,7 +22,7 @@ import {
 } from './pages';
 import { apiAddDbRow } from './db';
 import { todayYMD, formatDailyTitle, isDailyTitleFormat } from '../lib/date-utils';
-import { addPage } from '../lib/page-store';
+import { addPage, metaById} from '../lib/page-store';
 
 export const DAILY_LIST_TITLE = 'memola-daily';
 // English internal names — Japanese-titled DateTime columns occasionally
@@ -205,7 +205,7 @@ export async function ensureDailyDb(): Promise<DailyDb> {
     // `apiCreateDbPageRow` already added the meta entry; we just need to
     // patch the icon/pinned fields, then sync to S.pages via addPage
     // (idempotent on meta, so the meta isn't double-added).
-    const m = S.meta.pages.find((p) => p.id === created.Id);
+    const m = metaById(created.Id);
     if (m) { m.icon = '📅'; m.pinned = true; }
     addPage(created);
     return { dbPageId: created.Id, listTitle: DAILY_LIST_TITLE, dateInternalName };
@@ -286,7 +286,7 @@ export async function convertDailyToPage(
   const newPage = await apiCreatePage(newTitle, parentId);
   await apiSavePageMd(newPage.Id, newTitle, body).catch(() => undefined);
   await updatePageRow(newPage.Id, { OriginDailyDate: originDate }).catch(() => undefined);
-  const meta = S.meta.pages.find((p) => p.id === newPage.Id);
+  const meta = metaById(newPage.Id);
   if (meta) meta.originDailyDate = originDate;
   // 3. Drop the daily row + its row-as-page entry.
   await deleteRowEntry(DAILY_LIST_TITLE, rowId).catch(() => undefined);
@@ -297,7 +297,7 @@ export async function convertDailyToPage(
 /** Reverse of `convertDailyToPage`. Recreates a daily-note row for the page's
  *  origin date, copies the current body in, then deletes the standalone page. */
 export async function restoreToDaily(pageId: string): Promise<{ rowId: number; date: string }> {
-  const meta = S.meta.pages.find((p) => p.id === pageId);
+  const meta = metaById(pageId);
   if (!meta?.originDailyDate) throw new Error('このページはデイリーノート由来ではありません');
   const date = meta.originDailyDate;
   const body = await apiLoadRawBody(pageId);

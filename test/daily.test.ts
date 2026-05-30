@@ -88,7 +88,6 @@ beforeEach(async () => {
   daily = await import('../src/api/daily');
   stateMod = await import('../src/state');
   stateMod.S.meta.pages = [];
-  stateMod.S.pages = [];
 });
 
 describe('isDailyList', () => {

@@ -12,6 +12,15 @@
 
 import { S, type Page, type PageMeta } from '../state';
 
+/** Look up a page's canonical meta by id. Returns null when unknown.
+ *  Centralises the `S.meta.pages.find((p) => p.id === id)` pattern that
+ *  was open-coded in 70+ call sites — a single search target if the
+ *  store ever moves to a Map-backed index. */
+export function metaById(id: string | null | undefined): PageMeta | null {
+  if (!id) return null;
+  return S.meta.pages.find((p) => p.id === id) || null;
+}
+
 /** Add a page to the canonical store. Idempotent — re-adding an
  *  existing id is a no-op. The meta entry is derived from the Page
  *  row plus the caller's `extras` (icon / scope / list / authorId

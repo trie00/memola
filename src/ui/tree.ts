@@ -7,13 +7,14 @@ import { doNew, doDel } from './actions';
 import { apiMovePage, apiSetPin, apiSetScope, scopeMismatchOnMove, type PageScope } from '../api/pages';
 import { toast } from './ui-helpers';
 import { applySiblingOrder, saveSiblingOrder, computeReorder } from '../lib/page-tree';
+import { metaById } from '../lib/page-store';
 
 /** Resolve a page's effective scope. Pre-`Scope`-column rows have no
  *  value — treat as 'user' (private) by default for safety. */
 function pageScope(p: Page | PageMeta | undefined): PageScope {
   if (!p) return 'user';
   const id = 'Id' in p ? p.Id : p.id;
-  const meta = S.meta.pages.find((m) => m.id === id);
+  const meta = metaById(id);
   return meta?.scope === 'org' ? 'org' : 'user';
 }
 
@@ -41,14 +42,14 @@ async function confirmAndMaybeMigrateScope(
 ): Promise<boolean> {
   const target = scopeMismatchOnMove(dragId, newParentId);
   if (target === null) return true;
-  const dragMeta = S.meta.pages.find((p) => p.id === dragId);
+  const dragMeta = metaById(dragId);
   // Daily DB is locked to personal scope. Refuse cross-scope moves
   // outright instead of asking for confirmation.
   if (target === 'org' && dragMeta?.type === 'database' && dragMeta.list === 'memola-daily') {
     toast('デイリーノート DB は組織に公開できません', 'err');
     return false;
   }
-  const parentMeta = S.meta.pages.find((p) => p.id === newParentId);
+  const parentMeta = metaById(newParentId);
   const childCount = countDescendantsLocal(dragId);
   const targetLabel = target === 'org' ? '組織' : 'プライベート';
   const sourceLabel = target === 'org' ? 'プライベート' : '組織';
@@ -186,7 +187,7 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
   const hasK = kids.length > 0;
   const exp = S.expanded.has(page.Id);
   const act = page.Id === S.currentId;
-  const metaPage = S.meta.pages.find((p) => p.id === page.Id);
+  const metaPage = metaById(page.Id);
   const icon = metaPage && metaPage.icon ? metaPage.icon : (isDb ? '🗃' : '📄');
 
   const item = document.createElement('div');
@@ -354,7 +355,7 @@ export function renderTree(): void {
   // section header when nothing is pinned to save vertical space.
   const pinned = S.pages.filter((p) => {
     if (p.IsDraft) return false;
-    const m = S.meta.pages.find((mp) => mp.id === p.Id);
+    const m = metaById(p.Id);
     return m?.pinned;
   });
   if (lblPin) lblPin.style.display = pinned.length > 0 ? '' : 'none';
@@ -419,7 +420,7 @@ function wireSectionDrop(container: HTMLElement, sectionScope: PageScope): void 
       const dragScope = pageScope(dragPage);
       if (dragScope !== sectionScope) {
         // Daily DB is locked to personal — refuse drops onto the org section.
-        const dragMeta = S.meta.pages.find((p) => p.id === dragId);
+        const dragMeta = metaById(dragId);
         if (sectionScope === 'org' && dragMeta?.type === 'database' && dragMeta.list === 'memola-daily') {
           toast('デイリーノート DB は組織に公開できません', 'err');
           return;

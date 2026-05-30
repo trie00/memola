@@ -10,13 +10,14 @@ import { S } from '../state';
 import { apiSetScope, apiMovePage, type PageScope } from '../api/pages';
 import { saveSiblingOrder } from '../lib/page-tree';
 import { toast } from './ui-helpers';
+import { metaById } from '../lib/page-store';
 
 const TAG_ID = 'memola-scope-tag';
 
 /** Resolve the active page's scope, defaulting unset to 'user'. */
 function currentPageScope(): PageScope | null {
   if (!S.currentId) return null;
-  const meta = S.meta.pages.find((p) => p.id === S.currentId);
+  const meta = metaById(S.currentId);
   if (!meta) return null;
   return meta.scope === 'org' ? 'org' : 'user';
 }
@@ -35,7 +36,7 @@ export function syncScopeTag(): void {
     && (S.currentType === 'page' || S.currentType === 'database')
     && !S.currentRow;
   if (!isToggleable) { tag.style.display = 'none'; return; }
-  const meta = S.currentId ? S.meta.pages.find((p) => p.id === S.currentId) : null;
+  const meta = S.currentId ? metaById(S.currentId) : null;
   if (!meta || meta.trashed) { tag.style.display = 'none'; return; }
   // Drafts have their own indicator banner, no scope tag.
   if (meta.originPageId) { tag.style.display = 'none'; return; }
@@ -71,7 +72,7 @@ export function syncScopeTag(): void {
 export async function toggleCurrentPageScope(): Promise<void> {
   const id = S.currentId;
   if (!id) return;
-  const meta = S.meta.pages.find((p) => p.id === id);
+  const meta = metaById(id);
   if (!meta) return;
   const cur = currentPageScope() || 'user';
   const next: PageScope = cur === 'org' ? 'user' : 'org';

@@ -10,6 +10,7 @@ import { getBacklinksFor } from '../api/backlinks';
 import { getListItemEditor } from '../api/sync';
 import { escapeHtml } from '../lib/html-escape';
 import { prefPropertiesOpen } from '../lib/prefs';
+import { metaById } from '../lib/page-store';
 
 export function isPropertiesOpen(): boolean {
   return prefPropertiesOpen.get() === '1';
@@ -51,7 +52,7 @@ export async function renderProperties(): Promise<void> {
   const list = g('props-list');
   const id = S.currentId;
   const page = S.pages.find((p) => p.Id === id);
-  const meta = S.meta.pages.find((p) => p.id === id);
+  const meta = metaById(id);
   if (!page || !meta) { list.innerHTML = ''; return; }
 
   const path = ancs(id).slice(0, -1).map((p) => p.Title || '無題').join(' / ') || '(ルート)';
@@ -118,7 +119,7 @@ export async function renderProperties(): Promise<void> {
   // which case we should drop the result instead of clobbering the
   // newer page's panel.
   const renderedFor = id;
-  void getBacklinksFor(id, (pid) => S.meta.pages.find((p) => p.id === pid)?.title || null)
+  void getBacklinksFor(id, (pid) => metaById(pid)?.title || null)
     .then((entries) => {
       if (S.currentId !== renderedFor) return;
       placeholder.remove();

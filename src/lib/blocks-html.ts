@@ -28,6 +28,7 @@ import type {
   RuleBlock, QuoteBlock, ListBlock, CalloutBlock,
 } from './blocks';
 import { newBlockId } from './blocks';
+import { mdToBlocks } from './blocks-md';
 
 // ── DOM → Block[] ─────────────────────────────────────────
 
@@ -296,6 +297,15 @@ function walkInline(parent: Node): Inline[] {
 
 export function blocksToHtml(blocks: Block[]): string {
   return blocks.map(blockToHtml).join('');
+}
+
+/** Render a markdown string straight to HTML for read-only previews /
+ *  exports (merge preview, drafts preview, page export, published Site
+ *  Page). Combinator over `mdToBlocks` + `blocksToHtml` — previously
+ *  re-declared identically in four call sites. NOT for the live editor
+ *  (which renders from Block[] via controlled-rendering). */
+export function mdToHtml(md: string): string {
+  return blocksToHtml(mdToBlocks(md));
 }
 
 function blockToHtml(b: Block): string {

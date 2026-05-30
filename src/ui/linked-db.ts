@@ -12,6 +12,7 @@ import { S, type ListField, type ListItem } from '../state';
 import { toast } from './ui-helpers';
 import { schedSave } from './save-control';
 import { escapeHtml } from '../lib/html-escape';
+import { metaById } from '../lib/page-store';
 
 const MAX_ROWS_INLINE = 50;     // hard cap so embedding a huge DB stays usable
 const VISIBLE_COLS = 4;         // Title + first 3 user columns
@@ -97,7 +98,7 @@ function fmtCell(value: unknown, field: ListField): string {
 
 async function renderOne(blockEl: HTMLElement): Promise<void> {
   const dbId = blockEl.getAttribute('data-db-id') || '';
-  const meta = S.meta.pages.find((p) => p.id === dbId);
+  const meta = metaById(dbId);
   if (!meta || meta.type !== 'database' || !meta.list) {
     blockEl.innerHTML =
       '<div class="memola-linkdb-broken">⚠ DB が見つかりません'

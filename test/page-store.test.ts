@@ -10,7 +10,6 @@ const PAGE = (over: Partial<Page> = {}): Page => ({
 });
 
 beforeEach(() => {
-  S.pages = [];
   S.meta.pages = [];
 });
 

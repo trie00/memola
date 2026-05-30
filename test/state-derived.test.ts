@@ -45,20 +45,8 @@ describe('S.pages derived view', () => {
     expect(S.pages[0].Type).toBe('page');
   });
 
-  it('setter is a no-op (cannot drift from meta.pages)', () => {
-    S.meta.pages.push({ id: '1', title: 'p', parent: '' });
-    // Attempt to overwrite — the setter ignores the assignment
-    S.pages = [];
-    // Read still derives from meta
-    expect(S.pages).toHaveLength(1);
-    expect(S.pages[0].Id).toBe('1');
-  });
-
-  it('setter accepts assignment for legacy compat without throwing', () => {
-    expect(() => { S.pages = [{ Id: '999', Title: 'fake', ParentId: '' }]; }).not.toThrow();
-    // Still empty because meta.pages is empty
-    expect(S.pages).toEqual([]);
-  });
+  // `S.pages` is read-only (no setter) — `S.pages = …` is a compile
+  // error, enforced by the type system rather than a runtime test.
 
   it('returns a fresh array each access (so callers can safely .filter/.map)', () => {
     S.meta.pages.push({ id: '1', title: 'p', parent: '' });

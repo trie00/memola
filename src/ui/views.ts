@@ -24,6 +24,7 @@ import { renderDbTable, setSelectionAnchor } from './views-table';
 
 // doSave is imported lazily to avoid circular load issues.
 import { flushPendingSave } from './save-control';
+import { metaById } from '../lib/page-store';
 
 // ── Re-exports so call sites can keep `from './views'` ──────────────
 export {
@@ -79,7 +80,7 @@ export function renderBcCustom(segments: { label: string; onClick?: () => void }
 }
 
 export function renderPageIcon(id: string): void {
-  const metaPage = S.meta.pages.find((p) => p.id === id);
+  const metaPage = metaById(id);
   const icon = metaPage ? (metaPage.icon || '') : '';
   const pgIcon = g('pg-icon');
   const addIcon = g('add-icon');
@@ -250,13 +251,13 @@ export function loadLastOpenedPage(): string | null {
 function syncDraftBanner(): void {
   const bn = document.getElementById('memola-draft-banner');
   if (!bn) return;
-  const meta = S.currentId ? S.meta.pages.find((p) => p.id === S.currentId) : null;
+  const meta = S.currentId ? metaById(S.currentId) : null;
   if (!meta?.originPageId) {
     bn.style.display = 'none';
     bn.innerHTML = '';
     return;
   }
-  const origin = S.meta.pages.find((p) => p.id === meta.originPageId);
+  const origin = metaById(meta.originPageId);
   const originTitle = origin?.title || '(原本ページが見つかりません)';
   const exists = !!origin && !origin.trashed;
   bn.style.display = '';
@@ -318,7 +319,7 @@ export async function doSelectDb(id: string, page: Page): Promise<void> {
   applyPropertiesState();
   // Attach the floating row-drag handle (idempotent — only wires global listeners once)
   void import('./db-row-drag').then((m) => m.attachDbRowDrag());
-  const meta = S.meta.pages.find((p) => p.id === id);
+  const meta = metaById(id);
   if (!meta || !meta.list) { toast('DBメタ情報が見つかりません', 'err'); return; }
   showView('db');
   g('dv-ttl').textContent = page.Title || '無題';

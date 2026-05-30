@@ -13,6 +13,7 @@
 import { S } from '../state';
 import { g } from './dom';
 import { toast } from './ui-helpers';
+import { metaById } from '../lib/page-store';
 
 let _outsideHandler: ((e: MouseEvent) => void) | null = null;
 
@@ -30,7 +31,7 @@ export function syncPubTag(): void {
   const labelEl = tag.querySelector<HTMLElement>('.memola-pub-tag-label');
   const isRealPage = !!S.currentId && S.currentType === 'page' && !S.currentRow;
   const meta = isRealPage && S.currentId
-    ? S.meta.pages.find((p) => p.id === S.currentId)
+    ? metaById(S.currentId)
     : null;
   if (!meta?.published) {
     tag.style.display = 'none';
@@ -54,7 +55,7 @@ function openPubPop(): void {
   const tag = document.getElementById('memola-pub-tag');
   if (!pop || !tag) return;
   if (!S.currentId) return;
-  const meta = S.meta.pages.find((p) => p.id === S.currentId);
+  const meta = metaById(S.currentId);
   if (!meta?.published) return;
   const msg = pop.querySelector<HTMLElement>('.memola-pub-pop-msg');
   if (msg) {
@@ -91,7 +92,7 @@ function closePubPop(): void {
 async function runSync(): Promise<void> {
   const id = S.currentId;
   if (!id) return;
-  const meta = S.meta.pages.find((p) => p.id === id);
+  const meta = metaById(id);
   if (!meta?.published) return;
   // Persist any in-flight edits to memola-pages first. Without this we'd push
   // the editor buffer to the Site Page while the source row still has the
@@ -126,7 +127,7 @@ async function runSync(): Promise<void> {
 function openPublishedPage(): void {
   const id = S.currentId;
   if (!id) return;
-  const meta = S.meta.pages.find((p) => p.id === id);
+  const meta = metaById(id);
   const url = meta?.publishedUrl || '';
   if (!url) { toast('URL が見つかりません', 'err'); return; }
   window.open(url, '_blank', 'noopener');
@@ -135,7 +136,7 @@ function openPublishedPage(): void {
 async function copyPublishedUrl(): Promise<void> {
   const id = S.currentId;
   if (!id) return;
-  const meta = S.meta.pages.find((p) => p.id === id);
+  const meta = metaById(id);
   const url = meta?.publishedUrl || '';
   if (!url) { toast('URL が見つかりません', 'err'); return; }
   try { await navigator.clipboard.writeText(url); toast('URL をコピーしました'); }

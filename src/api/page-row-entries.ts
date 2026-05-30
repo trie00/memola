@@ -26,6 +26,7 @@ import {
 import { spListUrl, spGetD } from './sp-rest';
 import { ORG_PAGES_LIST, ensurePagesList, type PageScope } from './pages';
 import { mdToBlocks, blocksToMd } from '../lib/blocks-md';
+import { metaById } from '../lib/page-store';
 
 /** Find every row-entry matching (PageType='row', listTitle, dbRowId).
  *  Returns multiple in case a prior race created duplicates; callers
@@ -101,7 +102,7 @@ export async function setRowBody(
   // is org-scoped, and a row in a personal DB is personal-scoped.
   // Storage stays in ORG_PAGES_LIST regardless — Scope is metadata
   // for the trash modal's filter, not a routing key.
-  const parentMeta = parentDbId ? S.meta.pages.find((p) => p.id === parentDbId) : null;
+  const parentMeta = parentDbId ? metaById(parentDbId) : null;
   const inheritScope: PageScope = parentMeta?.scope || 'user';
   await createListItem(ORG_PAGES_LIST, {
     Title: title,

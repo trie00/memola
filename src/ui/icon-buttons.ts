@@ -13,6 +13,7 @@ import { apiSetIcon } from '../api/pages';
 import { renderTree } from './tree';
 import { renderPageIcon } from './views';
 import { showEmojiPicker } from './emoji-picker';
+import { metaById } from '../lib/page-store';
 
 let _attached = false;
 
@@ -73,7 +74,7 @@ export function attachIconButtons(): void {
     if (!S.currentId) return;
     const id = S.currentId;
     apiSetIcon(id, '').then(() => {
-      const meta = S.meta.pages.find((p) => p.id === id);
+      const meta = metaById(id);
       if (meta?.type === 'database') {
         const dvIcon = g('dv-pg-icon');
         const dvAdd = g('dv-add-icon');

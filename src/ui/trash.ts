@@ -18,6 +18,7 @@ import { getUserNameById } from '../api/sync';
 import { renderTree } from './tree';
 import { toast, setLoad } from './ui-helpers';
 import { escapeHtml } from '../lib/html-escape';
+import { metaById } from '../lib/page-store';
 
 interface TrashEntry {
   kind: 'page' | 'database' | 'row';
@@ -69,7 +70,7 @@ async function loadAllTrashEntries(): Promise<TrashEntry[]> {
 
   // 1. Pages + DBs (from S.meta.pages)
   for (const p of getTrashedPages()) {
-    const meta = S.meta.pages.find((m) => m.id === p.id);
+    const meta = metaById(p.id);
     if (isHiddenForPrivacy(meta?.scope, meta?.authorId || 0)) continue;
     out.push({
       kind: p.type === 'database' ? 'database' : 'page',

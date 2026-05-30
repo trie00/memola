@@ -8,9 +8,7 @@
 import { S } from '../state';
 import { setLoad, toast } from './ui-helpers';
 import { apiLoadRawBody } from '../api/pages';
-import { mdToBlocks } from '../lib/blocks-md';
-import { blocksToHtml } from '../lib/blocks-html';
-const mdToHtml = (md: string): string => blocksToHtml(mdToBlocks(md));
+import { mdToHtml } from '../lib/blocks-html';
 
 function downloadFile(filename: string, content: string, mime: string): void {
   const blob = new Blob([content], { type: mime + ';charset=utf-8' });

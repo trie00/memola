@@ -10,6 +10,7 @@
 import { S } from '../state';
 import { setLoad, toast } from './ui-helpers';
 import { renderTree } from './tree';
+import { metaById } from '../lib/page-store';
 
 /** Synchronous YYYY-MM-DD for "today" without async-importing daily.ts. */
 function todayYMD(): string {
@@ -73,7 +74,7 @@ export async function openTodayDailyNote(): Promise<void> {
 export async function restoreToDailyNote(): Promise<void> {
   const id = S.currentId;
   if (!id) return;
-  const meta = S.meta.pages.find((p) => p.id === id);
+  const meta = metaById(id);
   if (!meta?.originDailyDate) return;
   if (!confirm(`このページをデイリーノート (${meta.originDailyDate}) に戻しますか？\n\n通常ページとしての本ページは削除され、本文がデイリー側に統合されます。`)) return;
   try {

@@ -19,9 +19,7 @@
 
 import { S } from '../state';
 import { escapeHtml } from '../lib/html-escape';
-import { mdToBlocks } from '../lib/blocks-md';
-import { blocksToHtml } from '../lib/blocks-html';
-const mdToHtml = (md: string): string => blocksToHtml(mdToBlocks(md));
+import { mdToHtml } from '../lib/blocks-html';
 import { saver, type SaverState } from '../lib/saver';
 import { setLoad, toast } from './ui-helpers';
 import { subscriberModal } from './lib/modal';

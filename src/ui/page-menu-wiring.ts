@@ -25,6 +25,7 @@ import {
 import { restoreToDailyNote } from './daily-note-actions';
 import { flushPendingSave } from './save-control';
 import { refreshDraftsBadge } from './drafts-modal';
+import { metaById } from '../lib/page-store';
 
 let _attached = false;
 
@@ -109,7 +110,7 @@ function syncPublishMenuItem(): void {
   // daily-note conversion (OriginDailyDate metadata is set).
   if (restoreItem) {
     const meta = isRealPage && S.currentId
-      ? S.meta.pages.find((p) => p.id === S.currentId)
+      ? metaById(S.currentId)
       : null;
     restoreItem.style.display = meta?.originDailyDate ? '' : 'none';
   }
@@ -123,7 +124,7 @@ function syncPublishMenuItem(): void {
       && (S.currentType === 'page' || S.currentType === 'database')
       && !S.currentRow;
     const meta = isScopeable && S.currentId
-      ? S.meta.pages.find((p) => p.id === S.currentId)
+      ? metaById(S.currentId)
       : null;
     const isDailyDb = meta?.type === 'database' && meta.list === 'memola-daily';
     const showScope = !!meta && !meta.originPageId && !meta.trashed && !isDailyDb;

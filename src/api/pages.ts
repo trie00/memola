@@ -24,7 +24,7 @@ import type { Block } from '../lib/blocks';
 import { collectDescendantIds } from '../lib/page-tree';
 import { getCurrentUserId } from './sync';
 import { invalidateBacklinkCache } from './backlinks';
-import { removePages } from '../lib/page-store';
+import { removePages, metaById} from '../lib/page-store';
 
 /** Org-shared pages list. Anything `Scope='org'` lives here (visible to
  *  the whole workspace). Phase 3 split: this is the workspace-shared
@@ -70,7 +70,7 @@ export function listForPageId(pageId: string): string {
   // not yet observed by a load), fall back to scope-derived routing.
   const explicit = SOURCE_LIST_BY_PAGEID.get(pageId);
   if (explicit) return explicit;
-  const meta = S.meta.pages.find((p) => p.id === pageId);
+  const meta = metaById(pageId);
   if (!meta) return ORG_PAGES_LIST;
   return pagesListFor(meta.scope === 'org' ? 'org' : 'user');
 }
@@ -101,12 +101,14 @@ export interface PageRow {
 }
 
 /** Page-scope discriminator. 'org' = visible to everyone in the workspace,
- *  'user' = personal to the creator. The current architecture uses one
- *  shared `memola-pages` list, so this column is metadata only — UI can
- *  filter on it (`Scope eq 'user' AND AuthorId eq <me>` for "my pages")
- *  but doesn't yet enforce any permissions at the SP layer. The column
- *  is in place so that a future Phase 2 (split into `-org` / `-user-{id}`
- *  lists) can migrate items by reading this flag. */
+ *  'user' = personal to the creator. Phase 3: this drives STORAGE
+ *  routing, not just metadata — `pagesListFor(scope)` sends 'org' pages
+ *  to the shared `memola-pages` list and 'user' pages to the per-user
+ *  `memola-user-{id}-pages` list, which `provisionOnePagesList` locks
+ *  to the owner via `applyOwnerOnlyAcl` (= real SP-layer privacy).
+ *  apiGetPages does a union read over both lists; `filterVisiblePages`
+ *  additionally hides other users' user-scope rows that leak into the
+ *  cache. Empty Scope = legacy row, treated as 'user' (secure-by-default). */
 export type PageScope = 'org' | 'user';
 
 let _ensurePromise: Promise<void> | null = null;
@@ -643,7 +645,7 @@ async function saveBodyInternal(
     const cur = await fetchOneRow(id, 'Modified');
     if (cur && cur.etag && cur.etag !== expectedEtag) return { ok: false, reason: 'conflict' };
   }
-  const p = S.meta.pages.find((p) => p.id === id);
+  const p = metaById(id);
   // If the page is currently published, this edit creates a divergence with
   // the Site Page mirror. Mark that *now* (in-memory) so the "公開中" tag
   // can flip to "未反映" before the SP round-trip finishes. We also persist
@@ -679,7 +681,7 @@ async function maybeInvalidateDailyCache(ids: string[]): Promise<void> {
   // Hard-coded constant matches DAILY_LIST_TITLE — keeping it in-line
   // avoids importing daily.ts at module top.
   for (const id of ids) {
-    const meta = S.meta.pages.find((p) => p.id === id);
+    const meta = metaById(id);
     if (meta?.type === 'database' && meta.list === 'memola-daily') {
       const { clearDailyCache } = await import('./daily');
       clearDailyCache();
@@ -697,7 +699,7 @@ export async function apiDeletePage(id: string): Promise<string[]> {
   // delete via apiTrashPage is also blocked, so this is unreachable in
   // normal flow — but a future caller using apiDeletePage directly
   // shouldn't be able to bypass the guard.)
-  const guardMeta = S.meta.pages.find((p) => p.id === id);
+  const guardMeta = metaById(id);
   if (guardMeta?.type === 'database' && guardMeta.list === 'memola-daily') {
     throw new Error('デイリーノート DB は削除できません (個人運用に必須)');
   }
@@ -719,7 +721,7 @@ export async function apiDeletePage(id: string): Promise<string[]> {
   // partial failure left a clickable DB whose backing list was gone
   // (404 toast on click).
   for (const pid of ids) {
-    const meta = S.meta.pages.find((p) => p.id === pid);
+    const meta = metaById(pid);
     // Capture cleanup target BEFORE any mutation (we still need the list
     // name to delete its rows/list AFTER the registration is gone).
     const dbListToCleanup = (meta?.type === 'database' && meta.list) ? meta.list : null;
@@ -770,10 +772,10 @@ export async function apiMovePage(id: string, newParentId: string): Promise<void
   let p = newParentId;
   while (p) {
     if (p === id) throw new Error('循環参照になります');
-    const m = S.meta.pages.find((x) => x.id === p);
+    const m = metaById(p);
     p = m?.parent || '';
   }
-  const m = S.meta.pages.find((p) => p.id === id);
+  const m = metaById(id);
   if (!m) return;
   m.parent = newParentId || '';
   await updatePageRow(id, { ParentId: newParentId || '' });
@@ -791,8 +793,8 @@ export function scopeMismatchOnMove(
   newParentId: string,
 ): PageScope | null {
   if (!newParentId) return null;
-  const child = S.meta.pages.find((p) => p.id === childId);
-  const parent = S.meta.pages.find((p) => p.id === newParentId);
+  const child = metaById(childId);
+  const parent = metaById(newParentId);
   if (!child || !parent) return null;
   const childScope: PageScope = (child.scope === 'org' || child.scope === 'user') ? child.scope : 'user';
   const parentScope: PageScope = (parent.scope === 'org' || parent.scope === 'user') ? parent.scope : 'user';
@@ -804,7 +806,7 @@ export async function apiTrashPage(id: string): Promise<void> {
   // is what makes 「今日のノート」 work without re-bootstrap. Throwing
   // here is the API-level guard; UI paths block the action with a toast
   // upstream so the user never reaches this throw in normal flow.
-  const guardMeta = S.meta.pages.find((p) => p.id === id);
+  const guardMeta = metaById(id);
   if (guardMeta?.type === 'database' && guardMeta.list === 'memola-daily') {
     throw new Error('デイリーノート DB は削除できません (個人運用に必須)');
   }
@@ -820,7 +822,7 @@ export async function apiTrashPage(id: string): Promise<void> {
   // restore).
   const myId = S.meta.myUserId || (await getCurrentUserId().catch(() => 0));
   for (const pid of ids) {
-    const meta = S.meta.pages.find((p) => p.id === pid);
+    const meta = metaById(pid);
     if (meta) { meta.trashed = ts; meta.trashedBy = myId; }
     await updatePageRow(pid, { Trashed: ts, TrashedBy: myId }).catch(() => undefined);
   }
@@ -833,7 +835,7 @@ export async function apiRestorePage(id: string): Promise<void> {
   // its "create new" branch on the next note open.
   await maybeInvalidateDailyCache(ids);
   for (const pid of ids) {
-    const meta = S.meta.pages.find((p) => p.id === pid);
+    const meta = metaById(pid);
     if (meta) { delete meta.trashed; delete meta.trashedBy; }
     await updatePageRow(pid, { Trashed: 0, TrashedBy: 0 }).catch(() => undefined);
   }
@@ -844,7 +846,7 @@ export async function apiPurgePage(id: string): Promise<string[]> {
 }
 
 export async function apiSetPin(id: string, pinned: boolean): Promise<void> {
-  const meta = S.meta.pages.find((p) => p.id === id);
+  const meta = metaById(id);
   if (!meta) return;
   if (pinned) meta.pinned = true;
   else delete meta.pinned;
@@ -852,7 +854,7 @@ export async function apiSetPin(id: string, pinned: boolean): Promise<void> {
 }
 
 export async function apiSetIcon(id: string, emoji: string): Promise<void> {
-  const meta = S.meta.pages.find((p) => p.id === id);
+  const meta = metaById(id);
   if (meta) meta.icon = emoji;
   await updatePageRow(id, { Icon: emoji });
 }
@@ -877,7 +879,7 @@ export async function apiSetScope(
   cascadeChildren = true,
 ): Promise<string[]> {
   if (scope === 'org') {
-    const m = S.meta.pages.find((p) => p.id === id);
+    const m = metaById(id);
     if (m?.type === 'database' && m.list === 'memola-daily') {
       throw new Error('デイリーノート DB は組織に公開できません (個人専用)');
     }
@@ -905,7 +907,7 @@ export async function apiSetScope(
     try {
       await updateListItem(sourceList, itemId, { Scope: scope });
     } catch { /* tolerate transient failure; meta update below kept consistent */ }
-    const meta = S.meta.pages.find((p) => p.id === pid);
+    const meta = metaById(pid);
     if (meta) meta.scope = scope;
   }
   return ids;
@@ -916,7 +918,7 @@ export async function apiSetScope(
  *  「公開中」 tag flips to 「未反映」 — the Site Page mirror's banner now
  *  shows a stale title until the user explicitly re-syncs. */
 export async function apiSetTitle(id: string, title: string): Promise<void> {
-  const meta = S.meta.pages.find((p) => p.id === id);
+  const meta = metaById(id);
   if (meta) {
     meta.title = title;
     if (meta.published) meta.publishedDirty = true;
@@ -940,7 +942,7 @@ export async function apiSetTitle(id: string, title: string): Promise<void> {
  *  Returns the new page so the caller can navigate to it immediately. */
 export async function apiDuplicateAsDraft(originId: string): Promise<Page> {
   await ensurePagesList();
-  const origin = S.meta.pages.find((p) => p.id === originId);
+  const origin = metaById(originId);
   if (!origin) throw new Error('原本ページが見つかりません');
   // Copy the origin's block-tree JSON directly — preserving structure
   // (and block IDs, which is fine for drafts since the draft is a
@@ -982,7 +984,7 @@ export async function apiDuplicateAsDraft(originId: string): Promise<Page> {
  *  id (so inbound [[..]] page-links remain valid). The draft itself is
  *  then deleted. Returns the origin id so the caller can navigate. */
 export async function apiApplyDraftToOrigin(draftId: string): Promise<string> {
-  const draftMeta = S.meta.pages.find((p) => p.id === draftId);
+  const draftMeta = metaById(draftId);
   if (!draftMeta) throw new Error('下書きが見つかりません');
   if (!draftMeta.originPageId) throw new Error('このページは下書きではありません');
   const originId = draftMeta.originPageId;

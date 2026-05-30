@@ -8,6 +8,7 @@
 import { S } from '../state';
 import type { Page } from '../state';
 import { escapeHtml as escHtml } from '../lib/html-escape';
+import { metaById } from '../lib/page-store';
 
 interface PickerOptions {
   /** Initial query string (caller can supply one when reopening with input) */
@@ -71,7 +72,7 @@ function matchPages(query: string, pool?: Page[]): Page[] {
   // outside the first-8 window and the picker shows nothing at all.
   const q = query.trim().toLowerCase();
   const all = (pool ?? S.pages).filter((p) => {
-    const meta = S.meta.pages.find((m) => m.id === p.Id);
+    const meta = metaById(p.Id);
     return !meta?.trashed;
   });
   if (!q) {
@@ -101,10 +102,10 @@ function ancestorPath(pageId: string): string {
   let cur = pageId;
   let safety = 0;
   while (cur && safety++ < 12) {
-    const meta = S.meta.pages.find((m) => m.id === cur);
+    const meta = metaById(cur);
     if (!meta) break;
     if (meta.parent) {
-      const par = S.meta.pages.find((m) => m.id === meta.parent);
+      const par = metaById(meta.parent);
       if (par) segs.unshift(par.title);
     }
     cur = meta.parent || '';
@@ -123,7 +124,7 @@ function render(): void {
     el.appendChild(empty);
   } else {
     filtered.forEach((page, idx) => {
-      const meta = S.meta.pages.find((m) => m.id === page.Id);
+      const meta = metaById(page.Id);
       const icon = meta?.icon || (page.Type === 'database' ? '🗃' : '📄');
       const path = ancestorPath(page.Id);
       const item = document.createElement('div');

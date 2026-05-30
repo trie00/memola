@@ -25,10 +25,12 @@ export interface PageMeta {
    *  links don't break) and then deletes the draft. */
   originPageId?: string;
   /** 'org' = workspace 全員に公開、'user' = 作成者の個人スコープ。
-   *  現アーキでは 1 つの memola-pages を共有しているため、この値は単なる
-   *  メタデータ (UI の "自分のページだけ表示" フィルタや、将来 Phase 2 で
-   *  リスト分割する際の振り分け基準として読まれる)。空文字 / undefined は
-   *  旧データ — 後方互換のため `org` (= 全員に表示) として扱う。 */
+   *  Phase 3 でストレージ振り分けに使用: 'org' は共有リスト
+   *  (memola-pages)、'user' は所有者限定 ACL の per-user リスト
+   *  (memola-user-{id}-pages) に保存される (api/pages.ts の
+   *  `pagesListFor` / `getMyPagesList`)。空文字 / undefined は旧データで、
+   *  secure-by-default のため 'user' (= 作成者のみ表示) として扱う
+   *  (filterVisiblePages)。 */
   scope?: 'org' | 'user';
   /** SP 上の作成者 user id (= AuthorId 自動入力)。可視性フィルタ
    *  (個人スコープなら作成者本人のみ表示) で使用。 */
@@ -71,7 +73,10 @@ export interface ListItem {
 }
 
 export interface AppState {
-  pages: Page[];
+  /** Derived, read-only view of `meta.pages` (see the getter on `S`).
+   *  Mutate the store via `lib/page-store.ts` helpers, never by
+   *  assigning to `S.pages`. */
+  readonly pages: Page[];
   meta: Meta;
   currentId: string | null;
   currentType: 'page' | 'database';
@@ -117,17 +122,14 @@ export interface AppState {
 }
 
 export const S: AppState = {
-  /** **Derived view** of `meta.pages`. The getter rebuilds the
-   *  UI-friendly Page[] each access from the canonical PageMeta[] so
-   *  the two can never drift out of sync. The setter is a deliberate
-   *  no-op — kept so legacy `S.pages = await apiGetPages()` callsites
-   *  still compile, but the assignment does nothing (the value is
-   *  derived from the meta side-effect inside apiGetPages instead).
+  /** **Derived, read-only view** of `meta.pages`. The getter rebuilds
+   *  the UI-friendly Page[] on each access from the canonical
+   *  PageMeta[] so the two can never drift out of sync. Excludes
+   *  trashed entries and decorates with `IsDraft`.
    *
    *  Mutate via the helpers in `lib/page-store.ts` (addPage /
-   *  removePages / setPageTitle), which write to `meta.pages`. The
-   *  getter excludes trashed entries and decorates with `IsDraft`
-   *  exactly the way `apiGetPages` historically did. */
+   *  removePages / setPageTitle), which write to `meta.pages`. There is
+   *  intentionally no setter — `S.pages = …` is a compile error. */
   get pages(): Page[] {
     return this.meta.pages
       .filter((p) => !p.trashed)
@@ -139,7 +141,6 @@ export const S: AppState = {
         IsDraft: !!p.originPageId,
       }));
   },
-  set pages(_: Page[]) { /* derived — assignment is a no-op */ },
   meta: { pages: [] },
   currentId: null,
   currentType: 'page',

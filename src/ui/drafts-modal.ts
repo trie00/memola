@@ -11,18 +11,15 @@ import { S, type Page } from '../state';
 import { g } from './dom';
 import { toast } from './ui-helpers';
 import { mdToBlocks, blocksToMd } from '../lib/blocks-md';
-import { blocksToHtml } from '../lib/blocks-html';
+import { mdToHtml } from '../lib/blocks-html';
 import {
   listAll, deleteDraft, type Draft,
 } from './draft-store';
 
-/** Read-only HTML rendering of a draft body for preview. The
- *  controlled-rendering editor handles its own DOM; this is just a
- *  detached `<div>` showing what the draft would look like. */
-const previewHtml = (md: string): string => blocksToHtml(mdToBlocks(md));
 import { escapeHtml } from '../lib/html-escape';
 import { formatRelativeTime } from '../lib/date-utils';
 import { subscriberModal } from './lib/modal';
+import { metaById } from '../lib/page-store';
 
 const MODAL_ID = 'memola-drafts-md';
 const SIDEBAR_BTN_ID = 'memola-drafts-btn';
@@ -45,7 +42,7 @@ function groupDrafts(): Group[] {
   const all = listAll();
   const map = new Map<string, Group>();
   for (const d of all) {
-    const meta = S.meta.pages.find((p) => p.id === d.pageId);
+    const meta = metaById(d.pageId);
     let g = map.get(d.pageId);
     if (!g) {
       g = {
@@ -136,9 +133,9 @@ function renderModalBody(el: HTMLElement): void {
         '<span class="memola-drafts-section-sub">(編集中の複製ページ)</span>' +
       '</div>';
     spHtml += sp.map((p) => {
-      const meta = S.meta.pages.find((m) => m.id === p.Id);
+      const meta = metaById(p.Id);
       const originId = meta?.originPageId || '';
-      const origin = originId ? S.meta.pages.find((m) => m.id === originId) : null;
+      const origin = originId ? metaById(originId) : null;
       const originTitle = origin?.title || '(原本ページ不明)';
       const exists = !!origin && !origin.trashed;
       return '<div class="memola-drafts-item memola-drafts-spitem" data-page-id="' + escapeHtml(p.Id) + '">' +
@@ -300,7 +297,7 @@ function showPreview(draft: Draft): void {
         '<span class="memola-drafts-title">プレビュー: ' + escapeHtml(draft.title || '無題') + '</span>' +
         '<button class="memola-drafts-close">×</button>' +
       '</div>' +
-      '<div class="memola-drafts-preview">' + previewHtml(draft.body) + '</div>' +
+      '<div class="memola-drafts-preview">' + mdToHtml(draft.body) + '</div>' +
     '</div>';
   (document.getElementById('memola-overlay') || document.body).appendChild(w);
   const close = (): void => { w.remove(); };

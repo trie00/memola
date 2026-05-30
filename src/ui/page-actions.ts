@@ -10,6 +10,7 @@ import { setLoad, toast } from './ui-helpers';
 import { renderTree } from './tree';
 import { doSelect } from './views';
 import { apiCreatePage, apiLoadRawBody, listForPageId } from '../api/pages';
+import { metaById } from '../lib/page-store';
 
 function currentPage() {
   if (!S.currentId) return null;
@@ -50,7 +51,7 @@ export async function copyPageLink(): Promise<void> {
   if (!page) return;
   let url: string;
   if (page.Type === 'database') {
-    const meta = S.meta.pages.find((p) => p.id === page.Id);
+    const meta = metaById(page.Id);
     if (!meta || !meta.list) { toast('リンク取得失敗', 'err'); return; }
     url = SITE + '/Lists/' + encodeURIComponent(meta.list);
   } else {
