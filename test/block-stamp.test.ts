@@ -61,6 +61,21 @@ describe('bodiesContentEqual', () => {
     expect(bodiesContentEqual('abc', 'abc')).toBe(true);
     expect(bodiesContentEqual('abc', 'abd')).toBe(false);
   });
+
+  it('treats empty-page encodings as equal ([] ≡ "" ≡ single empty paragraph)', () => {
+    const emptyPara = '[{"id":"x","kind":"p","inline":[]}]';
+    expect(bodiesContentEqual('[]', emptyPara)).toBe(true);   // new-page stored vs seeded
+    expect(bodiesContentEqual('', '[]')).toBe(true);
+    expect(bodiesContentEqual('', emptyPara)).toBe(true);
+    expect(bodiesContentEqual(emptyPara, '[]')).toBe(true);
+  });
+
+  it('an empty page is NOT equal to a page with real content', () => {
+    const emptyPara = '[{"id":"x","kind":"p","inline":[]}]';
+    const withText = '[{"id":"x","kind":"p","inline":[{"kind":"text","text":"hi"}]}]';
+    expect(bodiesContentEqual('[]', withText)).toBe(false);
+    expect(bodiesContentEqual(emptyPara, withText)).toBe(false);
+  });
 });
 
 describe('stampReplacer', () => {

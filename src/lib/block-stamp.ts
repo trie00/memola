@@ -39,11 +39,38 @@ function isBlockJson(body: string): boolean {
   return body.trim().startsWith('[');
 }
 
+/** True when a body represents an EMPTY page. The same empty document
+ *  has several equivalent encodings that must compare equal:
+ *    - `''` (legacy / never-written)
+ *    - `'[]'` (apiCreatePage's initial Body_blocks for a new page)
+ *    - `'[{…empty paragraph…}]'` (what the editor seeds so the caret
+ *      has a landing block)
+ *  Without treating these as equal, a brand-new page's stored `'[]'`
+ *  vs the editor's seeded empty paragraph reads as a "change" → the
+ *  Saver goes dirty → autosave fires though nothing was typed. */
+function isEmptyBody(body: string): boolean {
+  const t = body.trim();
+  if (t === '' || t === '[]') return true;
+  if (!t.startsWith('[')) return false;
+  try {
+    const bs = parseBlocksJson(body);
+    if (bs.length === 0) return true;
+    return bs.length === 1 && bs[0].kind === 'p'
+      && (bs[0] as { inline?: unknown[] }).inline?.length === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** True if two serialized bodies are equal ignoring per-block stamps.
- *  Used wherever "did the content actually change?" matters. Non-block
- *  bodies fall back to raw string equality. */
+ *  Used wherever "did the content actually change?" matters. Empty-page
+ *  encodings compare equal; non-block bodies fall back to raw equality. */
 export function bodiesContentEqual(a: string, b: string): boolean {
   if (a === b) return true;
+  // Empty-page equivalence ('' ≡ '[]' ≡ single empty paragraph).
+  const ea = isEmptyBody(a);
+  const eb = isEmptyBody(b);
+  if (ea || eb) return ea && eb;
   if (!isBlockJson(a) || !isBlockJson(b)) return a === b;
   try {
     const pa = JSON.stringify(parseBlocksJson(a), stampReplacer);
