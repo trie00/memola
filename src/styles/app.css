@@ -582,11 +582,12 @@
 #memola-overlay .memola-lib-row:hover { background: var(--paper-2-strong); }
 #memola-overlay .memola-lib-c-title { display: flex; align-items: center; gap: 6px; }
 #memola-overlay .memola-lib-tog {
-  flex-shrink: 0; width: 16px; text-align: center; font-size: 10px;
-  color: var(--ink-3); border-radius: 3px; cursor: pointer;
+  flex-shrink: 0; width: 22px; height: 22px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; color: var(--ink-3); border-radius: 4px; cursor: pointer;
 }
 #memola-overlay .memola-lib-tog:hover { background: var(--paper-3); color: var(--ink); }
-#memola-overlay .memola-lib-tog-sp { flex-shrink: 0; width: 16px; }
+#memola-overlay .memola-lib-tog-sp { flex-shrink: 0; width: 22px; }
 #memola-overlay .memola-lib-c-ic { flex-shrink: 0; font-size: 15px; }
 #memola-overlay .memola-lib-c-editor,
 #memola-overlay .memola-lib-c-date { color: var(--ink-3); white-space: nowrap; }
@@ -657,6 +658,19 @@
    empty paragraph; we overlay the prompt on that first block. Absolute
    positioning keeps it from affecting layout or the caret — typing
    fills the paragraph, the class drops on re-render, the prompt clears. */
+/* Notion-style full-edge table add bars (+row along the bottom, +col along
+   the right). The `+` is faint until hovered. */
+#memola-overlay #memola-tbl-add-row,
+#memola-overlay #memola-tbl-add-col {
+  background: var(--paper-2, #f4f4f2); border: 1px solid var(--line, #e9e9e7);
+  border-radius: 4px; color: var(--ink-3, #9b9a97); font-size: 13px;
+  box-shadow: none; transition: background 0.1s, color 0.1s;
+}
+#memola-overlay #memola-tbl-add-row:hover,
+#memola-overlay #memola-tbl-add-col:hover {
+  background: var(--accent-soft, #e8e7ff); color: var(--accent, #635bff);
+}
+
 #memola-ed.memola-editor-empty .memola-blk:first-child { position: relative; }
 #memola-ed.memola-editor-empty .memola-blk:first-child > p::before {
   content: "ここから始めます";

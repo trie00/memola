@@ -16,12 +16,6 @@ import type { Inline } from '../../lib/blocks';
 import { inlineToPlainText } from '../../lib/blocks';
 import { escapeHtml } from '../../lib/html-escape';
 
-/** Visual gap between the table edge and the hover +row/+col buttons.
- *  Notion-style: buttons stay visually attached to the table (no big
- *  separation). Combined with the hot-zone buffer below, the user can
- *  comfortably move the cursor from a cell to the button without it
- *  disappearing mid-motion. */
-const BUTTON_GAP_PX = 4;
 /** Extra buffer around the table where the buttons stay visible even
  *  though the mouse has technically left the cell rect. Without a buffer,
  *  the user trying to move from a cell to the +row/+col button would
@@ -875,44 +869,43 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
       else if (x > lastRect.right) colIdx = cells.length - 1;
     }
 
-    // +col button: appears at the right edge of the table, vertically
-    // centred on the hovered row. Geometric intuition: extending
-    // horizontally → adds a column to the right of the hovered column.
-    // Uses BUTTON_GAP_PX (10px) gap; the mousemove hot-zone buffer
-    // is large enough that the button stays visible while the user
-    // moves from cell → button.
-    const addColBtn = ensureButton('add-col', '+', '列を追加');
-    if (rowIdx >= 0 && colIdx >= 0 && trs[rowIdx] && cells[colIdx]) {
-      const rr = trs[rowIdx].getBoundingClientRect();
-      const tr = tbl.getBoundingClientRect();
-      addColBtn.style.top = (rr.top + window.scrollY + (rr.height - 20) / 2) + 'px';
-      addColBtn.style.left = (tr.right + window.scrollX + BUTTON_GAP_PX) + 'px';
-      addColBtn.style.display = 'block';
-      addColBtn.onclick = () => {
-        editor.applyMutation((s) => tableAddCol(s, blockId, colIdx + 1), 'structural');
-        hideButtons();
-      };
-    } else {
-      addColBtn.style.display = 'none';
-    }
+    // Notion-style ADD bars — full-edge, independent of which cell the
+    // cursor is over (the previous per-cell +buttons felt arbitrary):
+    //   • +col: a full-HEIGHT vertical bar hugging the table's RIGHT edge
+    //           → appends a column at the end.
+    //   • +row: a full-WIDTH horizontal bar hugging the table's BOTTOM
+    //           edge → appends a row at the end.
+    // (Inserting in the middle is via right-click / the cell menu.)
+    const tr = tbl.getBoundingClientRect();
+    const colCount = cells.length;
 
-    // +row button: appears at the bottom of the table, horizontally
-    // centred on the hovered column. Geometric intuition: extending
-    // vertically → adds a row below the hovered row.
-    const addRowBtn = ensureButton('add-row', '+', '行を追加');
-    if (rowIdx >= 0 && colIdx >= 0 && cells[colIdx]) {
-      const cr = cells[colIdx].getBoundingClientRect();
-      const tr = tbl.getBoundingClientRect();
-      addRowBtn.style.top = (tr.bottom + window.scrollY + BUTTON_GAP_PX) + 'px';
-      addRowBtn.style.left = (cr.left + window.scrollX + (cr.width - 20) / 2) + 'px';
-      addRowBtn.style.display = 'block';
-      addRowBtn.onclick = () => {
-        editor.applyMutation((s) => tableAddRow(s, blockId, rowIdx + 1), 'structural');
-        hideButtons();
-      };
-    } else {
-      addRowBtn.style.display = 'none';
-    }
+    const addColBtn = ensureButton('add-col', '+', '列を追加（末尾）');
+    addColBtn.style.top = (tr.top + window.scrollY) + 'px';
+    addColBtn.style.left = (tr.right + window.scrollX + 3) + 'px';
+    addColBtn.style.height = tr.height + 'px';
+    addColBtn.style.width = '16px';
+    addColBtn.style.padding = '0';
+    addColBtn.style.display = 'flex';
+    addColBtn.style.alignItems = 'center';
+    addColBtn.style.justifyContent = 'center';
+    addColBtn.onclick = () => {
+      editor.applyMutation((s) => tableAddCol(s, blockId, colCount), 'structural');
+      hideButtons();
+    };
+
+    const addRowBtn = ensureButton('add-row', '+', '行を追加（末尾）');
+    addRowBtn.style.top = (tr.bottom + window.scrollY + 3) + 'px';
+    addRowBtn.style.left = (tr.left + window.scrollX) + 'px';
+    addRowBtn.style.width = tr.width + 'px';
+    addRowBtn.style.height = '16px';
+    addRowBtn.style.padding = '0';
+    addRowBtn.style.display = 'flex';
+    addRowBtn.style.alignItems = 'center';
+    addRowBtn.style.justifyContent = 'center';
+    addRowBtn.onclick = () => {
+      editor.applyMutation((s) => tableAddRow(s, blockId, trs.length), 'structural');
+      hideButtons();
+    };
 
     // -row / -col buttons: small ✕ in the row/col header. Only show
     // when there's more than one row/col (else the action is a no-op).
