@@ -19,9 +19,10 @@ import { S } from '../state';
 const MAX_ENTRIES = 100;
 
 interface HistoryEntry {
-  pageId: string;          // the active page (or parent DB id when row is set)
+  pageId: string;          // the active page (or parent DB id when row is set); '' for a view entry
   rowList?: string;        // SP list title for a DB-row entry
   rowId?: number;          // DB row id for a DB-row entry
+  view?: 'library';        // a non-page full view (the all-pages library); pageId is ''
 }
 
 const _stack: HistoryEntry[] = [];
@@ -31,7 +32,22 @@ let _skipPush = false;
 function entriesEqual(a: HistoryEntry, b: HistoryEntry): boolean {
   return a.pageId === b.pageId &&
     (a.rowId || 0) === (b.rowId || 0) &&
-    (a.rowList || '') === (b.rowList || '');
+    (a.rowList || '') === (b.rowList || '') &&
+    (a.view || '') === (b.view || '');
+}
+
+/** Record opening a non-page full view (the library) so the back button
+ *  can return to it. Respects `_skipPush` (so navigating back/forward into
+ *  the library doesn't re-record it). */
+export function pushViewHistory(view: 'library'): void {
+  if (_skipPush) return;
+  const entry: HistoryEntry = { pageId: '', view };
+  if (_idx >= 0 && entriesEqual(_stack[_idx], entry)) return;
+  if (_idx < _stack.length - 1) _stack.splice(_idx + 1);
+  _stack.push(entry);
+  if (_stack.length > MAX_ENTRIES) _stack.shift();
+  _idx = _stack.length - 1;
+  refreshButtons();
 }
 
 /** Record a navigation. Page-only call: `pushHistory(pageId)`. Row call:
@@ -68,7 +84,9 @@ export function canGoForward(): boolean {
 }
 
 function entryReachable(e: HistoryEntry | undefined): boolean {
-  if (!e || !e.pageId) return false;
+  if (!e) return false;
+  if (e.view === 'library') return true;          // the library is always openable
+  if (!e.pageId) return false;
   return S.pages.some((p) => p.Id === e.pageId);
 }
 
@@ -85,6 +103,10 @@ async function navigate(targetIdx: number): Promise<void> {
   _idx = targetIdx;
   _skipPush = true;
   try {
+    if (entry.view === 'library') {
+      const lib = await import('./library');
+      await lib.openLibrary();
+    } else {
     const v = await import('./views');
     await v.doSelect(entry.pageId);
     if (entry.rowId && entry.rowList) {
@@ -94,6 +116,7 @@ async function navigate(targetIdx: number): Promise<void> {
         const rp = await import('./row-page');
         await rp.openRowAsPage(entry.pageId, row);
       }
+    }
     }
   } finally {
     _skipPush = false;

@@ -13,6 +13,7 @@ import { S, type Page } from '../state';
 import { g } from './dom';
 import { doSelect, showView, renderBcCustom } from './views';
 import { renderTree } from './tree';
+import { pushViewHistory } from './nav-history';
 import { stopWatching } from './sync-watch';
 import { flushPendingSave } from './save-control';
 import { metaById } from '../lib/page-store';
@@ -44,6 +45,7 @@ export async function openLibrary(): Promise<void> {
   S.currentType = 'page';
   _filter = '';
   renderTree();                          // clear the tree's selected-row highlight
+  pushViewHistory('library');            // record so the back button returns here
   renderBcCustom([{ label: '📚 ライブラリ' }]);
   showView('library');
   renderShell();
