@@ -63,6 +63,16 @@ export function render(container: HTMLElement, blocks: Block[]): void {
   for (const [id, el] of existing) {
     if (!used.has(id) && el.isConnected) el.remove();
   }
+  // Empty-page placeholder hook: when the whole document is a single
+  // empty paragraph (= a fresh page, or everything deleted), flag the
+  // container so CSS can show a greyed "ここから始めます" prompt on the
+  // first line. Typing fills the paragraph → re-render drops the flag →
+  // the prompt disappears. (The flag is purely visual; the paragraph is
+  // a real, editable block so the caret already sits on the first line.)
+  const onlyEmptyParagraph = blocks.length === 1
+    && blocks[0].kind === 'p'
+    && (blocks[0] as { inline: Inline[] }).inline.length === 0;
+  container.classList.toggle('memola-editor-empty', onlyEmptyParagraph);
 }
 
 /** Render a single block into a fresh element. Caller decides where

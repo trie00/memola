@@ -89,16 +89,38 @@ export function mountEditor2(rootEl: HTMLElement): Editor {
     if (st.kind !== 'idle') return;
     if (!_editor) return;
     if (S.currentId !== st.base.pageId) return;
-    const cur = serializeBlocks(_editor.getBlocks());
+    // Target = base blocks, but NEVER zero blocks: an empty page must
+    // render as a single empty paragraph (the editor's invariant — a
+    // contenteditable with no block element has nowhere for the caret /
+    // typing to land). A brand-new page has base.body='[]' while the
+    // editor was seeded with an empty paragraph; without this guard the
+    // reconcile would wipe that paragraph and typing would silently
+    // vanish until reload.
+    let target = parseBlocksJson(st.base.body);
+    if (target.length === 0) target = [paragraph('')];
+    const curBlocks = _editor.getBlocks();
+    // Both sides "empty page" → no real divergence (ignore the seed
+    // paragraph's differing id). Skip to avoid churn.
+    if (isEmptyPage(curBlocks) && isEmptyPage(target)) return;
     // Compare ignoring per-block stamps (D2): a save re-stamps the base
     // but the editor's blocks are unstamped — that's not a real content
     // divergence and must NOT trigger a reconcile. Only fold in when
     // the actual block CONTENT differs (= a merge brought in remote
     // changes the editor hasn't rendered).
-    if (bodiesContentEqual(cur, st.base.body)) return;
-    _editor.reconcile(parseBlocksJson(st.base.body));
+    if (bodiesContentEqual(serializeBlocks(curBlocks), serializeBlocks(target))) return;
+    _editor.reconcile(target);
   });
   return _editor;
+}
+
+/** True when a block list represents an "empty page": zero blocks, or a
+ *  single empty paragraph. Used so the reconcile path treats `[]` and
+ *  `[emptyParagraph]` as equivalent (ignoring the paragraph's id). */
+function isEmptyPage(blocks: Block[]): boolean {
+  if (blocks.length === 0) return true;
+  if (blocks.length !== 1) return false;
+  const b = blocks[0];
+  return b.kind === 'p' && b.inline.length === 0;
 }
 
 /** Click below the last block: append a fresh empty paragraph and
