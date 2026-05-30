@@ -13,7 +13,7 @@ import {
   changeBlockKind,
   insertBlockAfter,
   callout, codeBlock, rule, bulletList, orderedList, quote,
-  paragraph, emptyTable, linkedDb,
+  paragraph, emptyTable, linkedDb, insertPagelink,
   type EditorState,
 } from './editor-state';
 import type { Block } from '../../lib/blocks';
@@ -62,25 +62,58 @@ const ITEMS: SlashItem[] = [
     apply: (s, id) => replaceWithBlock(s, id, emptyTable(2, 3)) },
   { cmd: 'inlinedb', label: 'インラインDB', desc: 'ページに DB を埋め込む (DB を選択)',
     pickAndApply: openInlineDbPicker },
+  { cmd: 'page', label: 'ページリンク', desc: '別のページへのリンクを挿入', hint: '[[',
+    pickAndApply: openPageLinkPicker },
 ];
+
+/** Compute a picker anchor from the trigger block's element rect, falling
+ *  back to screen center if the element can't be found. Shared by the
+ *  inline-DB and page-link pickers. */
+function pickerAnchor(blockId: string): { bottom: number; left: number } {
+  const blockEl = document.querySelector<HTMLElement>(
+    '[data-block-id="' + CSS.escape(blockId) + '"]',
+  );
+  const rect = blockEl?.getBoundingClientRect();
+  return rect
+    ? { bottom: rect.bottom, left: rect.left }
+    : { bottom: window.innerHeight / 2, left: window.innerWidth / 2 };
+}
+
+/** Open the page picker (pages, not DBs) to choose a target page, then
+ *  insert a `pagelink` inline into the slash-trigger block (clearing the
+ *  '/…' trigger text first). Same outcome as the `[[` wiki trigger, just
+ *  reached from the slash menu. */
+function openPageLinkPicker(editor: Editor, blockId: string): void {
+  showPagePicker({
+    anchor: pickerAnchor(blockId),
+    onSelect: (p) => {
+      editor.applyMutation((s) => {
+        const idx = s.blocks.findIndex((b) => b.id === blockId);
+        if (idx < 0) return s;
+        const blocks = s.blocks.slice();
+        const cur = blocks[idx];
+        // Drop the '/page' trigger text, then drop a pagelink at offset 0.
+        if ('inline' in cur) blocks[idx] = { ...cur, inline: [] } as Block;
+        const cleared = {
+          ...s, blocks,
+          selection: { kind: 'caret' as const, blockId, offset: 0 },
+        };
+        return insertPagelink(cleared, blockId, 0, p.Id, p.Title || '');
+      }, 'structural');
+    },
+  });
+}
 
 /** Open the page picker (DB-only) to choose a DB to embed, then replace
  *  the slash-trigger block with a fresh linkdb pointing at the chosen DB.
  *  Anchors the picker below the trigger block's row so it lands where
  *  the user just typed. */
 function openInlineDbPicker(editor: Editor, blockId: string): void {
-  // Compute anchor from the trigger block's element rect (caret rect
-  // would also work but the block top-left is more visually predictable
-  // after the slash menu has already closed).
-  const blockEl = document.querySelector<HTMLElement>(
-    '[data-block-id="' + CSS.escape(blockId) + '"]',
-  );
-  const rect = blockEl?.getBoundingClientRect();
-  const anchor = rect
-    ? { bottom: rect.bottom, left: rect.left }
-    : { bottom: window.innerHeight / 2, left: window.innerWidth / 2 };
+  // Anchor below the trigger block's row so the picker lands where the
+  // user just typed (block top-left is more visually predictable than the
+  // caret rect once the slash menu has closed).
   showPagePicker({
-    anchor,
+    anchor: pickerAnchor(blockId),
     dbsOnly: true,
     onSelect: (p) => {
       editor.applyMutation((s) => {
