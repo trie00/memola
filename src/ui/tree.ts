@@ -34,6 +34,38 @@ function rootKidsOfScope(scope: PageScope): Page[] {
   return kidsOf('').filter((p) => pageScope(p) === scope);
 }
 
+/** How many top-level pages each scope section shows before collapsing
+ *  the rest behind a 「さらに表示」 toggle (Notion-style). */
+const SCOPE_COLLAPSE_LIMIT = 15;
+
+/** Scope sections the user expanded via 「さらに表示」 this session. Kept in
+ *  a module Set so the choice survives re-renders (drag, navigate, etc.)
+ *  but resets on reload — matching Notion. */
+const expandedScopeSections = new Set<PageScope>();
+
+/** Render a scope section's top-level nodes, capping at
+ *  SCOPE_COLLAPSE_LIMIT and appending a 「さらに表示 / 表示を減らす」 toggle
+ *  when there are more. Nested children of shown roots are unaffected. */
+function renderScopeSection(container: HTMLElement, scope: PageScope): void {
+  const roots = rootKidsOfScope(scope);
+  const expanded = expandedScopeSections.has(scope);
+  const shown = expanded ? roots : roots.slice(0, SCOPE_COLLAPSE_LIMIT);
+  shown.forEach((p) => { container.appendChild(mkNode(p, 0)); });
+  if (roots.length > SCOPE_COLLAPSE_LIMIT) {
+    const more = document.createElement('div');
+    more.className = 'memola-sl-more';
+    more.textContent = expanded
+      ? '表示を減らす'
+      : 'さらに表示 (' + (roots.length - SCOPE_COLLAPSE_LIMIT) + ')';
+    more.addEventListener('click', () => {
+      if (expandedScopeSections.has(scope)) expandedScopeSections.delete(scope);
+      else expandedScopeSections.add(scope);
+      renderTree();
+    });
+    container.appendChild(more);
+  }
+}
+
 /** Confirm with the user when a move would put a page under a parent of
  *  a different scope. If they accept, migrate the dragged subtree to the
  *  parent's scope. Returns true if the move should proceed. */
@@ -362,10 +394,10 @@ export function renderTree(): void {
   pinned.forEach((p) => { wPin.appendChild(mkNode(p, 0)); });
 
   // ── Private section (scope='user' / undefined)
-  rootKidsOfScope('user').forEach((p) => { wPriv.appendChild(mkNode(p, 0)); });
+  renderScopeSection(wPriv, 'user');
 
   // ── Org section (scope='org')
-  rootKidsOfScope('org').forEach((p) => { wOrg.appendChild(mkNode(p, 0)); });
+  renderScopeSection(wOrg, 'org');
 
   // Wire empty-area drops on each scope section so dropping into the
   // section's whitespace moves the dragged page to that scope's root.

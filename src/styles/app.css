@@ -273,6 +273,16 @@
   font-size: var(--fs-md); min-height: 28px; transition: background 0.1s;
 }
 #memola-overlay .memola-tr:hover { background: var(--paper-2-strong); }
+
+/* 「さらに表示 / 表示を減らす」 toggle at the end of a capped scope section. */
+#memola-overlay .memola-sl-more {
+  display: flex; align-items: center;
+  padding: 0 8px 0 24px; min-height: 26px;
+  border-radius: var(--r-2); cursor: pointer; user-select: none;
+  font-size: var(--fs-sm, 12px); color: var(--ink-3);
+  transition: background 0.1s;
+}
+#memola-overlay .memola-sl-more:hover { background: var(--paper-2-strong); color: var(--ink-2); }
 #memola-overlay .memola-tr.on { background: var(--paper-3); font-weight: 500; }
 #memola-overlay .memola-tr:hover .memola-ta { opacity: 1; }
 
