@@ -38,8 +38,13 @@ interface ActivePicker {
 function candidatePool(opts: PickerOptions): Page[] | undefined {
   // Drafts are never linkable: they're a personal scratch space and would
   // create dangling links once the user applies / discards them.
-  if (opts.dbsOnly) return S.pages.filter((p) => p.Type === 'database' && !p.IsDraft);
-  return S.pages.filter((p) => !p.IsDraft);
+  // The current page is also excluded — a page linking to itself is never
+  // useful and just clutters its own backlinks.
+  const self = S.currentId;
+  if (opts.dbsOnly) {
+    return S.pages.filter((p) => p.Type === 'database' && !p.IsDraft && p.Id !== self);
+  }
+  return S.pages.filter((p) => !p.IsDraft && p.Id !== self);
 }
 
 let _active: ActivePicker | null = null;

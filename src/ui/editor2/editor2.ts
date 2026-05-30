@@ -20,6 +20,7 @@ import {
   changeBlockKind, toggleTodo,
   insertText as insertTextStatic,
   applyInlineFormat, insertPagelink, insertBlockAfter,
+  indentListItem, outdentListItem,
   type InlineFormatKind,
 } from './editor-state';
 import type { Block as BlockType } from '../../lib/blocks';
@@ -197,6 +198,22 @@ export function createEditor(rootEl: HTMLElement, opts: EditorOpts = {}): Editor
         notify();
       }
       return;
+    }
+    // Tab / Shift+Tab in a list item → indent (nest) / outdent. Only when
+    // the caret is in a list item; otherwise Tab is left to the browser.
+    if (ev.key === 'Tab' && !meta) {
+      const sel = state.selection;
+      const id = sel?.kind === 'caret' ? sel.blockId
+        : sel?.kind === 'range' ? sel.focusBlockId
+        : null;
+      if (id) {
+        const next = ev.shiftKey ? outdentListItem(state, id) : indentListItem(state, id);
+        if (next !== state) {
+          ev.preventDefault();
+          setState(next, 'structural');
+          return;
+        }
+      }
     }
   };
 

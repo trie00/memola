@@ -953,6 +953,118 @@ export function orderedList(items: Block[][] = [[paragraph('')]]): Block {
   return { id: newBlockId(), kind: 'list', ordered: true, items };
 }
 
+// ── List indent / outdent (Tab / Shift+Tab) ─────────────────────────────
+//
+// Nesting model: a list item is `Block[]`; a *nested* list is just a
+// `list` block living inside an item's Block[] (the renderer draws it as a
+// nested <ul>/<ol> inside the <li>). Indenting item N moves it under item
+// N-1 as a sub-item of N-1's nested list (created if needed). Outdenting
+// lifts a sub-item back up to its parent list, one level.
+
+type ListBlock = Extract<Block, { kind: 'list' }>;
+
+function replaceAt(blocks: Block[], i: number, b: Block): Block[] {
+  const out = blocks.slice(); out[i] = b; return out;
+}
+
+/** Tab in a list item: nest it under the previous sibling item. Returns
+ *  the same state when the caret isn't in a list item, or the item is the
+ *  first in its (innermost) list — nothing to nest under. */
+export function indentListItem(state: EditorState, blockId: BlockId): EditorState {
+  const blocks = indentInBlocks(state.blocks, blockId);
+  return blocks ? { ...state, blocks } : state;
+}
+
+function indentInBlocks(blocks: Block[], id: BlockId): Block[] | null {
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (b.kind === 'list') {
+      for (let it = 0; it < b.items.length; it++) {
+        // Recurse into the item first so the INNERMOST enclosing list owns
+        // the indent (an already-nested item indents within its own list).
+        const deeper = indentInBlocks(b.items[it], id);
+        if (deeper) return replaceAt(blocks, i, { ...b, items: replaceAt2(b.items, it, deeper) });
+        if (b.items[it].some((x) => x.id === id)) {
+          if (it === 0) return null;           // first item — nothing above to nest under
+          return replaceAt(blocks, i, nestUnderPrev(b, it));
+        }
+      }
+    } else if (b.kind === 'quote' || b.kind === 'callout') {
+      const deeper = indentInBlocks(b.children, id);
+      if (deeper) return replaceAt(blocks, i, { ...b, children: deeper });
+    }
+  }
+  return null;
+}
+
+function nestUnderPrev(list: ListBlock, it: number): ListBlock {
+  const items = list.items.slice();
+  const cur = items[it];
+  const prev = items[it - 1].slice();
+  const last = prev[prev.length - 1];
+  if (last && last.kind === 'list' && last.ordered === list.ordered) {
+    prev[prev.length - 1] = { ...last, items: [...last.items, cur] };
+  } else {
+    prev.push({ id: newBlockId(), kind: 'list', ordered: list.ordered, items: [cur] });
+  }
+  items[it - 1] = prev;
+  items.splice(it, 1);
+  return { ...list, items };
+}
+
+/** Shift+Tab in a nested list item: lift it one level up to its parent
+ *  list (inserted right after the parent item). No-op when the caret
+ *  isn't in a nested list. */
+export function outdentListItem(state: EditorState, blockId: BlockId): EditorState {
+  const blocks = outdentInBlocks(state.blocks, blockId);
+  return blocks ? { ...state, blocks } : state;
+}
+
+function outdentInBlocks(blocks: Block[], id: BlockId): Block[] | null {
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (b.kind === 'list') {
+      for (let it = 0; it < b.items.length; it++) {
+        const item = b.items[it];
+        // A nested list inside this item whose sub-item DIRECTLY holds the
+        // caret → lift that sub-item up to THIS list (one level).
+        for (let k = 0; k < item.length; k++) {
+          const child = item[k];
+          if (child.kind === 'list') {
+            const sub = child.items.findIndex((si) => si.some((x) => x.id === id));
+            if (sub >= 0) return replaceAt(blocks, i, liftSubItem(b, it, k, child, sub));
+          }
+        }
+        // Otherwise the caret may be deeper — recurse into the item.
+        const deeper = outdentInBlocks(item, id);
+        if (deeper) return replaceAt(blocks, i, { ...b, items: replaceAt2(b.items, it, deeper) });
+      }
+    } else if (b.kind === 'quote' || b.kind === 'callout') {
+      const deeper = outdentInBlocks(b.children, id);
+      if (deeper) return replaceAt(blocks, i, { ...b, children: deeper });
+    }
+  }
+  return null;
+}
+
+function liftSubItem(list: ListBlock, it: number, k: number, child: ListBlock, sub: number): ListBlock {
+  const lifted = child.items[sub];
+  const childItems = child.items.slice();
+  childItems.splice(sub, 1);
+  const parentItem = list.items[it].slice();
+  if (childItems.length === 0) parentItem.splice(k, 1);          // drop the now-empty nested list
+  else parentItem[k] = { ...child, items: childItems };
+  const items = list.items.slice();
+  items[it] = parentItem;
+  items.splice(it + 1, 0, lifted);                               // sibling right after the parent item
+  return { ...list, items };
+}
+
+/** Block[][] equivalent of replaceAt. */
+function replaceAt2(items: Block[][], i: number, v: Block[]): Block[][] {
+  const out = items.slice(); out[i] = v; return out;
+}
+
 export function quote(children: Block[] = [paragraph('')]): Block {
   return { id: newBlockId(), kind: 'quote', children };
 }
