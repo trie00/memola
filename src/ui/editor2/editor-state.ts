@@ -1214,6 +1214,52 @@ export function tableSetCell(
   return replaceBlock(state, found.idx, { ...tbl, rows });
 }
 
+/** Build a cellBg grid sized to the table, seeded from the existing one. */
+function ensureBgGrid(tbl: Extract<Block, { kind: 'table' }>): string[][] {
+  const rowsN = tbl.rows.length;
+  const colsN = tbl.rows[0]?.length || 0;
+  const grid: string[][] = [];
+  for (let r = 0; r < rowsN; r++) {
+    const row: string[] = [];
+    for (let c = 0; c < colsN; c++) row.push(tbl.cellBg?.[r]?.[c] || '');
+    grid.push(row);
+  }
+  return grid;
+}
+
+/** Set one cell's background colour ('' clears it). */
+export function tableSetCellBg(state: EditorState, blockId: BlockId, r: number, c: number, color: string): EditorState {
+  const found = findBlock(state, blockId);
+  if (!found || found.block.kind !== 'table') return state;
+  const tbl = found.block;
+  if (r < 0 || r >= tbl.rows.length || c < 0 || c >= (tbl.rows[0]?.length || 0)) return state;
+  const cellBg = ensureBgGrid(tbl);
+  cellBg[r][c] = color;
+  return replaceBlock(state, found.idx, { ...tbl, cellBg });
+}
+
+/** Colour every cell in row `r` ('' clears). */
+export function tableSetRowBg(state: EditorState, blockId: BlockId, r: number, color: string): EditorState {
+  const found = findBlock(state, blockId);
+  if (!found || found.block.kind !== 'table') return state;
+  const tbl = found.block;
+  if (r < 0 || r >= tbl.rows.length) return state;
+  const cellBg = ensureBgGrid(tbl);
+  for (let c = 0; c < cellBg[r].length; c++) cellBg[r][c] = color;
+  return replaceBlock(state, found.idx, { ...tbl, cellBg });
+}
+
+/** Colour every cell in column `c` ('' clears). */
+export function tableSetColBg(state: EditorState, blockId: BlockId, c: number, color: string): EditorState {
+  const found = findBlock(state, blockId);
+  if (!found || found.block.kind !== 'table') return state;
+  const tbl = found.block;
+  if (c < 0 || c >= (tbl.rows[0]?.length || 0)) return state;
+  const cellBg = ensureBgGrid(tbl);
+  for (let r = 0; r < cellBg.length; r++) cellBg[r][c] = color;
+  return replaceBlock(state, found.idx, { ...tbl, cellBg });
+}
+
 /** Construct a fresh empty table (default 2 rows × 3 cols). */
 export function emptyTable(rows = 2, cols = 3): Block {
   const grid: Inline[][][] = [];

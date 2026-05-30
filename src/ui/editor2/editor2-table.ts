@@ -10,7 +10,7 @@
 import type { Editor } from './editor2';
 import {
   tableAddRow, tableAddCol, tableRemoveRow, tableRemoveCol, tableSetCell,
-  tableMoveRow, tableMoveCol,
+  tableSetRowBg, tableSetColBg, tableSetCellBg,
 } from './editor-state';
 import type { Inline } from '../../lib/blocks';
 import { inlineToPlainText } from '../../lib/blocks';
@@ -565,6 +565,10 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     if (!pos || !blockId) return;
     _dragAnchor = { blockId, row: pos.row, col: pos.col };
     _dragging = false;
+    // Select this cell → show the edge handles. A drag (range-select)
+    // hides them again (see onTableMousemoveForRange).
+    _selCell = { blockId, row: pos.row, col: pos.col };
+    showSelHandles();
   };
 
   const onTableMousemoveForRange = (e: MouseEvent): void => {
@@ -581,6 +585,9 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     if (sameAsAnchor && !_dragging) return;
     if (!_dragging) {
       _dragging = true;
+      // A range-drag supersedes single-cell selection — drop the edge handles.
+      hideSelHandles();
+      _selCell = null;
       // Take over from the browser's text-selection. From this moment
       // forward we own the visual indicator via `.memola-itbl-selcel`.
       const ws = window.getSelection();
@@ -602,137 +609,169 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     // whenever a fresh mousedown starts.
   };
 
-  // ── Cell context menu (right-click) ─────────────────
-  // Notion-style cell menu: insert row above/below, insert col left/
-  // right, delete row/col, toggle header row/col. All actions go
-  // through `applyMutation` so undo/redo and autosave just work.
-  const onCellContextMenu = (e: MouseEvent): void => {
-    const t = e.target as HTMLElement | null;
-    if (!t || typeof t.closest !== 'function') return;
-    const cell = t.closest<HTMLElement>('td');
-    if (!cell || !rootEl.contains(cell)) return;
-    const pos = findCellPos(cell);
-    const blockId = cell.closest<HTMLElement>('[data-block-id]')?.dataset.blockId;
-    if (!pos || !blockId) return;
-    e.preventDefault();
-    e.stopPropagation();
-    showCellMenu(blockId, pos.row, pos.col, e.clientX, e.clientY);
-  };
+  // ── Notion-style edge handles (no right-click menu) ──────────────────
+  // Click a cell → handles appear on three edges of that cell:
+  //   • row handle  (the row's LEFT outer edge)   → 上下行挿入 / 行削除 / 行色
+  //   • col handle  (the column's TOP outer edge)  → 左右列挿入 / 列削除 / 列色
+  //   • cell handle (the cell's RIGHT edge)        → セルの色
+  // Clicking a handle opens its action menu. All ops go through
+  // applyMutation so undo/redo + autosave just work.
+  let _selCell: { blockId: string; row: number; col: number } | null = null;
 
-  function showCellMenu(blockId: string, row: number, col: number, x: number, y: number): void {
-    // Close any existing menu first.
+  /** Light background presets for cell / row / column colouring. */
+  const TBL_COLORS: Array<{ label: string; value: string }> = [
+    { label: 'なし', value: '' },
+    { label: 'グレー', value: '#f1f1ef' },
+    { label: '赤', value: '#fdebec' },
+    { label: 'オレンジ', value: '#fbecdd' },
+    { label: '黄', value: '#fbf3db' },
+    { label: '緑', value: '#ddedea' },
+    { label: '青', value: '#ddebf1' },
+    { label: '紫', value: '#eae4f2' },
+    { label: 'ピンク', value: '#f4dfeb' },
+  ];
+
+  function selHandle(key: 'row' | 'col' | 'cell'): HTMLElement {
+    let h = document.getElementById('memola-tbl-h-' + key);
+    if (h) return h;
+    h = document.createElement('div');
+    h.id = 'memola-tbl-h-' + key;
+    h.className = 'memola-tbl-handle memola-tbl-handle-' + key;
+    h.style.display = 'none';
+    (document.getElementById('memola-overlay') || document.body).appendChild(h);
+    h.addEventListener('mousedown', (e) => {
+      // Open the menu on press; preventDefault keeps the cell selection alive.
+      e.preventDefault(); e.stopPropagation();
+      openHandleMenu(key, h!);
+    });
+    return h;
+  }
+
+  function hideSelHandles(): void {
+    (['row', 'col', 'cell'] as const).forEach((k) => {
+      const h = document.getElementById('memola-tbl-h-' + k);
+      if (h) h.style.display = 'none';
+    });
+    rootEl.querySelectorAll('.memola-itbl-selcell').forEach((c) => c.classList.remove('memola-itbl-selcell'));
+  }
+
+  function showSelHandles(): void {
+    if (!_selCell) { hideSelHandles(); return; }
+    const cellEl = findCellInBlock(_selCell.blockId, _selCell.row, _selCell.col);
+    const tableEl = cellEl?.closest('table');
+    if (!cellEl || !tableEl) { hideSelHandles(); return; }
+    const cr = cellEl.getBoundingClientRect();
+    const tr = tableEl.getBoundingClientRect();
+    const sx = window.scrollX, sy = window.scrollY;
+    const rh = selHandle('row');
+    rh.style.left = (tr.left + sx - 16) + 'px';
+    rh.style.top = (cr.top + sy) + 'px';
+    rh.style.height = cr.height + 'px';
+    rh.style.display = 'flex';
+    const ch = selHandle('col');
+    ch.style.left = (cr.left + sx) + 'px';
+    ch.style.top = (tr.top + sy - 16) + 'px';
+    ch.style.width = cr.width + 'px';
+    ch.style.display = 'flex';
+    const eh = selHandle('cell');
+    eh.style.left = (cr.right + sx - 5) + 'px';
+    eh.style.top = (cr.top + sy + (cr.height - 18) / 2) + 'px';
+    eh.style.display = 'flex';
+    rootEl.querySelectorAll('.memola-itbl-selcell').forEach((c) => c.classList.remove('memola-itbl-selcell'));
+    cellEl.classList.add('memola-itbl-selcell');
+  }
+
+  function mut(fn: Parameters<typeof editor.applyMutation>[0]): void {
+    editor.applyMutation(fn, 'structural');
+    closeHandleMenu();
+    hideSelHandles();
+    _selCell = null;
+  }
+
+  function closeHandleMenu(): void {
     document.getElementById('memola-tbl-cell-menu')?.remove();
+  }
+
+  function openHandleMenu(key: 'row' | 'col' | 'cell', anchor: HTMLElement): void {
+    if (!_selCell) return;
+    const { blockId, row, col } = _selCell;
+    closeHandleMenu();
     const menu = document.createElement('div');
     menu.id = 'memola-tbl-cell-menu';
     menu.className = 'memola-tbl-cell-menu';
-    menu.style.cssText = 'position:absolute; z-index:2147483646; background:#fff; border:1px solid #e9e9e7; border-radius:6px; box-shadow:0 6px 24px rgba(0,0,0,0.12); padding:4px 0; min-width:200px; font-size:13px; color:#37352f;';
-    menu.style.left = (x + window.scrollX) + 'px';
-    menu.style.top = (y + window.scrollY) + 'px';
+    const ar = anchor.getBoundingClientRect();
+    menu.style.left = (ar.left + window.scrollX) + 'px';
+    menu.style.top = (ar.bottom + window.scrollY + 4) + 'px';
 
-    const block = editor.getBlocks().find((b) => b.id === blockId);
-    const isTable = block && block.kind === 'table';
-    const hrowOn = !!(isTable && block.hrow);
-    const hcolOn = !!(isTable && block.hcol);
-
-    function item(label: string, fn: () => void, danger = false): HTMLElement {
+    const item = (label: string, fn: () => void, danger = false): HTMLElement => {
       const it = document.createElement('div');
       it.className = 'memola-tbl-cell-menu-item' + (danger ? ' danger' : '');
-      it.style.cssText = 'padding:6px 14px; cursor:pointer;' + (danger ? ' color:#c44;' : '');
       it.textContent = label;
-      it.addEventListener('mouseenter', () => { it.style.background = '#f1f1ef'; });
-      it.addEventListener('mouseleave', () => { it.style.background = ''; });
-      it.addEventListener('mousedown', (ev) => { ev.preventDefault(); ev.stopPropagation(); fn(); menu.remove(); });
+      it.addEventListener('mousedown', (ev) => { ev.preventDefault(); ev.stopPropagation(); fn(); });
       return it;
-    }
-    function sep(): HTMLElement {
-      const s = document.createElement('div');
-      s.style.cssText = 'height:1px; background:#e9e9e7; margin:4px 0;';
-      return s;
-    }
+    };
+    const sep = (): HTMLElement => {
+      const s = document.createElement('div'); s.className = 'memola-tbl-cell-menu-sep'; return s;
+    };
+    const colorLabel = (text: string): HTMLElement => {
+      const l = document.createElement('div'); l.className = 'memola-tbl-cell-menu-collabel'; l.textContent = text; return l;
+    };
+    const colorRow = (onPick: (color: string) => void): HTMLElement => {
+      const wrap = document.createElement('div');
+      wrap.className = 'memola-tbl-cell-colors';
+      for (const c of TBL_COLORS) {
+        const sw = document.createElement('button');
+        sw.className = 'memola-tbl-cell-swatch' + (c.value ? '' : ' none');
+        sw.title = c.label;
+        if (c.value) sw.style.background = c.value;
+        sw.addEventListener('mousedown', (ev) => { ev.preventDefault(); ev.stopPropagation(); onPick(c.value); });
+        wrap.appendChild(sw);
+      }
+      return wrap;
+    };
 
-    // Row 0 / col 0 → header toggles
-    if (row === 0) {
-      menu.appendChild(item(hrowOn ? '✓ 行見出しを解除' : '行見出しに設定', () => {
-        editor.applyMutation((s) => {
-          const idx = s.blocks.findIndex((b) => b.id === blockId);
-          if (idx < 0) return s;
-          const cur = s.blocks[idx];
-          if (cur.kind !== 'table') return s;
-          const blocks = s.blocks.slice();
-          blocks[idx] = { ...cur, hrow: !cur.hrow };
-          return { ...s, blocks };
-        }, 'structural');
-      }));
+    if (key === 'row') {
+      menu.append(
+        item('↑ 上に行を挿入', () => mut((s) => tableAddRow(s, blockId, row))),
+        item('↓ 下に行を挿入', () => mut((s) => tableAddRow(s, blockId, row + 1))),
+        item('行を削除', () => mut((s) => tableRemoveRow(s, blockId, row)), true),
+        sep(), colorLabel('行の色'),
+        colorRow((color) => mut((s) => tableSetRowBg(s, blockId, row, color))),
+      );
+    } else if (key === 'col') {
+      menu.append(
+        item('← 左に列を挿入', () => mut((s) => tableAddCol(s, blockId, col))),
+        item('→ 右に列を挿入', () => mut((s) => tableAddCol(s, blockId, col + 1))),
+        item('列を削除', () => mut((s) => tableRemoveCol(s, blockId, col)), true),
+        sep(), colorLabel('列の色'),
+        colorRow((color) => mut((s) => tableSetColBg(s, blockId, col, color))),
+      );
+    } else {
+      menu.append(
+        colorLabel('セルの色'),
+        colorRow((color) => mut((s) => tableSetCellBg(s, blockId, row, col, color))),
+      );
     }
-    if (col === 0) {
-      menu.appendChild(item(hcolOn ? '✓ 列見出しを解除' : '列見出しに設定', () => {
-        editor.applyMutation((s) => {
-          const idx = s.blocks.findIndex((b) => b.id === blockId);
-          if (idx < 0) return s;
-          const cur = s.blocks[idx];
-          if (cur.kind !== 'table') return s;
-          const blocks = s.blocks.slice();
-          blocks[idx] = { ...cur, hcol: !cur.hcol };
-          return { ...s, blocks };
-        }, 'structural');
-      }));
-    }
-    if (row === 0 || col === 0) menu.appendChild(sep());
-
-    menu.appendChild(item('↑ 上に行を追加', () => {
-      editor.applyMutation((s) => tableAddRow(s, blockId, row), 'structural');
-    }));
-    menu.appendChild(item('↓ 下に行を追加', () => {
-      editor.applyMutation((s) => tableAddRow(s, blockId, row + 1), 'structural');
-    }));
-    const rowCount = isTable ? block.rows.length : 0;
-    if (row > 0) {
-      menu.appendChild(item('⤴ 行を上に移動', () => {
-        editor.applyMutation((s) => tableMoveRow(s, blockId, row, -1), 'structural');
-      }));
-    }
-    if (row < rowCount - 1) {
-      menu.appendChild(item('⤵ 行を下に移動', () => {
-        editor.applyMutation((s) => tableMoveRow(s, blockId, row, +1), 'structural');
-      }));
-    }
-    menu.appendChild(item('行を削除', () => {
-      editor.applyMutation((s) => tableRemoveRow(s, blockId, row), 'structural');
-    }, true));
-    menu.appendChild(sep());
-    menu.appendChild(item('← 左に列を追加', () => {
-      editor.applyMutation((s) => tableAddCol(s, blockId, col), 'structural');
-    }));
-    menu.appendChild(item('→ 右に列を追加', () => {
-      editor.applyMutation((s) => tableAddCol(s, blockId, col + 1), 'structural');
-    }));
-    const colCount = isTable ? (block.rows[0]?.length || 0) : 0;
-    if (col > 0) {
-      menu.appendChild(item('⬅ 列を左に移動', () => {
-        editor.applyMutation((s) => tableMoveCol(s, blockId, col, -1), 'structural');
-      }));
-    }
-    if (col < colCount - 1) {
-      menu.appendChild(item('➡ 列を右に移動', () => {
-        editor.applyMutation((s) => tableMoveCol(s, blockId, col, +1), 'structural');
-      }));
-    }
-    menu.appendChild(item('列を削除', () => {
-      editor.applyMutation((s) => tableRemoveCol(s, blockId, col), 'structural');
-    }, true));
 
     (document.getElementById('memola-overlay') || document.body).appendChild(menu);
-
-    // Dismiss on outside click. Use mousedown so the click on a menu
-    // item itself fires before the dismissal handler tears the menu.
-    function dismiss(ev: MouseEvent): void {
-      if (!menu.contains(ev.target as Node)) {
-        menu.remove();
-        document.removeEventListener('mousedown', dismiss, true);
-      }
-    }
+    const dismiss = (ev: MouseEvent): void => {
+      const t = ev.target as Node;
+      if (menu.contains(t) || anchor.contains(t)) return;
+      closeHandleMenu();
+      document.removeEventListener('mousedown', dismiss, true);
+    };
     setTimeout(() => document.addEventListener('mousedown', dismiss, true), 0);
   }
+
+  // Click anywhere that isn't a table cell / handle / menu → clear selection.
+  const onDocMousedownClearSel = (e: MouseEvent): void => {
+    const t = e.target as HTMLElement | null;
+    if (!t) return;
+    if (t.closest?.('.memola-tbl-handle, .memola-tbl-cell-menu')) return;
+    const cell = t.closest?.('td');
+    if (cell && rootEl.contains(cell)) return;     // a cell click re-selects via onTableMousedown
+    if (_selCell) { hideSelHandles(); _selCell = null; }
+  };
 
   // Copy: when a `table-cells` selection is active, serialise the
   // rectangle as TSV (text/plain) + as a minimal HTML <table>. Same
@@ -775,7 +814,7 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
   rootEl.addEventListener('mousedown', onTableMousedown);
   rootEl.addEventListener('mousemove', onTableMousemoveForRange);
   rootEl.addEventListener('mousemove', onResizeCursorHint);
-  rootEl.addEventListener('contextmenu', onCellContextMenu);
+  document.addEventListener('mousedown', onDocMousedownClearSel, true);
   document.addEventListener('mousemove', onResizeMove);
   document.addEventListener('mouseup', onTableMouseup);
   document.addEventListener('mouseup', onResizeUp);
@@ -791,7 +830,7 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     rootEl.removeEventListener('mousedown', onTableMousedown);
     rootEl.removeEventListener('mousemove', onTableMousemoveForRange);
     rootEl.removeEventListener('mousemove', onResizeCursorHint);
-    rootEl.removeEventListener('contextmenu', onCellContextMenu);
+    document.removeEventListener('mousedown', onDocMousedownClearSel, true);
     document.removeEventListener('mousemove', onResizeMove);
     document.removeEventListener('mouseup', onTableMouseup);
     document.removeEventListener('mouseup', onResizeUp);
@@ -802,6 +841,9 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     // accumulate in the overlay across editor remounts. Remove them.
     ['add-row', 'add-col', 'rm-row', 'rm-col'].forEach((cls) => {
       document.getElementById('memola-tbl-' + cls)?.remove();
+    });
+    ['h-row', 'h-col', 'h-cell'].forEach((k) => {
+      document.getElementById('memola-tbl-' + k)?.remove();
     });
   };
 

@@ -130,6 +130,10 @@ export interface TableBlock extends BlockBase {
    *  table's natural auto-layout. The drag-resize handle on a cell's
    *  right edge writes here via `applyMutation`. */
   colWidths?: number[];
+  /** Per-cell background colour (CSS colour string), rows × cols. Optional /
+   *  ragged — missing entries render with no background. Row / column
+   *  colouring just writes the whole row's / column's cells here. */
+  cellBg?: string[][];
 }
 
 /** Linked-DB embed. Renders as a live table view of another DB. */

@@ -226,12 +226,15 @@ function paintBlockContent(el: HTMLElement, b: Block): void {
         tbl.appendChild(cg);
       }
       const tbody = document.createElement('tbody');
-      for (const row of b.rows) {
+      for (let r = 0; r < b.rows.length; r++) {
+        const row = b.rows[r];
         const tr = document.createElement('tr');
-        for (const cell of row) {
+        for (let c = 0; c < row.length; c++) {
           const td = document.createElement('td');
           td.contentEditable = 'true';
-          renderInlineInto(td, cell);
+          const bg = b.cellBg?.[r]?.[c];
+          if (bg) td.style.background = bg;
+          renderInlineInto(td, row[c]);
           tr.appendChild(td);
         }
         tbody.appendChild(tr);
