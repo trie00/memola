@@ -402,6 +402,18 @@ export function pageIdForListItem(sourceList: string, numericId: number): string
   return resolvePageId(SOURCE_LIST_BY_PAGEID, sourceList, numericId);
 }
 
+/** Columns the startup page load needs — everything `rowToMetaWithId`,
+ *  `filterVisiblePages` and `buildSourceListMap` read, and deliberately
+ *  NOT `Body_blocks`. Without a `$select`, SP returns every column incl.
+ *  each page's full body (potentially hundreds of KB per row), which the
+ *  tree / library / search never use at startup — bodies are fetched
+ *  lazily by `fetchOneRow` only when a page is opened. Trimming the body
+ *  here is the single biggest cut to the boot payload. */
+const PAGE_META_SELECT =
+  'Id,Title,ParentId,PageType,Icon,Pinned,Trashed,ListTitle,DbRowId,' +
+  'Published,PublishedUrl,PublishedPageId,PublishedDirty,OriginDailyDate,' +
+  'OriginPageId,Scope,AuthorId,TrashedBy,IsTemplate';
+
 /** Refresh `S.meta.pages` from the union of the org-shared list and
  *  the current user's per-user list. `S.pages` is a derived view that
  *  picks up the change automatically — callers don't need to capture
@@ -423,10 +435,10 @@ export async function apiGetPages(): Promise<Page[]> {
   // degraded view but doesn't lose data.
   const myList = getMyPagesList();
   const buckets: { list: string; rows: PageRow[] }[] = [
-    { list: ORG_PAGES_LIST, rows: (await getListItems(ORG_PAGES_LIST)) as unknown as PageRow[] },
+    { list: ORG_PAGES_LIST, rows: (await getListItems(ORG_PAGES_LIST, PAGE_META_SELECT)) as unknown as PageRow[] },
   ];
   if (myList !== ORG_PAGES_LIST) {
-    const myRows = await getListItems(myList).catch(() => [] as unknown[]);
+    const myRows = await getListItems(myList, PAGE_META_SELECT).catch(() => [] as unknown[]);
     buckets.push({ list: myList, rows: myRows as unknown as PageRow[] });
   }
   // Codex review PS1: detect itemId collisions across lists and mint

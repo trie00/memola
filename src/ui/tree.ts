@@ -37,7 +37,7 @@ function rootKidsOfScope(scope: PageScope): Page[] {
 
 /** How many top-level pages each scope section shows before collapsing
  *  the rest behind a 「さらに表示」 toggle (Notion-style). */
-const SCOPE_COLLAPSE_LIMIT = 15;
+const SCOPE_COLLAPSE_LIMIT = 10;
 
 /** Scope sections the user expanded via 「さらに表示」 this session. Kept in
  *  a module Set so the choice survives re-renders (drag, navigate, etc.)

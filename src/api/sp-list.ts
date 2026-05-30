@@ -364,13 +364,21 @@ function unwrapODataPrefix(item: ListItem): ListItem {
   return fixed;
 }
 
-export async function getListItems(listTitle: string): Promise<ListItem[]> {
+export async function getListItems(listTitle: string, select?: string): Promise<ListItem[]> {
   // SP /items returns at most 5000 (default ~100/500) per response. Follow
   // the `__next` link until exhausted so callers always see the full list —
   // truncating silently would drop pages from the tree and orphan row-body
   // entries on DB delete.
+  //
+  // `select` (optional) restricts the columns SP returns via `$select`. Pass
+  // it on read paths that don't need every column — notably the startup page
+  // load, which only needs metadata (title / parent / scope / flags) for the
+  // tree+search and must NOT pull each page's `Body_blocks` body (potentially
+  // hundreds of KB per row). Omitting `select` returns all columns (the DB-row
+  // read paths rely on that to get user-defined columns).
   const all: ListItem[] = [];
-  let next: string | undefined = spListUrl(listTitle, '/items?$orderby=Id&$top=500');
+  const selPart = select ? '&$select=' + encodeURIComponent(select) : '';
+  let next: string | undefined = spListUrl(listTitle, '/items?$orderby=Id&$top=500' + selPart);
   // Hard cap to prevent runaway loops if the server lies about __next
   for (let safety = 0; next && safety < 200; safety++) {
     const r = await fetch(next, {
