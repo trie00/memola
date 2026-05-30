@@ -54,6 +54,12 @@ export function showView(mode: 'page' | 'db' | 'empty' | 'library'): void {
   g('tb').style.display = mode === 'page'  ? 'flex'  : 'none';
   g('dv').style.display = mode === 'db'    ? 'flex'  : 'none';
   g('lib').style.display = mode === 'library' ? 'block' : 'none';
+  // Leaving the library hides its multi-select bulk bar so it doesn't
+  // linger over a page/DB view.
+  if (mode !== 'library') {
+    const lb = document.getElementById('memola-lib-bulkbar');
+    if (lb) lb.classList.remove('on');
+  }
   // Refresh the publish tag for the new context — hides for DB / empty /
   // library, reflects current state for page.
   syncPubTag();

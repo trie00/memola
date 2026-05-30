@@ -580,6 +580,23 @@
 }
 #memola-overlay .memola-lib-row { cursor: pointer; transition: background 0.1s; }
 #memola-overlay .memola-lib-row:hover { background: var(--paper-2-strong); }
+#memola-overlay .memola-lib-row.on { background: var(--accent-soft, #e8e7ff); }
+/* Leading select column: checkbox + grip handle (shown on row hover or
+   when any row is selected), mirroring the DB table's selection UX. */
+#memola-overlay .memola-lib-sel-th { width: 34px; }
+#memola-overlay .memola-lib-sel {
+  width: 34px; white-space: nowrap; text-align: center; padding: 7px 4px;
+}
+#memola-overlay .memola-lib-grip {
+  cursor: pointer; color: var(--ink-4, #b5b4b0); font-size: 13px;
+  opacity: 0; transition: opacity 0.1s; user-select: none; margin-right: 2px;
+}
+#memola-overlay .memola-lib-cb { opacity: 0; transition: opacity 0.1s; cursor: pointer; vertical-align: middle; }
+#memola-overlay .memola-lib-row:hover .memola-lib-grip,
+#memola-overlay .memola-lib-row:hover .memola-lib-cb,
+#memola-overlay .memola-lib-row.on .memola-lib-cb,
+#memola-overlay .memola-lib-table.has-sel .memola-lib-cb { opacity: 1; }
+#memola-overlay .memola-lib-grip:hover { color: var(--ink-2, #6b6a66); }
 #memola-overlay .memola-lib-c-title { display: flex; align-items: center; gap: 6px; }
 #memola-overlay .memola-lib-tog {
   flex-shrink: 0; width: 22px; height: 22px;

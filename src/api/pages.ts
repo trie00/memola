@@ -1220,6 +1220,38 @@ export async function apiCreatePageFromTemplate(templateId: string): Promise<Pag
   return { Id: newId, Title: title, ParentId: '', Type: 'page' };
 }
 
+/** Duplicate a normal page (title + body) into a new sibling page named
+ *  "… (コピー)". Same scope/parent as the origin. Returns the new page.
+ *  Used by the library's bulk-duplicate. DBs use `duplicateDb` instead. */
+export async function apiDuplicatePage(id: string): Promise<Page> {
+  await ensurePagesList();
+  const origin = metaById(id);
+  if (!origin) throw new Error('ページが見つかりません');
+  if (origin.type === 'database') throw new Error('DB はこの経路では複製できません');
+  const blocksJson = await apiLoadBlocksBody(id);
+  const title = (origin.title || '無題') + ' (コピー)';
+  const scope: PageScope = origin.scope || 'user';
+  const list = pagesListFor(scope);
+  const created = await createListItem(list, {
+    Title: title,
+    ParentId: origin.parent || '',
+    PageType: 'page',
+    Icon: origin.icon || '',
+    Pinned: 0,
+    Trashed: 0,
+    Body_blocks: blocksJson || '[]',
+    Scope: scope,
+  });
+  const newId = String(created.Id);
+  SOURCE_LIST_BY_PAGEID.set(newId, list);
+  S.meta.pages.push({
+    id: newId, title, parent: origin.parent || '', type: 'page',
+    icon: origin.icon || '', scope,
+  });
+  invalidateBacklinkCache();
+  return { Id: newId, Title: title, ParentId: origin.parent || '', Type: 'page' };
+}
+
 /** Hard-delete a template row (templates skip the trash — they're scratch
  *  scaffolding, not user content). */
 export async function apiDeleteTemplate(templateId: string): Promise<void> {

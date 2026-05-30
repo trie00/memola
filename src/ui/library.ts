@@ -18,6 +18,7 @@ import { stopWatching } from './sync-watch';
 import { flushPendingSave } from './save-control';
 import { metaById } from '../lib/page-store';
 import { escapeHtml } from '../lib/html-escape';
+import { setLoad, toast } from './ui-helpers';
 import {
   ORG_PAGES_LIST, getMyPagesList, pageIdForListItem, type PageScope,
 } from '../api/pages';
@@ -26,6 +27,9 @@ import { spListUrl, spGetD } from '../api/sp-rest';
 let _filter = '';
 let _scope: PageScope = 'user';
 const _expanded = new Set<string>();
+/** Multi-select state (page ids) for bulk duplicate / delete — same UX as
+ *  the DB table's leading-checkbox + bulk bar. */
+const _selected = new Set<string>();
 /** pageId → {modified, editor}; populated per-open from SP. */
 let _meta = new Map<string, { modified: string; editor: string }>();
 
@@ -44,6 +48,7 @@ export async function openLibrary(): Promise<void> {
   S.currentId = null;
   S.currentType = 'page';
   _filter = '';
+  _selected.clear();
   renderTree();                          // clear the tree's selected-row highlight
   pushViewHistory('library');            // record so the back button returns here
   renderBcCustom([{ label: '📚 ライブラリ' }]);
@@ -122,6 +127,7 @@ function renderShell(): void {
       '</div>' +
       '<table class="memola-lib-table">' +
         '<thead><tr>' +
+          '<th class="memola-lib-sel-th"><input type="checkbox" id="memola-lib-cb-all" title="すべて選択"></th>' +
           '<th>タイトル</th><th>種別</th><th>更新者</th><th>更新日</th>' +
         '</tr></thead>' +
         '<tbody id="memola-lib-tbody"></tbody>' +
@@ -131,6 +137,7 @@ function renderShell(): void {
     if (tab.dataset.scope === _scope) tab.classList.add('on');
     tab.addEventListener('click', () => {
       _scope = (tab.dataset.scope as PageScope) || 'user';
+      _selected.clear();                  // selection is scope-specific
       el.querySelectorAll('.memola-lib-tab').forEach((t) =>
         t.classList.toggle('on', (t as HTMLElement).dataset.scope === _scope));
       renderRows();
@@ -138,6 +145,15 @@ function renderShell(): void {
   });
   const search = document.getElementById('memola-lib-search') as HTMLInputElement | null;
   search?.addEventListener('input', () => { _filter = search.value; renderRows(); });
+  // Select-all header checkbox: toggles every currently-rendered row.
+  document.getElementById('memola-lib-cb-all')?.addEventListener('change', (e) => {
+    const on = (e.target as HTMLInputElement).checked;
+    const ids = Array.from(document.querySelectorAll<HTMLElement>('#memola-lib-tbody .memola-lib-row'))
+      .map((r) => r.dataset.pageId || '').filter(Boolean);
+    if (on) ids.forEach((id) => _selected.add(id));
+    else ids.forEach((id) => _selected.delete(id));
+    renderRows();
+  });
 }
 
 function fmtDate(iso: string): string {
@@ -186,7 +202,7 @@ function renderRows(): void {
   if (count) count.textContent = shown + ' ページ';
   tbody.innerHTML = shown
     ? rowsHtml.join('')
-    : '<tr><td colspan="4" class="memola-lib-empty">' +
+    : '<tr><td colspan="5" class="memola-lib-empty">' +
       (q ? '該当するページがありません' : 'このスコープにページがありません') + '</td></tr>';
 
   // Toggle clicks (expand/collapse) — must not also navigate.
@@ -199,13 +215,47 @@ function renderRows(): void {
       renderRows();
     });
   });
-  // Row clicks → navigate.
+  // Per-row checkbox + grip → toggle selection (no navigation).
+  tbody.querySelectorAll<HTMLInputElement>('.memola-lib-cb').forEach((cb) => {
+    cb.addEventListener('click', (e) => e.stopPropagation());
+    cb.addEventListener('change', () => {
+      const id = cb.dataset.id || '';
+      if (cb.checked) _selected.add(id); else _selected.delete(id);
+      syncSelectionUi();
+    });
+  });
+  tbody.querySelectorAll<HTMLElement>('.memola-lib-grip').forEach((gr) => {
+    gr.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = gr.dataset.id || '';
+      if (_selected.has(id)) _selected.delete(id); else _selected.add(id);
+      renderRows();
+    });
+  });
+  // Row clicks → navigate (controls above stopPropagation so they don't).
   tbody.querySelectorAll<HTMLElement>('.memola-lib-row').forEach((tr) => {
     tr.addEventListener('click', () => {
       const pid = tr.dataset.pageId || '';
       if (pid) void doSelect(pid);
     });
   });
+  syncSelectionUi();
+}
+
+/** Reflect `_selected` into the select-all header state + the bulk bar,
+ *  without a full re-render. */
+function syncSelectionUi(): void {
+  const tbody = document.getElementById('memola-lib-tbody');
+  const all = document.getElementById('memola-lib-cb-all') as HTMLInputElement | null;
+  if (tbody && all) {
+    const ids = Array.from(tbody.querySelectorAll<HTMLElement>('.memola-lib-row'))
+      .map((r) => r.dataset.pageId || '').filter(Boolean);
+    const sel = ids.filter((id) => _selected.has(id)).length;
+    all.checked = ids.length > 0 && sel === ids.length;
+    all.indeterminate = sel > 0 && sel < ids.length;
+  }
+  document.querySelector('.memola-lib-table')?.classList.toggle('has-sel', _selected.size > 0);
+  renderLibBulkBar();
 }
 
 function rowHtml(p: Page, depth: number, hasKids: boolean, open: boolean): string {
@@ -217,7 +267,13 @@ function rowHtml(p: Page, depth: number, hasKids: boolean, open: boolean): strin
         (open ? '▾' : '▸') + '</span>'
     : '<span class="memola-lib-tog-sp"></span>';
   const indent = 'padding-left:' + (8 + depth * 18) + 'px;';
-  return '<tr class="memola-lib-row" data-page-id="' + escapeHtml(p.Id) + '">' +
+  const checked = _selected.has(p.Id);
+  return '<tr class="memola-lib-row' + (checked ? ' on' : '') + '" data-page-id="' + escapeHtml(p.Id) + '">' +
+    '<td class="memola-lib-sel">' +
+      '<span class="memola-lib-grip" data-id="' + escapeHtml(p.Id) + '" title="選択">⠿</span>' +
+      '<input type="checkbox" class="memola-lib-cb" data-id="' + escapeHtml(p.Id) + '"' +
+        (checked ? ' checked' : '') + '>' +
+    '</td>' +
     '<td class="memola-lib-c-title" style="' + indent + '">' +
       tog +
       '<span class="memola-lib-c-ic">' + escapeHtml(icon) + '</span>' +
@@ -227,6 +283,78 @@ function rowHtml(p: Page, depth: number, hasKids: boolean, open: boolean): strin
     '<td class="memola-lib-c-editor">' + escapeHtml(em?.editor || '—') + '</td>' +
     '<td class="memola-lib-c-date">' + escapeHtml(em ? fmtDate(em.modified) : '…') + '</td>' +
   '</tr>';
+}
+
+// ── Bulk action bar (複製 / 削除 / 解除) — same chrome as the DB table ──
+
+function renderLibBulkBar(): void {
+  let bar = document.getElementById('memola-lib-bulkbar');
+  const n = _selected.size;
+  if (n === 0) { if (bar) bar.classList.remove('on'); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'memola-lib-bulkbar';
+    bar.className = 'memola-db-bulkbar';     // reuse the DB bulk-bar styling
+    bar.innerHTML =
+      '<span class="memola-db-bulkbar-count"></span>' +
+      '<button class="memola-db-bulkbar-btn" data-act="dup">複製</button>' +
+      '<button class="memola-db-bulkbar-btn danger" data-act="del">削除</button>' +
+      '<button class="memola-db-bulkbar-btn ghost" data-act="clr">解除</button>';
+    (document.getElementById('memola-overlay') || document.body).appendChild(bar);
+    bar.addEventListener('click', (e) => {
+      const act = (e.target as HTMLElement).closest<HTMLElement>('[data-act]')?.dataset.act;
+      if (act === 'dup') void bulkDuplicate();
+      else if (act === 'del') void bulkDelete();
+      else if (act === 'clr') { _selected.clear(); renderRows(); }
+    });
+  }
+  const cnt = bar.querySelector<HTMLElement>('.memola-db-bulkbar-count');
+  if (cnt) cnt.textContent = n + ' 件選択';
+  bar.classList.add('on');
+}
+
+async function bulkDuplicate(): Promise<void> {
+  const ids = Array.from(_selected);
+  if (ids.length === 0) return;
+  setLoad(true, '複製中...');
+  let ok = 0; const errs: string[] = [];
+  try {
+    const pages = await import('../api/pages');
+    const db = await import('../api/db');
+    for (const id of ids) {
+      const meta = metaById(id);
+      try {
+        if (meta?.type === 'database') await db.duplicateDb(id, { asTemplate: false });
+        else await pages.apiDuplicatePage(id);
+        ok++;
+      } catch (e) { errs.push((e as Error).message); }
+    }
+    _selected.clear();
+    renderTree();
+    renderRows();
+    if (ok) toast(ok + ' 件複製しました');
+    if (errs.length) toast('一部複製失敗: ' + errs[0], 'err');
+  } finally { setLoad(false); }
+}
+
+async function bulkDelete(): Promise<void> {
+  const ids = Array.from(_selected);
+  if (ids.length === 0) return;
+  if (!confirm(ids.length + ' 件を削除(ゴミ箱へ移動)しますか?')) return;
+  setLoad(true, '削除中...');
+  let ok = 0; const errs: string[] = [];
+  try {
+    const pages = await import('../api/pages');
+    for (const id of ids) {
+      try { await pages.apiTrashPage(id); ok++; }
+      catch (e) { errs.push((e as Error).message); }
+    }
+    _selected.clear();
+    renderTree();
+    renderRows();
+    if (ok) toast(ok + ' 件削除しました（ゴミ箱から復元可能）');
+    if (errs.length) toast('一部削除失敗: ' + errs[0], 'err');
+  } finally { setLoad(false); }
 }
 
 /** Wire the sidebar 「ライブラリ」 entry. Idempotent. */
