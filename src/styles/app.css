@@ -794,7 +794,7 @@
   display: flex; gap: 8px; background: rgb(241, 241, 239);
   border-radius: 4px; padding: 12px 16px; margin: 4px 0;
 }
-#memola-ed .memola-callout-ic { font-size: 20px; flex-shrink: 0; line-height: 1.5; }
+#memola-ed .memola-callout-ic { font-size: 20px; flex-shrink: 0; line-height: 1.5; user-select: none; cursor: default; }
 #memola-ed .memola-callout-body { flex: 1; }
 #memola-ed .memola-callout-body p { margin: 0; }
 

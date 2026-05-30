@@ -177,6 +177,12 @@ function paintBlockContent(el: HTMLElement, b: Block): void {
     case 'callout': {
       const ic = document.createElement('span');
       ic.className = 'memola-callout-ic';
+      // The emoji is decorative chrome, not editable text. Without this the
+      // caret can land inside the icon span (e.g. when the user clicks right
+      // next to the 💡), so the first typed characters go into the icon
+      // instead of the callout body. contentEditable=false makes clicks fall
+      // through to the body paragraph and keeps the caret out of the emoji.
+      ic.contentEditable = 'false';
       ic.textContent = b.emoji;
       const body = document.createElement('div');
       body.className = 'memola-callout-body';
