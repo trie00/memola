@@ -45,17 +45,20 @@ export {
   attachCardDragHandlers,
 } from './views-kanban';
 
-export function showView(mode: 'page' | 'db' | 'empty'): void {
-  g('ea').style.display = mode !== 'db'    ? 'flex'  : 'none';
+export function showView(mode: 'page' | 'db' | 'empty' | 'library'): void {
+  // 'library' is a standalone full-width view (the all-pages list); it
+  // hides the editor area, DB view, and empty-state alike.
+  g('ea').style.display = (mode === 'page' || mode === 'empty') ? 'flex' : 'none';
   g('em').style.display = mode === 'empty' ? 'flex'  : 'none';
   g('ct').style.display = mode === 'page'  ? 'block' : 'none';
   g('tb').style.display = mode === 'page'  ? 'flex'  : 'none';
   g('dv').style.display = mode === 'db'    ? 'flex'  : 'none';
-  // Refresh the publish tag for the new context — hides for DB / empty,
-  // reflects current state for page.
+  g('lib').style.display = mode === 'library' ? 'block' : 'none';
+  // Refresh the publish tag for the new context — hides for DB / empty /
+  // library, reflects current state for page.
   syncPubTag();
   // Clear the per-page save-time label when there's no page open
-  if (mode === 'empty') setSavedAt(null);
+  if (mode === 'empty' || mode === 'library') setSavedAt(null);
 }
 
 /** Render the breadcrumb from a custom list of {label, onClick?} segments. */

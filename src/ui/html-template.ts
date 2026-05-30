@@ -18,6 +18,7 @@ export function buildHtml(): string {
       '<div class="memola-sb-fixed">' +
         '<div class="memola-sb-fx" id="memola-sb-daily-today" title="今日のデイリーノートを開く / 作成"><span class="memola-sb-fx-ic">📅</span><span class="memola-sb-fx-lb">今日のノート</span></div>' +
         '<div class="memola-sb-fx" id="memola-sb-daily-pick" title="任意の日のデイリーノートを開く"><span class="memola-sb-fx-ic">🗓</span><span class="memola-sb-fx-lb">日付を選んで開く</span></div>' +
+        '<div class="memola-sb-fx" id="memola-sb-library" title="全ページの一覧"><span class="memola-sb-fx-ic">📚</span><span class="memola-sb-fx-lb">ライブラリ</span></div>' +
       '</div>' +
       '<div class="memola-sb-fixed">' +
         '<div class="memola-sb-fx" id="memola-drafts-btn" style="display:none" title="編集中の下書き / 保存衝突で退避された編集"><span class="memola-sb-fx-ic">📝</span><span class="memola-sb-fx-lb">下書き</span><span class="memola-drafts-badge-count">0</span></div>' +
@@ -171,6 +172,7 @@ export function buildHtml(): string {
           '<div id="memola-gantt-view" class="memola-altview"></div>' +
         '</div>' +
       '</div>' +
+      '<div id="memola-lib"></div>' +
       '<aside id="memola-props">' +
         '<div id="memola-props-hd"><span>プロパティ</span><button class="memola-pane-x" id="memola-props-x" title="閉じる">' + ICONS.close + '</button></div>' +
         '<div id="memola-props-list"></div>' +

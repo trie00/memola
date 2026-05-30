@@ -16,6 +16,7 @@ import { attachCreateMenu } from './create-menu';
 import { attachColumnModal } from './column-modal';
 import { attachDbToolbar } from './db-toolbar';
 import { attachSidebarWiring } from './sidebar-wiring';
+import { attachLibrary } from './library';
 import { attachEditorToolbar } from './editor-toolbar';
 import { attachIconButtons } from './icon-buttons';
 import { attachQuickSearch } from './quick-search-wiring';
@@ -60,6 +61,9 @@ export function attachAll(): void {
 
   // Sidebar / nav-history / daily-notes / empty-state CTAs
   attachSidebarWiring({ openTodayDailyNote, showDailyPicker, doNewDb });
+
+  // 「📚 ライブラリ」 sidebar entry — full-page all-pages list
+  attachLibrary();
 
   // Quick-add (＋ 新規) popover
   attachCreateMenu(doNewDb);

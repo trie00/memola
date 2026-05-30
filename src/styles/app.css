@@ -535,6 +535,39 @@
   transition: padding 0.2s ease;
 }
 #memola-ei { width: 100%; max-width: var(--content-max); transition: max-width 0.2s ease; }
+
+/* ── Library view (📚 ライブラリ): full-page all-pages list ───────────── */
+#memola-overlay #memola-lib { flex: 1; overflow-y: auto; display: none; min-width: 0; }
+#memola-overlay .memola-lib-inner { max-width: 1100px; margin: 0 auto; padding: 56px 56px 96px; }
+#memola-overlay .memola-lib-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+#memola-overlay .memola-lib-icon { font-size: 30px; line-height: 1; }
+#memola-overlay .memola-lib-title { font-size: 30px; font-weight: 700; margin: 0; color: var(--ink); }
+#memola-overlay .memola-lib-tb { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+#memola-overlay .memola-lib-search {
+  flex: 0 1 320px; padding: 6px 10px; font-size: var(--fs-md);
+  border: 1px solid var(--line); border-radius: var(--r-2);
+  background: var(--paper); color: var(--ink); outline: none;
+}
+#memola-overlay .memola-lib-search:focus { border-color: var(--accent); }
+#memola-overlay .memola-lib-count { font-size: var(--fs-sm, 12px); color: var(--ink-3); }
+#memola-overlay .memola-lib-table { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
+#memola-overlay .memola-lib-table th {
+  text-align: left; font-weight: 500; color: var(--ink-3);
+  padding: 6px 12px; border-bottom: 1px solid var(--line);
+  font-size: var(--fs-sm, 12px); white-space: nowrap;
+}
+#memola-overlay .memola-lib-table td {
+  padding: 7px 12px; border-bottom: 1px solid var(--line);
+  color: var(--ink-3); vertical-align: middle;
+}
+#memola-overlay .memola-lib-row { cursor: pointer; transition: background 0.1s; }
+#memola-overlay .memola-lib-row:hover { background: var(--paper-2-strong); }
+#memola-overlay .memola-lib-c-title { display: flex; align-items: center; gap: 8px; }
+#memola-overlay .memola-lib-c-ic { flex-shrink: 0; font-size: 15px; }
+#memola-overlay .memola-lib-link { color: var(--ink); font-weight: 500; }
+#memola-overlay .memola-lib-row:hover .memola-lib-link { text-decoration: underline; }
+#memola-overlay .memola-lib-c-parent { color: var(--ink-3); }
+#memola-overlay .memola-lib-empty { text-align: center; color: var(--ink-3); padding: 32px 0; }
 #memola-overlay.focus-mode #memola-ei { max-width: var(--content-max-focus); }
 #memola-overlay.focus-mode #memola-ea { padding: 60px 60px 40px; }
 #memola-overlay.focus-mode #memola-sb { width: var(--sidebar-collapsed-w); }
