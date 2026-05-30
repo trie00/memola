@@ -790,12 +790,21 @@
 #memola-ed a { color: var(--accent); text-decoration: underline; }
 
 /* ── Callout block ────────────────────────────────────── */
-#memola-ed .memola-callout {
-  display: flex; gap: 8px; background: rgb(241, 241, 239);
+/* The controlled editor (editor2) renders the wrapper as
+ * `.memola-blk-callout`; the legacy/export markup uses `.memola-callout`.
+ * Both must get the flex layout — without it the icon (inline span) and the
+ * body (block div) stack vertically, so text lands on the line BELOW the
+ * emoji instead of beside it. A left accent bar distinguishes the callout
+ * from the (monospace, centered) code block, which shares a grey fill. */
+#memola-ed .memola-callout,
+#memola-ed .memola-blk-callout {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: rgb(241, 241, 239);
+  border-left: 3px solid var(--accent, #2f6f5e);
   border-radius: 4px; padding: 12px 16px; margin: 4px 0;
 }
 #memola-ed .memola-callout-ic { font-size: 20px; flex-shrink: 0; line-height: 1.5; user-select: none; cursor: default; }
-#memola-ed .memola-callout-body { flex: 1; }
+#memola-ed .memola-callout-body { flex: 1; min-width: 0; }
 #memola-ed .memola-callout-body p { margin: 0; }
 
 /* ── Todo list ────────────────────────────────────────── */
