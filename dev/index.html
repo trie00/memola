@@ -15,14 +15,15 @@
 <body>
   <div id="dev-banner">
     <strong>Memola dev shell</strong> — SharePoint REST はモック。本番挙動 (etag / ACL / publish) は実機で確認してください。
+    <em>ライブリロード有効: src を編集すると自動で再読込されます。</em>
   </div>
   <script>
-    // Cache-bust on every load — Chrome can cache /main.js across
-    // reloads even with `Cache-Control: no-store`. Inject the script
-    // dynamically with a fresh query string so the browser refetches.
-    const s = document.createElement('script');
-    s.src = '/main.js?t=' + Date.now();
-    document.body.appendChild(s);
+    // Live-reload loader: fetches the freshly-built main.js and reloads
+    // automatically when esbuild rewrites it (polls /__ver). See
+    // dev/loader.js. Cache-bust so the loader itself is always current.
+    var l = document.createElement('script');
+    l.src = '/loader.js?t=' + Date.now();
+    document.body.appendChild(l);
   </script>
 </body>
 </html>

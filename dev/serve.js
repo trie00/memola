@@ -38,6 +38,19 @@ const MIME = {
 
   const server = http.createServer((req, res) => {
     const reqUrl = (req.url || '/').split('?')[0];
+    // Version token endpoint for the live-reload loader (dev/loader.js).
+    // Returns a string that changes whenever esbuild rewrites main.js
+    // (mtime + size). The loader polls this and reloads on change.
+    if (reqUrl === '/__ver') {
+      let token = '0';
+      try {
+        const st = fs.statSync(path.join(DEV_DIR, 'main.js'));
+        token = st.mtimeMs + '-' + st.size;
+      } catch { /* main.js not built yet */ }
+      res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
+      res.end(token);
+      return;
+    }
     const url = reqUrl === '/' ? '/index.html' : reqUrl;
     const filePath = path.join(DEV_DIR, url);
     // Prevent path traversal
