@@ -125,9 +125,9 @@ function renderShell(): void {
           'placeholder="ページを検索…" value="' + escapeHtml(_filter) + '">' +
         '<span class="memola-lib-count" id="memola-lib-count"></span>' +
       '</div>' +
-      '<table class="memola-lib-table">' +
+      '<table class="memola-lib-table" id="memola-lib-dt">' +
         '<thead><tr>' +
-          '<th class="memola-lib-sel-th"><input type="checkbox" id="memola-lib-cb-all" title="すべて選択"></th>' +
+          '<th class="memola-th-cb"><input type="checkbox" class="memola-cb" id="memola-lib-cb-all" title="すべて選択"></th>' +
           '<th>タイトル</th><th>種別</th><th>更新者</th><th>更新日</th>' +
         '</tr></thead>' +
         '<tbody id="memola-lib-tbody"></tbody>' +
@@ -215,24 +215,19 @@ function renderRows(): void {
       renderRows();
     });
   });
-  // Per-row checkbox + grip → toggle selection (no navigation).
-  tbody.querySelectorAll<HTMLInputElement>('.memola-lib-cb').forEach((cb) => {
+  // Per-row checkbox → toggle selection (no navigation). Same class /
+  // styling as the DB table (.memola-cb / .memola-td-cb).
+  tbody.querySelectorAll<HTMLInputElement>('.memola-cb').forEach((cb) => {
     cb.addEventListener('click', (e) => e.stopPropagation());
     cb.addEventListener('change', () => {
       const id = cb.dataset.id || '';
       if (cb.checked) _selected.add(id); else _selected.delete(id);
+      const tr = cb.closest<HTMLElement>('.memola-lib-row');
+      if (tr) tr.classList.toggle('memola-tr-sel', cb.checked);
       syncSelectionUi();
     });
   });
-  tbody.querySelectorAll<HTMLElement>('.memola-lib-grip').forEach((gr) => {
-    gr.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id = gr.dataset.id || '';
-      if (_selected.has(id)) _selected.delete(id); else _selected.add(id);
-      renderRows();
-    });
-  });
-  // Row clicks → navigate (controls above stopPropagation so they don't).
+  // Row clicks → navigate (the checkbox stopPropagation so it doesn't).
   tbody.querySelectorAll<HTMLElement>('.memola-lib-row').forEach((tr) => {
     tr.addEventListener('click', () => {
       const pid = tr.dataset.pageId || '';
@@ -254,7 +249,8 @@ function syncSelectionUi(): void {
     all.checked = ids.length > 0 && sel === ids.length;
     all.indeterminate = sel > 0 && sel < ids.length;
   }
-  document.querySelector('.memola-lib-table')?.classList.toggle('has-sel', _selected.size > 0);
+  // Same hook as the DB table so the shared cb-visibility CSS applies.
+  document.getElementById('memola-lib-dt')?.classList.toggle('memola-has-sel', _selected.size > 0);
   renderLibBulkBar();
 }
 
@@ -268,10 +264,9 @@ function rowHtml(p: Page, depth: number, hasKids: boolean, open: boolean): strin
     : '<span class="memola-lib-tog-sp"></span>';
   const indent = 'padding-left:' + (8 + depth * 18) + 'px;';
   const checked = _selected.has(p.Id);
-  return '<tr class="memola-lib-row' + (checked ? ' on' : '') + '" data-page-id="' + escapeHtml(p.Id) + '">' +
-    '<td class="memola-lib-sel">' +
-      '<span class="memola-lib-grip" data-id="' + escapeHtml(p.Id) + '" title="選択">⠿</span>' +
-      '<input type="checkbox" class="memola-lib-cb" data-id="' + escapeHtml(p.Id) + '"' +
+  return '<tr class="memola-lib-row' + (checked ? ' memola-tr-sel' : '') + '" data-page-id="' + escapeHtml(p.Id) + '">' +
+    '<td class="memola-td-cb">' +
+      '<input type="checkbox" class="memola-cb" data-id="' + escapeHtml(p.Id) + '"' +
         (checked ? ' checked' : '') + '>' +
     '</td>' +
     '<td class="memola-lib-c-title" style="' + indent + '">' +

@@ -580,23 +580,9 @@
 }
 #memola-overlay .memola-lib-row { cursor: pointer; transition: background 0.1s; }
 #memola-overlay .memola-lib-row:hover { background: var(--paper-2-strong); }
-#memola-overlay .memola-lib-row.on { background: var(--accent-soft, #e8e7ff); }
-/* Leading select column: checkbox + grip handle (shown on row hover or
-   when any row is selected), mirroring the DB table's selection UX. */
-#memola-overlay .memola-lib-sel-th { width: 34px; }
-#memola-overlay .memola-lib-sel {
-  width: 34px; white-space: nowrap; text-align: center; padding: 7px 4px;
-}
-#memola-overlay .memola-lib-grip {
-  cursor: pointer; color: var(--ink-4, #b5b4b0); font-size: 13px;
-  opacity: 0; transition: opacity 0.1s; user-select: none; margin-right: 2px;
-}
-#memola-overlay .memola-lib-cb { opacity: 0; transition: opacity 0.1s; cursor: pointer; vertical-align: middle; }
-#memola-overlay .memola-lib-row:hover .memola-lib-grip,
-#memola-overlay .memola-lib-row:hover .memola-lib-cb,
-#memola-overlay .memola-lib-row.on .memola-lib-cb,
-#memola-overlay .memola-lib-table.has-sel .memola-lib-cb { opacity: 1; }
-#memola-overlay .memola-lib-grip:hover { color: var(--ink-2, #6b6a66); }
+/* Selection column reuses the DB table's .memola-td-cb / .memola-cb /
+   .memola-tr-sel styling (see the #memola-dt, #memola-lib-dt rules) so
+   the checkbox size/position match the normal DB list exactly. */
 #memola-overlay .memola-lib-c-title { display: flex; align-items: center; gap: 6px; }
 #memola-overlay .memola-lib-tog {
   flex-shrink: 0; width: 22px; height: 22px;
@@ -3136,7 +3122,8 @@
 #memola-dt th.memola-th-del, #memola-dt td.memola-td-del { width: 32px; padding: 0; }
 
 /* ── Row selection checkbox (Notion-style hover-reveal) ── */
-#memola-dt th.memola-th-cb, #memola-dt td.memola-td-cb {
+#memola-dt th.memola-th-cb, #memola-dt td.memola-td-cb,
+#memola-lib-dt th.memola-th-cb, #memola-lib-dt td.memola-td-cb {
   width: 24px; padding: 0; text-align: center;
 }
 #memola-overlay .memola-cb {
@@ -3144,15 +3131,22 @@
   width: 14px; height: 14px;
 }
 /* Body checkboxes: hidden by default, shown on row hover or when any selected */
-#memola-overlay #memola-dt tbody td.memola-td-cb .memola-cb { visibility: hidden; }
+#memola-overlay #memola-dt tbody td.memola-td-cb .memola-cb,
+#memola-overlay #memola-lib-dt tbody td.memola-td-cb .memola-cb { visibility: hidden; }
 #memola-overlay #memola-dt tbody tr:hover td.memola-td-cb .memola-cb,
-#memola-overlay #memola-dt.memola-has-sel tbody td.memola-td-cb .memola-cb { visibility: visible; }
+#memola-overlay #memola-dt.memola-has-sel tbody td.memola-td-cb .memola-cb,
+#memola-overlay #memola-lib-dt tbody tr:hover td.memola-td-cb .memola-cb,
+#memola-overlay #memola-lib-dt.memola-has-sel tbody td.memola-td-cb .memola-cb { visibility: visible; }
 /* Header checkbox: shown on header hover or when any selected */
-#memola-overlay #memola-dt thead th.memola-th-cb .memola-cb { visibility: hidden; }
+#memola-overlay #memola-dt thead th.memola-th-cb .memola-cb,
+#memola-overlay #memola-lib-dt thead th.memola-th-cb .memola-cb { visibility: hidden; }
 #memola-overlay #memola-dt thead:hover th.memola-th-cb .memola-cb,
-#memola-overlay #memola-dt.memola-has-sel thead th.memola-th-cb .memola-cb { visibility: visible; }
+#memola-overlay #memola-dt.memola-has-sel thead th.memola-th-cb .memola-cb,
+#memola-overlay #memola-lib-dt thead:hover th.memola-th-cb .memola-cb,
+#memola-overlay #memola-lib-dt.memola-has-sel thead th.memola-th-cb .memola-cb { visibility: visible; }
 /* Selected-row highlight */
-#memola-overlay #memola-dt tr.memola-tr-sel td { background: var(--accent-soft); }
+#memola-overlay #memola-dt tr.memola-tr-sel td,
+#memola-overlay #memola-lib-dt tr.memola-tr-sel td { background: var(--accent-soft); }
 
 /* ── Bulk-actions toolbar (paper-toned, anchored above filter bar) ─────── */
 /* Position is set by db-bulk.ts to hover just above the filter/sort/group row. */
