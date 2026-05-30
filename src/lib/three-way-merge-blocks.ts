@@ -81,15 +81,16 @@ function canonicalize(v: unknown): unknown {
   return v;
 }
 
-/** Strip block IDs (recursively) before content comparison. We compare
- *  blocks by content equality, not identity — two paragraphs with the
- *  same text but different ids are still "the same content". */
+/** Strip block IDs AND per-block stamps (lastBy/lastAt), recursively,
+ *  before content comparison. We compare blocks by content equality,
+ *  not identity — two paragraphs with the same text but different ids
+ *  (or different last-editor stamps) are still "the same content". */
 function stripIds(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(stripIds);
   if (node && typeof node === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(node)) {
-      if (k === 'id') continue;
+      if (k === 'id' || k === 'lastBy' || k === 'lastAt') continue;
       out[k] = stripIds(v);
     }
     return out;

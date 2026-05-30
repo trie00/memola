@@ -39,6 +39,17 @@ import {
 import { blocksToMd, mdToBlocks } from './blocks-md';
 import { parseBlocksJson as parseBlocksJsonLib } from '../api/pages';
 import { threeWayMergeBlocks } from './three-way-merge-blocks';
+import { stampBodyForSave } from './block-stamp';
+import { S } from '../state';
+
+/** Stamp the to-save body with the current user + now on blocks whose
+ *  content changed vs `baseBody` (D2). Centralised so every save path
+ *  records "who last edited each block". No-op-ish when the user id is
+ *  unknown (0) — blocks still get `lastAt`, `lastBy:0`. */
+function stampForSave(toSaveBody: string, baseBody: string): string {
+  const by = S.meta.myUserId || 0;
+  return stampBodyForSave(toSaveBody, baseBody, by, Date.now());
+}
 
 /** Convert a Saver body (JSON-blocks string) to markdown for the
  *  line-based 3-way merge. The merge UI is line-oriented; running it
@@ -313,9 +324,15 @@ class Saver {
   ): Promise<SaveOutcome> {
     this._set({ kind: 'saving', base, body, title });
     const myGen = this._generation;
+    // D2: stamp blocks whose content changed vs the base with the
+    // current user + now. The stamped body is what we persist and what
+    // becomes the new baseline (so the stamp round-trips); the editor
+    // picks it up via the caret-preserving reconcile (A2). The dirty-
+    // detection comparisons below still use the unstamped `body`.
+    const stampedBody = stampForSave(body, base.body);
     const promise = (async (): Promise<SaveOutcome> => {
       try {
-        const result = await apiSavePageBlocks(base.pageId, title, body, base.etag);
+        const result = await apiSavePageBlocks(base.pageId, title, stampedBody, base.etag);
         // Codex review #2: if the user navigated away (loadPage / unload
         // bumped the generation), abandon — don't mutate state for a
         // page that's no longer loaded.
@@ -330,7 +347,7 @@ class Saver {
           if (myGen !== this._generation) return { ok: true };     // navigated away
           const fresh: PageSnapshot = {
             pageId: base.pageId,
-            body,
+            body: stampedBody,
             title,
             etag: result.etag,
             modified: meta?.modified || base.modified,
@@ -378,9 +395,13 @@ class Saver {
         const autoMerged = tryBlockMerge(base.body, oursBody, theirsBody);
         if (autoMerged !== null) {
           const finalTitle = mergeTitle(base.title, oursTitle, theirsTitle);
+          // D2: stamp my-changed blocks. theirs' blocks already carry
+          // theirs' stamps (read from SP); diffing the merge against
+          // `base.body` stamps only the blocks *I* changed.
+          const stampedMerged = stampForSave(autoMerged, base.body);
           // Save the auto-merged result with theirs.etag (we know SP's
           // current state; the If-Match should match).
-          const reSave = await apiSavePageBlocks(base.pageId, finalTitle, autoMerged, meta.etag);
+          const reSave = await apiSavePageBlocks(base.pageId, finalTitle, stampedMerged, meta.etag);
           if (myGen !== this._generation) {
             return reSave.ok ? { ok: true } : { ok: false, reason: 'conflict' };
           }
@@ -389,7 +410,7 @@ class Saver {
             if (myGen !== this._generation) return { ok: true };
             this._set({ kind: 'idle', base: {
               pageId: base.pageId,
-              body: autoMerged,
+              body: stampedMerged,
               title: finalTitle,
               etag: reSave.etag,
               modified: m2?.modified || base.modified,
@@ -476,9 +497,11 @@ class Saver {
     }
     const c = s.conflict;
     const myGen = this._generation;
+    // D2: stamp blocks I changed vs the conflict base.
+    const stampedOurs = stampForSave(c.ours.body, c.base.body);
     const promise = (async (): Promise<SaveOutcome> => {
       try {
-        const result = await apiSavePageBlocks(c.pageId, c.ours.title, c.ours.body /* no expectedEtag */);
+        const result = await apiSavePageBlocks(c.pageId, c.ours.title, stampedOurs /* no expectedEtag */);
         if (myGen !== this._generation) {
           return result.ok ? { ok: true } : { ok: false, reason: 'error', error: new Error('overwrite-failed') };
         }
@@ -487,7 +510,7 @@ class Saver {
           if (myGen !== this._generation) return { ok: true };
           const fresh: PageSnapshot = {
             pageId: c.pageId,
-            body: c.ours.body,
+            body: stampedOurs,
             title: c.ours.title,
             etag: result.etag,
             modified: meta?.modified || '',
@@ -640,6 +663,8 @@ class Saver {
     // this, choosing "merge" silently discards the remote's title-only
     // edit.
     const finalTitle = mergeTitle(c.base.title, c.ours.title, c.theirs.title);
+    // D2: stamp blocks changed vs the conflict base.
+    const stampedFinal = stampForSave(finalBody, c.base.body);
     const myGen = this._generation;
     const promise = (async (): Promise<SaveOutcome> => {
       try {
@@ -649,7 +674,7 @@ class Saver {
         const result = await apiSavePageBlocks(
           c.pageId,
           finalTitle,
-          finalBody,
+          stampedFinal,
           c.theirs.etag,
         );
         if (myGen !== this._generation) {
@@ -660,7 +685,7 @@ class Saver {
           if (myGen !== this._generation) return { ok: true };
           const fresh: PageSnapshot = {
             pageId: c.pageId,
-            body: finalBody,
+            body: stampedFinal,
             title: finalTitle,
             etag: result.etag,
             modified: meta?.modified || '',

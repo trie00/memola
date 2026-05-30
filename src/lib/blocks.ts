@@ -54,6 +54,15 @@ export type Inline =
 
 export interface BlockBase {
   id: BlockId;
+  /** SP user id of whoever last changed this block's content, stamped
+   *  at save time (see lib/block-stamp.ts). Optional — absent on blocks
+   *  that predate the feature or were never re-saved. Pure metadata:
+   *  every content-equality check (merge eq, render block-hash, body
+   *  diff) ignores it, so it never causes spurious conflicts / repaints. */
+  lastBy?: number;
+  /** Epoch-ms when this block's content last changed. Paired with
+   *  `lastBy`. Same "ignored by all equality checks" contract. */
+  lastAt?: number;
 }
 
 /** Paragraph, heading, todo — flat blocks with one inline run each. */

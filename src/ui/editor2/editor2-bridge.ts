@@ -13,6 +13,7 @@ import { parseBlocksJson, serializeBlocks } from '../../api/pages';
 import { mdToBlocks } from '../../lib/blocks-md';
 import { htmlToBlocks } from '../../lib/blocks-html';
 import { saver } from '../../lib/saver';
+import { bodiesContentEqual } from '../../lib/block-stamp';
 import { attachSlashMenu } from './editor2-slash';
 import { attachWikiTrigger } from './editor2-wiki';
 import { attachImageHandlers } from './editor2-image';
@@ -89,7 +90,12 @@ export function mountEditor2(rootEl: HTMLElement): Editor {
     if (!_editor) return;
     if (S.currentId !== st.base.pageId) return;
     const cur = serializeBlocks(_editor.getBlocks());
-    if (cur === st.base.body) return;           // editor already matches base
+    // Compare ignoring per-block stamps (D2): a save re-stamps the base
+    // but the editor's blocks are unstamped — that's not a real content
+    // divergence and must NOT trigger a reconcile. Only fold in when
+    // the actual block CONTENT differs (= a merge brought in remote
+    // changes the editor hasn't rendered).
+    if (bodiesContentEqual(cur, st.base.body)) return;
     _editor.reconcile(parseBlocksJson(st.base.body));
   });
   return _editor;

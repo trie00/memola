@@ -235,3 +235,24 @@ describe('applyBlockMergeChoices', () => {
     expect(final.find((b) => b.id === '2')).toBeDefined();
   });
 });
+
+describe('threeWayMergeBlocks — ignores per-block stamps (D2)', () => {
+  it('no conflict when blocks differ only by lastBy/lastAt', () => {
+    const base = [P('1', 'a')];
+    // Same content, different stamps on each side.
+    const yours = [{ ...P('1', 'a'), lastBy: 7, lastAt: 100 } as Block];
+    const theirs = [{ ...P('1', 'a'), lastBy: 9, lastAt: 200 } as Block];
+    const r = threeWayMergeBlocks(base, yours, theirs);
+    expect(r.conflicts).toEqual([]);
+  });
+
+  it('a stamp-only change is treated as unchanged (theirs content wins cleanly)', () => {
+    const base = [P('1', 'a')];
+    const yours = [{ ...P('1', 'a'), lastBy: 7 } as Block];   // only stamped, content same
+    const theirs = [P('1', 'REMOTE')];                         // real content change
+    const r = threeWayMergeBlocks(base, yours, theirs);
+    expect(r.conflicts).toEqual([]);
+    const b1 = r.merged.find((b) => b.id === '1') as unknown as { inline: [{ text: string }] };
+    expect(b1.inline[0].text).toBe('REMOTE');
+  });
+});

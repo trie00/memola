@@ -17,6 +17,7 @@
 // linkdb / ai) are deferred to Phase 2c-4.
 
 import type { Block, Inline } from '../../lib/blocks';
+import { stampReplacer } from '../../lib/block-stamp';
 
 /** Render `blocks` into `container`. Existing children whose
  *  data-block-id matches a block in `blocks` are reused; others are
@@ -71,7 +72,10 @@ export function renderBlock(b: Block): HTMLElement {
   const el = document.createElement('div');
   el.dataset.blockId = b.id;
   el.dataset.blockKind = b.kind;
-  el.dataset.blockHash = JSON.stringify(b);
+  // Stamp-insensitive hash: lastBy/lastAt changes must NOT trigger a
+  // repaint (they carry no visible content and would otherwise disrupt
+  // the caret in a just-edited block when a save re-stamps it).
+  el.dataset.blockHash = JSON.stringify(b, stampReplacer);
   el.className = 'memola-blk memola-blk-' + b.kind;
   paintBlockContent(el, b);
   return el;
@@ -88,7 +92,7 @@ export function renderBlock(b: Block): HTMLElement {
  *  block repaints), but it does ensure that a render call with
  *  the SAME state is a true no-op at the DOM level. */
 function updateBlockContent(el: HTMLElement, b: Block): void {
-  const hash = JSON.stringify(b);
+  const hash = JSON.stringify(b, stampReplacer);
   if (el.dataset.blockHash === hash) return;
   el.dataset.blockHash = hash;
   paintBlockContent(el, b);
