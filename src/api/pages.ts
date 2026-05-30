@@ -331,7 +331,7 @@ async function fetchOneRow(pageId: string, select?: string): Promise<FetchedRow 
  *  site that does `parseInt(pageId, 10)`. */
 const SOURCE_LIST_BY_PAGEID = new Map<string, string>();
 
-function buildSourceListMap(buckets: { list: string; rows: PageRow[] }[]): {
+export function buildSourceListMap(buckets: { list: string; rows: PageRow[] }[]): {
   rowToPageId: Map<PageRow, string>;
   sourceListByPageId: Map<string, string>;
 } {
@@ -363,6 +363,38 @@ function buildSourceListMap(buckets: { list: string; rows: PageRow[] }[]): {
     }
   }
   return { rowToPageId, sourceListByPageId };
+}
+
+/** Pure inverse of the pageId-minting in `buildSourceListMap`: given the
+ *  pageId→sourceList map plus a row's source list + numeric item id,
+ *  return the SAME pageId that minting assigned. Returns the composite
+ *  `list:num` when that numeric id collided across lists, else the bare
+ *  `num`. Exported for unit tests. */
+export function resolvePageId(
+  sourceListByPageId: Map<string, string>,
+  sourceList: string,
+  numericId: number,
+): string {
+  const bare = String(numericId);
+  if (sourceListByPageId.get(bare) === sourceList) return bare;
+  const composite = sourceList + ':' + numericId;
+  if (sourceListByPageId.get(composite) === sourceList) return composite;
+  return bare;
+}
+
+/** Resolve a (source list, numeric item id) pair to the canonical pageId
+ *  that `apiGetPages` recorded in `S.meta.pages` — so callers like the
+ *  backlinks scan can hand the result to `doSelect` and actually
+ *  navigate. Without this, a backlink source page that got a composite
+ *  id (its numeric id collided across the org + per-user lists, which is
+ *  the common case since each SP list numbers items from 1) would be
+ *  addressed by its bare numeric id, which `S.pages` doesn't contain →
+ *  doSelect no-ops and the click appears dead.
+ *
+ *  Falls back to the bare id when the row isn't part of the current
+ *  union view (e.g. filtered out) — doSelect then correctly no-ops. */
+export function pageIdForListItem(sourceList: string, numericId: number): string {
+  return resolvePageId(SOURCE_LIST_BY_PAGEID, sourceList, numericId);
 }
 
 /** Refresh `S.meta.pages` from the union of the org-shared list and

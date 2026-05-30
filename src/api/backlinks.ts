@@ -17,7 +17,7 @@
 // delete).
 
 import { spListUrl, spGetD } from './sp-rest';
-import { ORG_PAGES_LIST, getMyPagesList, parseBlocksJson } from './pages';
+import { ORG_PAGES_LIST, getMyPagesList, parseBlocksJson, pageIdForListItem } from './pages';
 import { inlineToPlainText } from '../lib/blocks';
 import type { Block, Inline } from '../lib/blocks';
 
@@ -45,6 +45,10 @@ interface CachedRow {
   Body_blocks?: string;
   PageType?: string;
   OriginPageId?: string;
+  /** Which SP list this row was read from (org-shared vs per-user). Used
+   *  to mint the canonical pageId via `pageIdForListItem` so the panel's
+   *  click → doSelect navigates (bare numeric ids collide across lists). */
+  _srcList?: string;
 }
 
 let _cache: CachedRow[] | null = null;
@@ -67,7 +71,7 @@ async function loadBodiesFromList(listTitle: string): Promise<CachedRow[]> {
     const d: { results: CachedRow[]; __next?: string } | null =
       await spGetD<{ results: CachedRow[]; __next?: string }>(next);
     if (!d) break;
-    for (const r of d.results) rows.push(r);
+    for (const r of d.results) { r._srcList = listTitle; rows.push(r); }
     next = d.__next;
   }
   return rows;
@@ -112,7 +116,10 @@ export async function getBacklinksFor(
   const rows = await loadAllBodies();
   const out: BacklinkEntry[] = [];
   for (const row of rows) {
-    if (String(row.Id) === targetId) continue;            // skip self
+    // Canonical pageId (composite-aware) so the panel's click → doSelect
+    // can find the page in S.pages. `_srcList` is set by loadBodiesFromList.
+    const pageId = pageIdForListItem(row._srcList || ORG_PAGES_LIST, row.Id);
+    if (pageId === targetId) continue;                     // skip self
     if (row.PageType === 'draft') continue;               // skip drafts
     if (row.OriginPageId) continue;                        // legacy drafts
     if (row.PageType === 'row') continue;                  // skip DB row bodies (still findable via parent DB)
@@ -124,8 +131,8 @@ export async function getBacklinksFor(
     const { count, snippet } = scanBlocks(blocks, targetId);
     if (count === 0) continue;
     out.push({
-      pageId: String(row.Id),
-      pageTitle: pageTitleResolver?.(String(row.Id)) || row.Title || '無題',
+      pageId,
+      pageTitle: pageTitleResolver?.(pageId) || row.Title || '無題',
       snippet,
       count,
     });
