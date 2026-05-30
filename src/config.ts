@@ -6,7 +6,18 @@ export let SITE = '';
 export let SITE_REL = '';
 export let FOLDER = '';
 export const META = '_meta.json';
-export const SAVE_MS = 2000;
+// Autosave debounce. Fires this long after the user's last edit. Kept
+// fairly long (vs. the old 2s) to cut SharePoint version churn — every
+// save mints a new SP list version, so a chatty debounce buried pages
+// under hundreds of versions. Pending edits still flush immediately on
+// page-switch / blur / tab-close (see flushPendingSave), so a longer idle
+// debounce doesn't widen the real data-loss window in practice.
+export const SAVE_MS = 10000;
+/** SharePoint per-list version retention cap. With versioning enabled SP
+ *  keeps a version per item write; without a cap they accumulate forever.
+ *  Provisioning sets EnableVersioning + this MajorVersionLimit so SP prunes
+ *  the oldest automatically (keeps recent history, bounds storage). */
+export const SP_VERSION_LIMIT = 100;
 
 /** Apply a SharePoint site URL — recompute SITE / SITE_REL / FOLDER.
  *  Trailing slashes are stripped so url joining stays clean. */

@@ -2,7 +2,7 @@
 // every per-DB list. Higher-level page semantics live in api/pages.ts; this
 // module only deals with raw list mechanics.
 
-import { SITE } from '../config';
+import { SITE, SP_VERSION_LIMIT } from '../config';
 import { getDigest } from './digest';
 import { spListUrl, spGetD, ODATA_POST_HEADERS } from './sp-rest';
 import type { ListField, ListItem } from '../state';
@@ -315,6 +315,9 @@ export async function ensureList(spec: ListSpec): Promise<boolean> {
       await setColumnIndexed(spec.title, f.name).catch(() => undefined);
     }
   }
+  // Bound version retention so per-DB / daily writes don't pile up SP
+  // versions forever (best-effort).
+  await setListVersionLimit(spec.title, SP_VERSION_LIMIT).catch(() => undefined);
   return !exists;
 }
 
@@ -588,6 +591,37 @@ export async function setColumnIndexed(
     body: JSON.stringify({
       __metadata: { type: 'SP.Field' },
       Indexed: true,
+    }),
+  }).catch(() => undefined);
+}
+
+/** Enable list versioning with a retention cap so SharePoint prunes old
+ *  versions automatically. Every item write mints a version; without a
+ *  cap they grow unbounded (storage + the "hundreds of versions per page"
+ *  problem from frequent autosaves). Idempotent and best-effort — failures
+ *  are swallowed by callers (the app works fine without the cap; versions
+ *  just accumulate). `MajorVersionLimit` 0 would mean "unlimited", so we
+ *  require limit >= 1.
+ *
+ *  Note: shrinking the limit on an already-huge list doesn't retroactively
+ *  hard-delete every excess version in one call — SP trims on subsequent
+ *  writes — but new churn stays bounded from here on. */
+export async function setListVersionLimit(listTitle: string, limit: number): Promise<void> {
+  if (!(limit >= 1)) return;
+  const d = await getDigest();
+  await fetch(spListUrl(listTitle), {
+    method: 'POST',
+    headers: {
+      ...ODATA_POST_HEADERS,
+      'X-RequestDigest': d,
+      'X-HTTP-Method': 'MERGE',
+      'IF-MATCH': '*',
+    },
+    credentials: 'include',
+    body: JSON.stringify({
+      __metadata: { type: 'SP.List' },
+      EnableVersioning: true,
+      MajorVersionLimit: limit,
     }),
   }).catch(() => undefined);
 }

@@ -318,7 +318,8 @@ function syncDraftBanner(): void {
     const m = await import('./save-control');
     await m.flushPendingSave();
     if (!confirm(
-      '下書きの内容で原本「' + originTitle + '」を上書きします。\n\n' +
+      '下書きの内容を原本「' + originTitle + '」に適用します。\n\n' +
+      '・原本が下書き作成後に変更されていれば自動で3-wayマージします\n' +
       '・原本の現在の本文は SP のバージョン履歴に残ります\n' +
       '・この下書きページは削除されます\n' +
       '・原本へのリンク ([[' + meta.originPageId + ']]) は壊れません\n\n' +
@@ -326,17 +327,10 @@ function syncDraftBanner(): void {
     )) return;
     try {
       setLoad(true, '原本に適用中…');
-      const { apiApplyDraftToOrigin, apiGetPages } = await import('../api/pages');
       const draftId = S.currentId;
       if (!draftId) return;
-      const originId = await apiApplyDraftToOrigin(draftId);
-      // Reload page tree (draft removed)
-      await apiGetPages();
-      const { renderTree } = await import('./tree');
-      renderTree();
-      void import('./drafts-modal').then((m) => m.refreshDraftsBadge?.());
-      await doSelect(originId);
-      toast('原本に適用しました');
+      const { applyDraftToOriginInteractive } = await import('./drafts-modal');
+      await applyDraftToOriginInteractive(draftId);
     } catch (e) {
       toast('適用失敗: ' + (e as Error).message, 'err');
     } finally { setLoad(false); }

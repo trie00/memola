@@ -17,9 +17,11 @@ import {
   getListItems,
   getListItemById,
   setColumnIndexed,
+  setListVersionLimit,
   applyOwnerOnlyAcl,
 } from './sp-list';
 import { spListUrl, spGetD } from './sp-rest';
+import { SP_VERSION_LIMIT } from '../config';
 import { mdToBlocks, blocksToMd } from '../lib/blocks-md';
 import { blocksToHtml } from '../lib/blocks-html';
 import type { Block, Inline } from '../lib/blocks';
@@ -99,6 +101,7 @@ export interface PageRow {
   OriginDailyDate?: string; // for converted pages: the original YYYY-MM-DD
   OriginPageId?: string;    // for "draft of …" duplicates: id of the origin page
   AuthorId?: number;        // SP user id of the row creator (auto-populated)
+  OriginBaseBlocks?: string; // for 'draft': origin body snapshot at creation (3-way merge base)
   Scope?: string;           // 'org' = 組織共通 / 'user' = 個人 (default 'user' on creation)
   TrashedBy?: number;       // SP user id of who set the Trashed flag (= deleter)
   IsTemplate?: number;      // 1 = reusable template row (hidden from tree/library/search)
@@ -139,6 +142,7 @@ const REQUIRED_FIELDS: Array<[string, number]> = [
   ['Scope', 2],                  // 'org' | 'user' — see PageScope type
   ['TrashedBy', 9],              // SP user id of who soft-deleted this row
   ['IsTemplate', 9],             // 1 = this row is a reusable template (hidden from normal views)
+  ['OriginBaseBlocks', 3],       // for 'draft': snapshot of the origin's body at draft-creation (3-way merge base)
 ];
 
 /** Columns to mark `Indexed=true` after schema provisioning. Indexing the
@@ -177,6 +181,9 @@ async function provisionOnePagesList(listTitle: string): Promise<void> {
   for (const col of INDEXED_COLUMNS) {
     await setColumnIndexed(listTitle, col).catch(() => undefined);
   }
+  // Cap version retention so frequent autosaves don't bury pages under
+  // unbounded SP versions (best-effort; the app works without it).
+  await setListVersionLimit(listTitle, SP_VERSION_LIMIT).catch(() => undefined);
   // Phase 3 ACL: lock per-user lists down to the owner only.
   //
   // Codex review P3: re-apply ACL on EVERY ensure pass for per-user
@@ -1137,6 +1144,11 @@ export async function apiDuplicateAsDraft(originId: string): Promise<Page> {
     Trashed: 0,
     Body_blocks: blocksJson || '[]',
     OriginPageId: originId,
+    // Freeze the origin's body as the 3-way-merge base. The draft body
+    // diverges from here as the user edits; at apply-time we compare the
+    // origin's *current* body against this base to detect intervening
+    // edits and merge instead of blindly overwriting.
+    OriginBaseBlocks: blocksJson || '[]',
     Scope: inheritScope,
   });
   const newId = String(created.Id);
@@ -1281,10 +1293,34 @@ export async function apiDeleteTemplate(templateId: string): Promise<void> {
   invalidateBacklinkCache();
 }
 
+/** Outcome of applying a draft to its origin.
+ *  - 'applied'  : origin was unchanged since the draft's base → wrote draft as-is.
+ *  - 'merged'   : origin had non-conflicting edits → auto-merged (3-way) and wrote.
+ *  - 'conflict' : origin and draft edited the SAME blocks differently → NOT written;
+ *                 the caller must decide (re-call with {force:true} to overwrite).
+ *  - 'forced'   : caller passed {force:true} → blind overwrite. */
+export type ApplyDraftResult =
+  | { status: 'applied'; originId: string }
+  | { status: 'merged'; originId: string; autoMerged: number }
+  | { status: 'conflict'; originId: string; conflicts: number }
+  | { status: 'forced'; originId: string };
+
 /** Apply a draft's contents to its origin page, preserving the origin's
- *  id (so inbound [[..]] page-links remain valid). The draft itself is
- *  then deleted. Returns the origin id so the caller can navigate. */
-export async function apiApplyDraftToOrigin(draftId: string): Promise<string> {
+ *  id (so inbound [[..]] page-links remain valid). On a clean apply the
+ *  draft is deleted.
+ *
+ *  Base-aware (option ②): if the origin changed since the draft was
+ *  created (its current body differs from the snapshot frozen at draft
+ *  creation), we 3-way merge (base = snapshot, yours = draft, theirs =
+ *  origin-now) instead of blindly clobbering the origin's intervening
+ *  edits. A clean merge is written automatically; real same-block
+ *  conflicts return status:'conflict' WITHOUT writing, so the caller can
+ *  prompt the user (overwrite vs. cancel). `{force:true}` skips all of
+ *  this and overwrites (the conflict dialog's 「上書き」 path). */
+export async function apiApplyDraftToOrigin(
+  draftId: string,
+  opts?: { force?: boolean },
+): Promise<ApplyDraftResult> {
   const draftMeta = metaById(draftId);
   if (!draftMeta) throw new Error('下書きが見つかりません');
   if (!draftMeta.originPageId) throw new Error('このページは下書きではありません');
@@ -1292,17 +1328,51 @@ export async function apiApplyDraftToOrigin(draftId: string): Promise<string> {
   const originExists = S.meta.pages.find((p) => p.id === originId && !p.trashed);
   if (!originExists) throw new Error('原本ページが見つかりません (削除済み?)');
 
-  // Fetch the draft's title + body-as-blocks-JSON, write to origin.
-  // We copy the JSON directly (no md round-trip) so the draft's
-  // structure / block IDs are preserved exactly.
-  const draftBody = await apiLoadBlocksBody(draftId);
   const draftTitleRaw = draftMeta.title.replace(/^\[下書き\]\s*/, '');
-  const result = await saveBodyInternal(originId, draftTitleRaw, draftBody || '[]');
-  if (!result.ok) throw new Error('原本の更新に失敗しました (競合)');
+  // Draft body (yours). Copy JSON directly (no md round-trip) so the
+  // draft's structure / block IDs are preserved exactly.
+  const draftBody = await apiLoadBlocksBody(draftId);
 
-  // Drop the draft itself
+  // Force path = legacy blind overwrite (conflict dialog's 「上書き」).
+  if (opts?.force) {
+    const r = await saveBodyInternal(originId, draftTitleRaw, draftBody || '[]');
+    if (!r.ok) throw new Error('原本の更新に失敗しました (競合)');
+    await apiDeletePage(draftId).catch(() => undefined);
+    return { status: 'forced', originId };
+  }
+
+  // Base = origin body snapshot frozen at draft creation. Theirs = origin
+  // body now. If they match, the origin hasn't moved → safe straight apply.
+  const baseRow = await fetchOneRow(draftId, 'OriginBaseBlocks');
+  const baseJson = baseRow?.row.OriginBaseBlocks ?? '';
+  const theirsJson = await apiLoadBlocksBody(originId);
+  const sameBase = baseJson !== '' && serializeBlocks(parseBlocksJson(theirsJson)) === serializeBlocks(parseBlocksJson(baseJson));
+
+  if (!baseJson || sameBase) {
+    // No base recorded (legacy draft) → fall back to straight apply;
+    // OR origin unchanged → straight apply.
+    const r = await saveBodyInternal(originId, draftTitleRaw, draftBody || '[]');
+    if (!r.ok) return { status: 'conflict', originId, conflicts: 1 };
+    await apiDeletePage(draftId).catch(() => undefined);
+    return { status: 'applied', originId };
+  }
+
+  // Origin advanced since the draft's base → 3-way merge.
+  const { threeWayMergeBlocks } = await import('../lib/three-way-merge-blocks');
+  const res = threeWayMergeBlocks(
+    parseBlocksJson(baseJson),
+    parseBlocksJson(draftBody),
+    parseBlocksJson(theirsJson),
+  );
+  if (res.conflicts.length > 0) {
+    // Same blocks edited on both sides — needs a human decision. Don't
+    // write; let the caller offer overwrite / cancel.
+    return { status: 'conflict', originId, conflicts: res.conflicts.length };
+  }
+  const r = await saveBodyInternal(originId, draftTitleRaw, serializeBlocks(res.merged));
+  if (!r.ok) return { status: 'conflict', originId, conflicts: 1 };
   await apiDeletePage(draftId).catch(() => undefined);
-  return originId;
+  return { status: 'merged', originId, autoMerged: res.autoMergedCount };
 }
 
 /** Promote a draft into a standalone normal page. Used when the draft's

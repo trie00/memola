@@ -216,19 +216,10 @@ function renderModalBody(el: HTMLElement): void {
         const { doSelect } = await import('./views');
         await doSelect(draftId);
       } else if (act === 'apply') {
-        if (!confirm('下書きを原本に適用します (原本の現在の本文は SP のバージョン履歴に残ります)。続行しますか?')) return;
+        if (!confirm('下書きを原本に適用します。続行しますか?')) return;
         try {
-          const { apiApplyDraftToOrigin, apiGetPages } = await import('../api/pages');
-          const originId = await apiApplyDraftToOrigin(draftId);
-          await apiGetPages();
-          const { renderTree } = await import('./tree');
-          renderTree();
-          renderModalBody(el);
-          refreshDraftsBadge();
           closeDraftsModal();
-          const { doSelect } = await import('./views');
-          await doSelect(originId);
-          toast('原本に適用しました');
+          await applyDraftToOriginInteractive(draftId);
         } catch (err) {
           toast('適用失敗: ' + (err as Error).message, 'err');
         }
@@ -381,6 +372,42 @@ async function restoreDraft(draft: Draft): Promise<void> {
 
 /** Refresh the visibility / count badge of the sidebar drafts button.
  *  Called from anywhere that creates / consumes / deletes drafts. */
+/** Apply an SP page-draft to its origin, handling the base-aware result:
+ *  clean apply / auto-merge happen silently; a real same-block conflict
+ *  prompts the user to overwrite or cancel (cancel navigates to the origin
+ *  for review). Refreshes the tree / badge and navigates to the origin on
+ *  success. Shared by the drafts modal and the in-page draft banner. */
+export async function applyDraftToOriginInteractive(draftId: string): Promise<boolean> {
+  const { apiApplyDraftToOrigin, apiGetPages } = await import('../api/pages');
+  const { doSelect } = await import('./views');
+  let res = await apiApplyDraftToOrigin(draftId);
+  if (res.status === 'conflict') {
+    const ok = confirm(
+      '原本が下書き作成後に変更されており、自動マージできない競合が ' + res.conflicts + ' 件あります。\n\n' +
+      '「OK」: 下書きの内容で原本を上書きします（原本の現在の本文は SP のバージョン履歴に残ります）。\n' +
+      '「キャンセル」: 中止します（原本を開いて内容を確認できます）。',
+    );
+    if (!ok) {
+      await doSelect(res.originId);
+      return false;
+    }
+    res = await apiApplyDraftToOrigin(draftId, { force: true });
+  }
+  await apiGetPages();
+  const { renderTree } = await import('./tree');
+  renderTree();
+  refreshDraftsBadge();
+  await doSelect(res.originId);
+  if (res.status === 'merged') {
+    toast('原本が変更されていたため自動マージして適用しました（' + res.autoMerged + '件マージ）');
+  } else if (res.status === 'forced') {
+    toast('原本に上書き適用しました');
+  } else {
+    toast('原本に適用しました');
+  }
+  return true;
+}
+
 export function refreshDraftsBadge(): void {
   const btn = document.getElementById(SIDEBAR_BTN_ID);
   if (!btn) return;
