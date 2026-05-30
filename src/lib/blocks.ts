@@ -156,6 +156,9 @@ export interface ImageBlock extends BlockBase {
   kind: 'image';
   src: string;
   alt: string;
+  /** Rendered width in px (corner-drag resize). Absent = natural width
+   *  capped by CSS max-width. */
+  width?: number;
 }
 
 export type Block =

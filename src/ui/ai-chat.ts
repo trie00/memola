@@ -9,6 +9,7 @@ import { blocksToMd } from '../lib/blocks-md';
 import { getBlocks } from './editor2/editor2-bridge';
 import { escapeHtml } from '../lib/html-escape';
 import { nowJSTContext } from '../lib/date-utils';
+import { metaById } from '../lib/page-store';
 import { prefAiHistory, prefAiPaneOpen } from '../lib/prefs';
 
 const MAX_HISTORY = 20;
@@ -181,9 +182,13 @@ const QUICK_PROMPTS: Array<{ label: string; prompt: string }> = [
 
 function pageContext(): string {
   const id = S.currentId || '';
+  if (!id) return '';
+  // DB list view: the editor isn't mounted (getBlocks would be empty), so
+  // describe the database itself — columns + rows — instead. This is what
+  // the user is looking at, and lets the AI answer about / operate on it.
+  if (S.currentType === 'database' && !S.currentRow) return dbContext(id);
   const titleEl = g('ttl') as HTMLTextAreaElement | null;
   const title = (titleEl && titleEl.value) || '';
-  if (!id) return '';
   // Pull body from editor2's canonical block state, not the live DOM.
   const md = blocksToMd(getBlocks());
   const lines = [
@@ -193,6 +198,42 @@ function pageContext(): string {
   ];
   if (md.trim()) {
     lines.push('', 'body (markdown):', md);
+  }
+  return lines.join('\n');
+}
+
+/** Markdown-table snapshot of the currently-open database (columns + rows
+ *  from S.dbFields / S.dbItems). Rows are capped so a huge DB doesn't blow
+ *  the prompt; the cap is disclosed so the AI knows the view is partial. */
+function dbContext(id: string): string {
+  const title = metaById(id)?.title || '';
+  const fields = S.dbFields;
+  const cols = ['Title', ...fields.map((f) => f.Title)];
+  const cell = (v: unknown): string =>
+    String(v ?? '').replace(/\r?\n/g, ' ').replace(/\|/g, '\\|');
+  const ROW_CAP = 60;
+  const lines = [
+    '── 現在開いているデータベース (一覧) ──',
+    `id: ${id}`,
+    `title: ${title}`,
+    `列: ${cols.join(', ')}`,
+    `行数: ${S.dbItems.length}`,
+    '',
+    '行 (markdown table):',
+    '| ' + cols.join(' | ') + ' |',
+    '| ' + cols.map(() => '---').join(' | ') + ' |',
+  ];
+  for (const it of S.dbItems.slice(0, ROW_CAP)) {
+    const r = it as unknown as Record<string, unknown>;
+    const cells = cols.map((c) => {
+      if (c === 'Title') return cell(r.Title);
+      const f = fields.find((x) => x.Title === c);
+      return cell(f ? (r[f.InternalName] ?? r[f.Title]) : '');
+    });
+    lines.push('| ' + cells.join(' | ') + ' |');
+  }
+  if (S.dbItems.length > ROW_CAP) {
+    lines.push(`… 他 ${S.dbItems.length - ROW_CAP} 行(表示上限のため省略)`);
   }
   return lines.join('\n');
 }

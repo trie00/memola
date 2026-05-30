@@ -143,6 +143,12 @@ export function handleBeforeInput(
         //      Backspace).
         //   4. Merge with the previous block, including reaching INTO
         //      a list's last item to land at its tail.
+        // Atomic image blocks have no inline content, so the normal
+        // merge-with-prev path can't remove them. Handle them first:
+        // Backspace on the image itself, or at the start of the block
+        // after an image, deletes the image.
+        const delImg = backspaceDeleteImage(state, sel.blockId);
+        if (delImg) return { next: delImg, preventDefault: true };
         const unwrap = backspaceUnwrapContainer(state, sel.blockId);
         if (unwrap) return { next: unwrap, preventDefault: true };
         const removeItem = backspaceRemoveEmptyInner(state, sel.blockId);
@@ -594,6 +600,39 @@ function removeFromChildren(
     ...state, blocks,
     selection: { kind: 'caret', blockId: first.id, offset: 0 },
   };
+}
+
+/** Backspace handling for atomic image blocks (which carry no inline
+ *  content, so `mergeWithPrev` can't touch them). Two cases at a block
+ *  boundary:
+ *    A. the caret is ON the image block itself → delete the image,
+ *       landing the caret at the end of the previous block (or the start
+ *       of the next, or a fresh empty paragraph if it was the only block).
+ *    B. the caret is at the start of a normal block whose predecessor is
+ *       an image → delete that image, keeping the caret where it is.
+ *  Returns null when neither applies (so the normal chain continues). */
+function backspaceDeleteImage(state: EditorState, blockId: string): EditorState | null {
+  const idx = state.blocks.findIndex((b) => b.id === blockId);
+  if (idx < 0) return null;
+  // Case A — the current block is the image.
+  if (state.blocks[idx].kind === 'image') {
+    const blocks = state.blocks.slice();
+    blocks.splice(idx, 1);
+    if (blocks.length === 0) {
+      const p = paragraph('');
+      return { ...state, blocks: [p], selection: { kind: 'caret', blockId: p.id, offset: 0 } };
+    }
+    const target = idx > 0 ? blocks[idx - 1] : blocks[idx];
+    const offset = 'inline' in target ? inlineLength(target.inline) : 0;
+    return { ...state, blocks, selection: { kind: 'caret', blockId: target.id, offset } };
+  }
+  // Case B — the previous block is an image.
+  if (idx > 0 && state.blocks[idx - 1].kind === 'image') {
+    const blocks = state.blocks.slice();
+    blocks.splice(idx - 1, 1);
+    return { ...state, blocks, selection: { kind: 'caret', blockId, offset: 0 } };
+  }
+  return null;
 }
 
 /** Backspace at start of a block — merge with the previous block.

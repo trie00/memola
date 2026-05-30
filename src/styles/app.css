@@ -1690,8 +1690,21 @@
 /* ── Inline images ────────────────────────────────────── */
 #memola-overlay #memola-ed .memola-img {
   max-width: 100%; height: auto; border-radius: var(--r-2);
-  margin: var(--s-3) 0; display: block;
+  margin: 0; display: block;
 }
+/* Image wrapper + corner-drag resize handle (Notion-style). */
+#memola-overlay #memola-ed .memola-img-wrap {
+  position: relative; display: inline-block; max-width: 100%;
+  margin: var(--s-3) 0; line-height: 0;
+}
+#memola-overlay #memola-ed .memola-img-resize {
+  position: absolute; right: 0; bottom: 0; width: 14px; height: 14px;
+  cursor: nwse-resize; border-radius: 0 0 var(--r-2) 0;
+  background:
+    linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.45) 50%);
+  opacity: 0; transition: opacity 0.12s;
+}
+#memola-overlay #memola-ed .memola-img-wrap:hover .memola-img-resize { opacity: 1; }
 
 /* ── Mobile / narrow viewport ────────────────────────── */
 @media (max-width: 768px) {

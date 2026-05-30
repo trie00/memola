@@ -9,7 +9,8 @@
 // state instead of `<img>` DOM injection.
 
 import type { Editor } from './editor2';
-import { image } from './editor-state';
+import type { Block } from '../../lib/blocks';
+import { image, paragraph } from './editor-state';
 import { SITE, FOLDER, SITE_REL } from '../../config';
 import { getDigest } from '../../api/digest';
 import { setLoad, toast } from '../ui-helpers';
@@ -102,20 +103,27 @@ export function attachImageHandlers(editor: Editor, rootEl: HTMLElement): () => 
   const insertAt = (anchorId: string | null, src: string, alt: string): void => {
     if (!alive) return;
     const newBlock = image(src, alt);
-    if (!anchorId) {
-      editor.insertBlockAfterCurrent(newBlock);
-      return;
-    }
     editor.applyMutation((s) => {
-      const idx = s.blocks.findIndex((b) => b.id === anchorId);
-      if (idx < 0) {
-        return { ...s, blocks: [...s.blocks, newBlock],
-          selection: { kind: 'caret', blockId: newBlock.id, offset: 0 } };
-      }
       const blocks = s.blocks.slice();
-      blocks.splice(idx + 1, 0, newBlock);
-      return { ...s, blocks,
-        selection: { kind: 'caret', blockId: newBlock.id, offset: 0 } };
+      const idx = anchorId ? blocks.findIndex((b) => b.id === anchorId) : blocks.length - 1;
+      const at = idx >= 0 ? idx + 1 : blocks.length;
+      blocks.splice(at, 0, newBlock);
+      // Land the caret in an EDITABLE block right after the image — the
+      // existing following block when it's not itself atomic, otherwise a
+      // fresh empty paragraph. This gives a natural typing position AND
+      // guarantees the image always has a block below it, so Backspace
+      // from there can delete it (images are contenteditable=false and
+      // can't host a caret themselves).
+      const after = blocks[at + 1];
+      let caretId: string;
+      if (after && after.kind !== 'image' && 'inline' in after) {
+        caretId = after.id;
+      } else {
+        const p = paragraph('');
+        blocks.splice(at + 1, 0, p);
+        caretId = p.id;
+      }
+      return { ...s, blocks, selection: { kind: 'caret', blockId: caretId, offset: 0 } };
     }, 'structural');
   };
 
@@ -159,12 +167,54 @@ export function attachImageHandlers(editor: Editor, rootEl: HTMLElement): () => 
     } finally { setLoad(false); }
   };
 
+  // ── Corner-drag resize ────────────────────────────────────
+  // Delegated mousedown on the resize handle. We resize the DOM live for
+  // feedback, then commit the final width to the block on mouseup (a
+  // single mutation = one undo step, one autosave).
+  const onResizeDown = (ev: MouseEvent): void => {
+    const handle = (ev.target as HTMLElement)?.closest?.('.memola-img-resize');
+    if (!handle) return;
+    const wrap = handle.closest<HTMLElement>('.memola-img-wrap');
+    const img = wrap?.querySelector<HTMLImageElement>('.memola-img');
+    const blockEl = handle.closest<HTMLElement>('[data-block-id]');
+    const blockId = blockEl?.dataset.blockId;
+    if (!wrap || !img || !blockId) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const startX = ev.clientX;
+    const startW = img.getBoundingClientRect().width;
+    const maxW = (rootEl.clientWidth || 800);
+    const MIN = 60;
+    let finalW = startW;
+    const onMove = (m: MouseEvent): void => {
+      finalW = Math.max(MIN, Math.min(maxW, Math.round(startW + (m.clientX - startX))));
+      img.style.width = finalW + 'px';
+      wrap.style.width = finalW + 'px';
+    };
+    const onUp = (): void => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (!alive) return;
+      editor.applyMutation((s) => {
+        const idx = s.blocks.findIndex((b) => b.id === blockId);
+        if (idx < 0 || s.blocks[idx].kind !== 'image') return s;
+        const blocks = s.blocks.slice();
+        blocks[idx] = { ...blocks[idx], width: finalW } as Block;
+        return { ...s, blocks };
+      }, 'structural');
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+
   // Capture phase so we run BEFORE the bridge's md-paste handler.
   rootEl.addEventListener('paste', onPaste, true);
   rootEl.addEventListener('drop', onDrop);
+  rootEl.addEventListener('mousedown', onResizeDown, true);
   return () => {
     alive = false;
     rootEl.removeEventListener('paste', onPaste, true);
     rootEl.removeEventListener('drop', onDrop);
+    rootEl.removeEventListener('mousedown', onResizeDown, true);
   };
 }

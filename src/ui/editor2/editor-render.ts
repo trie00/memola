@@ -272,11 +272,26 @@ function paintBlockContent(el: HTMLElement, b: Block): void {
       // type INTO it — they navigate around it with arrow keys, and
       // delete it with Backspace at the start of the next block.
       el.contentEditable = 'false';
+      // Wrapper sizes to the image so the resize handle pins to its
+      // corner regardless of the image's natural width.
+      const wrap = document.createElement('span');
+      wrap.className = 'memola-img-wrap';
       const img = document.createElement('img');
       img.src = b.src;
       img.alt = b.alt;
       img.className = 'memola-img';
-      el.appendChild(img);
+      if (typeof b.width === 'number' && b.width > 0) {
+        img.style.width = b.width + 'px';
+        wrap.style.width = b.width + 'px';
+      }
+      wrap.appendChild(img);
+      // Corner drag handle (bottom-right). editor2-image's delegated
+      // mousedown listener turns drags here into a width change.
+      const handle = document.createElement('span');
+      handle.className = 'memola-img-resize';
+      handle.contentEditable = 'false';
+      wrap.appendChild(handle);
+      el.appendChild(wrap);
       break;
     }
   }
