@@ -170,6 +170,7 @@ export function buildHtml(): string {
           '<div id="memola-gallery-view" class="memola-altview"></div>' +
           '<div id="memola-calendar-view" class="memola-altview"></div>' +
           '<div id="memola-gantt-view" class="memola-altview"></div>' +
+          '<div id="memola-backlinks-db" class="memola-backlinks" style="display:none"></div>' +
         '</div>' +
       '</div>' +
       '<div id="memola-lib"></div>' +

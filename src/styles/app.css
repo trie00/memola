@@ -542,6 +542,14 @@
 #memola-overlay .memola-lib-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
 #memola-overlay .memola-lib-icon { font-size: 30px; line-height: 1; }
 #memola-overlay .memola-lib-title { font-size: 30px; font-weight: 700; margin: 0; color: var(--ink); }
+#memola-overlay .memola-lib-tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+#memola-overlay .memola-lib-tab {
+  padding: 6px 12px; font-size: var(--fs-md); color: var(--ink-3);
+  background: none; border: none; border-bottom: 2px solid transparent;
+  cursor: pointer; margin-bottom: -1px; transition: color 0.1s, border-color 0.1s;
+}
+#memola-overlay .memola-lib-tab:hover { color: var(--ink); }
+#memola-overlay .memola-lib-tab.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
 #memola-overlay .memola-lib-tb { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 #memola-overlay .memola-lib-search {
   flex: 0 1 320px; padding: 6px 10px; font-size: var(--fs-md);
@@ -562,8 +570,16 @@
 }
 #memola-overlay .memola-lib-row { cursor: pointer; transition: background 0.1s; }
 #memola-overlay .memola-lib-row:hover { background: var(--paper-2-strong); }
-#memola-overlay .memola-lib-c-title { display: flex; align-items: center; gap: 8px; }
+#memola-overlay .memola-lib-c-title { display: flex; align-items: center; gap: 6px; }
+#memola-overlay .memola-lib-tog {
+  flex-shrink: 0; width: 16px; text-align: center; font-size: 10px;
+  color: var(--ink-3); border-radius: 3px; cursor: pointer;
+}
+#memola-overlay .memola-lib-tog:hover { background: var(--paper-3); color: var(--ink); }
+#memola-overlay .memola-lib-tog-sp { flex-shrink: 0; width: 16px; }
 #memola-overlay .memola-lib-c-ic { flex-shrink: 0; font-size: 15px; }
+#memola-overlay .memola-lib-c-editor,
+#memola-overlay .memola-lib-c-date { color: var(--ink-3); white-space: nowrap; }
 #memola-overlay .memola-lib-link { color: var(--ink); font-weight: 500; }
 #memola-overlay .memola-lib-row:hover .memola-lib-link { text-decoration: underline; }
 #memola-overlay .memola-lib-c-parent { color: var(--ink-3); }

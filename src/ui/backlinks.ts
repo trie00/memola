@@ -10,24 +10,34 @@ import { getBacklinksFor, type BacklinkEntry } from '../api/backlinks';
 import { escapeHtml } from '../lib/html-escape';
 import { metaById } from '../lib/page-store';
 
-const CONTAINER_ID = 'memola-backlinks';
+const CONTAINER_ID = 'memola-backlinks';        // page-view panel
+const DB_CONTAINER_ID = 'memola-backlinks-db';  // database-view panel
 
 function resolveTitle(id: string): string | null {
   const m = metaById(id);
   return m ? m.title : null;
 }
 
-/** Re-render the backlinks panel for the active page. Safe to call
- *  multiple times — replaces the panel's contents in place. */
+function hide(elId: string): void {
+  const e = document.getElementById(elId);
+  if (e) { e.style.display = 'none'; e.innerHTML = ''; }
+}
+
+/** Re-render the backlinks panel for the active page or database. Safe to
+ *  call multiple times — replaces the panel's contents in place. Both
+ *  pages and databases can be link targets, so we render into whichever
+ *  view is active (page editor vs DB view) and hide the other. */
 export async function renderBacklinks(): Promise<void> {
-  const el = document.getElementById(CONTAINER_ID);
-  if (!el) return;
   const id = S.currentId;
-  if (!id || S.currentType !== 'page' || S.currentRow) {
-    el.style.display = 'none';
-    el.innerHTML = '';
-    return;
-  }
+  // A page (not a DB row) → page panel; a database → DB panel.
+  const isPage = !!id && S.currentType === 'page' && !S.currentRow;
+  const isDb = !!id && S.currentType === 'database';
+  const elId = isPage ? CONTAINER_ID : isDb ? DB_CONTAINER_ID : null;
+  // Always hide the inactive panel so a stale one doesn't linger.
+  hide(elId === CONTAINER_ID ? DB_CONTAINER_ID : CONTAINER_ID);
+  if (!elId) { hide(CONTAINER_ID); hide(DB_CONTAINER_ID); return; }
+  const el = document.getElementById(elId);
+  if (!el || !id) return;
 
   // Loading state — show the panel immediately so the user sees activity
   el.style.display = '';

@@ -305,7 +305,14 @@ export function editor2ExecCmd(cmd: string): boolean {
     case 'h3':
     case 'todo': {
       const id = currentBlockId();
-      if (id) ed.setBlockKind(id, cmd);
+      if (id) {
+        // Toggle off: pressing the SAME heading/todo button again on a
+        // block that's already that kind reverts it to a plain paragraph
+        // (Notion behaviour). 'p' itself never toggles — it always sets p.
+        const cur = ed.getBlocks().find((b) => b.id === id);
+        const next = (cur && cur.kind === cmd && cmd !== 'p') ? 'p' : cmd;
+        ed.setBlockKind(id, next);
+      }
       return true;
     }
     // Block-shape replacements (= replace the current block with a

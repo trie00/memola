@@ -145,6 +145,9 @@ export async function doSelect(id: string): Promise<void> {
   renderTree(); renderBc(id);
   if (page.Type === 'database') {
     await doSelectDb(id, page);
+    // Databases can also be link targets — show their リンク元 panel
+    // (renders into the DB-view container; the scan is target-agnostic).
+    void import('./backlinks').then((m) => m.renderBacklinks());
   } else {
     S.currentType = 'page';
     void import('./db-bulk').then((m) => m.hideBulkBar());
