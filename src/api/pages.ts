@@ -1305,6 +1305,33 @@ export async function apiApplyDraftToOrigin(draftId: string): Promise<string> {
   return originId;
 }
 
+/** Promote a draft into a standalone normal page. Used when the draft's
+ *  origin no longer exists (deleted), so 「原本に適用」 isn't possible —
+ *  the user keeps their edits as a brand-new document instead of losing
+ *  them. Pure metadata update: the body already lives on the draft row,
+ *  so we just clear the draft markers (PageType / OriginPageId) and strip
+ *  the "[下書き]" title prefix. Returns the (unchanged) page id. */
+export async function apiPromoteDraftToPage(draftId: string): Promise<string> {
+  const meta = metaById(draftId);
+  if (!meta) throw new Error('下書きが見つかりません');
+  if (!meta.originPageId) throw new Error('このページは下書きではありません');
+  const newTitle = (meta.title || '無題').replace(/^\[下書き\]\s*/, '');
+  const newIcon = meta.icon === '✏️' ? '' : (meta.icon || '');
+  await updatePageRow(draftId, {
+    Title: newTitle,
+    PageType: 'page',
+    OriginPageId: '',      // '' clears the field (validateUpdateListItem)
+    Icon: newIcon,
+  });
+  // Reflect in-memory so the tree / library / search pick it up as a
+  // normal page immediately (IsDraft is derived from originPageId).
+  meta.title = newTitle;
+  meta.originPageId = undefined;
+  meta.icon = newIcon;
+  invalidateBacklinkCache();
+  return draftId;
+}
+
 // Row entries (PageType='row' — internal DB-row body metadata) live in
 // `./page-row-entries.ts`. Re-export here so existing call sites keep
 // `from '../api/pages'`.

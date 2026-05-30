@@ -303,7 +303,8 @@ function syncDraftBanner(): void {
     '</span>' +
     (exists
       ? '<button class="memola-draft-banner-apply" type="button">原本に適用</button>'
-      : '<span class="memola-draft-banner-broken">原本が削除されています</span>'
+      : '<span class="memola-draft-banner-broken">原本が削除されています</span>' +
+        '<button class="memola-draft-banner-promote" type="button">新規ページとして保存</button>'
     );
   // Click on origin link → navigate to origin
   bn.querySelector<HTMLElement>('.memola-draft-banner-link')?.addEventListener('click', (e) => {
@@ -338,6 +339,27 @@ function syncDraftBanner(): void {
       toast('原本に適用しました');
     } catch (e) {
       toast('適用失敗: ' + (e as Error).message, 'err');
+    } finally { setLoad(false); }
+  });
+  // Promote button (origin gone) → turn the draft into a standalone page
+  bn.querySelector<HTMLElement>('.memola-draft-banner-promote')?.addEventListener('click', async () => {
+    const m = await import('./save-control');
+    await m.flushPendingSave();
+    if (!confirm('原本が削除されているため、この下書きを新規ページとして保存します。続行しますか？')) return;
+    try {
+      setLoad(true, '保存中…');
+      const draftId = S.currentId;
+      if (!draftId) return;
+      const { apiPromoteDraftToPage, apiGetPages } = await import('../api/pages');
+      const newId = await apiPromoteDraftToPage(draftId);
+      await apiGetPages();
+      const { renderTree } = await import('./tree');
+      renderTree();
+      void import('./drafts-modal').then((m2) => m2.refreshDraftsBadge?.());
+      await doSelect(newId);
+      toast('新規ページとして保存しました');
+    } catch (e) {
+      toast('保存失敗: ' + (e as Error).message, 'err');
     } finally { setLoad(false); }
   });
 }

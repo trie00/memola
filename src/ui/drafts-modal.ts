@@ -150,7 +150,9 @@ function renderModalBody(el: HTMLElement): void {
         '</div>' +
         '<div class="memola-drafts-itemactions">' +
           '<button class="memola-btn p" data-act="open">開く</button>' +
-          (exists ? '<button class="memola-btn s" data-act="apply">原本に適用</button>' : '') +
+          (exists
+            ? '<button class="memola-btn s" data-act="apply">原本に適用</button>'
+            : '<button class="memola-btn s" data-act="promote">新規ページとして保存</button>') +
           '<button class="memola-btn ghost" data-act="discard">破棄</button>' +
         '</div>' +
       '</div>';
@@ -229,6 +231,23 @@ function renderModalBody(el: HTMLElement): void {
           toast('原本に適用しました');
         } catch (err) {
           toast('適用失敗: ' + (err as Error).message, 'err');
+        }
+      } else if (act === 'promote') {
+        if (!confirm('原本が削除されているため、この下書きを新規ページとして保存します。続行しますか?')) return;
+        try {
+          const { apiPromoteDraftToPage, apiGetPages } = await import('../api/pages');
+          const newId = await apiPromoteDraftToPage(draftId);
+          await apiGetPages();
+          const { renderTree } = await import('./tree');
+          renderTree();
+          renderModalBody(el);
+          refreshDraftsBadge();
+          closeDraftsModal();
+          const { doSelect } = await import('./views');
+          await doSelect(newId);
+          toast('新規ページとして保存しました');
+        } catch (err) {
+          toast('保存失敗: ' + (err as Error).message, 'err');
         }
       } else if (act === 'discard') {
         if (!confirm('この下書きを完全に削除します。元に戻せません。よろしいですか?')) return;

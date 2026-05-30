@@ -1474,6 +1474,13 @@
 #memola-overlay .memola-draft-banner-broken {
   font-size: var(--fs-xs); color: #b13a3a; flex-shrink: 0;
 }
+#memola-overlay .memola-draft-banner-promote {
+  background: #c47f1c; color: #fff; border: none;
+  padding: 6px 14px; border-radius: var(--r-2);
+  font-size: var(--fs-sm); font-family: inherit; font-weight: 500;
+  cursor: pointer; flex-shrink: 0; margin-left: 8px;
+}
+#memola-overlay .memola-draft-banner-promote:hover { filter: brightness(1.06); }
 
 /* ── Linked-DB inline embed ───────────────────────────── */
 #memola-overlay .memola-linkdb {
