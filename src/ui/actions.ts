@@ -186,7 +186,7 @@ export async function teardown(opts: { flushSave: boolean; removeOverlay: boolea
     try { await flushPendingSave(); } catch { /* surface failure to user? close anyway */ }
   }
   clearSaveTimer();
-  void import('./sync-watch').then((m) => m.stopWatching()).catch(() => undefined);
+  void import('./sync-watch').then((m) => { m.stopWatching(); m.detachCrossTabSync(); }).catch(() => undefined);
   void import('./presence-ui').then((m) => m.shutdownPresence()).catch(() => undefined);
   document.removeEventListener('keydown', onKey);
   // Drop the resize listener wired in `wiring.ts:applyViewportAutoCollapse`.

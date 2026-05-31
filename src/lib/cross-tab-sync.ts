@@ -57,6 +57,16 @@ export function broadcastPageSaved(pageId: string, etag: string, modified: strin
 
 /** Subscribe to cross-tab page-saved messages. Self-broadcasts are
  *  filtered out automatically. Returns an unsubscribe fn. */
+/** Close the channel (teardown). Without this, re-pressing the bookmarklet
+ *  re-injects the bundle → a NEW module instance with a NEW tabId + a NEW
+ *  BroadcastChannel, while the OLD channel stays open. Same-name channels in
+ *  one tab cross-deliver, so the new instance's own save reaches the stale
+ *  channel (different tabId) and fires a bogus "別のタブ (あなた)" banner —
+ *  with only one physical tab open. Closing on teardown prevents that. */
+export function closeCrossTabChannel(): void {
+  if (_channel) { try { _channel.close(); } catch { /* ignore */ } _channel = null; }
+}
+
 export function listenPageSaved(handler: (msg: PageSavedMessage) => void): () => void {
   const ch = getChannel();
   if (!ch) return () => undefined;

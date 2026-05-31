@@ -7,7 +7,7 @@ import { getListItemEditor, getCurrentUser } from '../api/sync';
 import { doSelect, showView } from './views';
 import { escapeHtml } from '../lib/html-escape';
 import { prefSyncPollMs, prefLastSeenEtag } from '../lib/prefs';
-import { listenPageSaved } from '../lib/cross-tab-sync';
+import { listenPageSaved, closeCrossTabChannel } from '../lib/cross-tab-sync';
 import { saver } from '../lib/saver';
 import { planLiveSync } from '../lib/live-sync';
 import { getBlocks, reconcileEditorBlocks, isEditorComposing } from './editor2/editor2-bridge';
@@ -302,11 +302,25 @@ export function attachStaleBannerSuppressionReset(): void {
  *  the editor in an inconsistent state.
  *
  *  Idempotent — guarded by a dataset flag. */
+let _crossTabUnsub: (() => void) | null = null;
+
+/** Teardown: drop the cross-tab listener, close the channel, and clear the
+ *  wired-flag so a bookmarklet re-press re-wires cleanly on a FRESH channel.
+ *  Otherwise the old instance's channel stays open and echoes the new
+ *  instance's own saves (different tabId) → bogus "別のタブ" banner with
+ *  only one physical tab open. */
+export function detachCrossTabSync(): void {
+  if (_crossTabUnsub) { _crossTabUnsub(); _crossTabUnsub = null; }
+  closeCrossTabChannel();
+  const body = document.body as HTMLElement & { dataset: DOMStringMap };
+  delete body.dataset.memolaCrossTabWired;
+}
+
 export function attachCrossTabSync(): void {
   const body = document.body as HTMLElement & { dataset: DOMStringMap };
   if (body.dataset.memolaCrossTabWired === '1') return;
   body.dataset.memolaCrossTabWired = '1';
-  listenPageSaved((msg) => {
+  _crossTabUnsub = listenPageSaved((msg) => {
     if (S.currentId !== msg.pageId) return;
     if (msg.etag && msg.etag === S.sync.loadedEtag) return;
     if (S.sync.suppressBannerUntilFocus) return;
