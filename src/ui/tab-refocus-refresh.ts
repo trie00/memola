@@ -60,9 +60,6 @@ async function refresh(): Promise<void> {
       const { renderTree } = await import('./tree');
       renderTree();
     } catch { /* tolerate */ }
-    // Poll mentions on the same cadence: refresh the badge and toast any
-    // new mentions that arrived while the tool was open.
-    void import('./inbox-ui').then((m) => m.pollMentions()).catch(() => undefined);
     // DB views still need re-render because S.dbItems is a snapshot of
     // the list view at open time; without this, deletions / additions
     // in other tabs leave the UI showing ghost rows. The page editor
@@ -127,8 +124,15 @@ function scheduleNextTreeSync(): void {
     return;
   }
   _periodicTimer = setTimeout(() => {
-    void (async () => { if (!document.hidden) await refresh(); })()
-      .finally(scheduleNextTreeSync);
+    void (async () => {
+      if (document.hidden) return;
+      await refresh();                       // tree (skips when dirty/structural)
+      // Comments + mention inbox sync run on the SAME cadence but are NOT
+      // gated by the body-dirty/structural guards (editing the body must not
+      // freeze others' comments/mentions from appearing).
+      void import('./comments-ui').then((m) => m.pollComments()).catch(() => undefined);
+      void import('./inbox-ui').then((m) => m.pollMentions()).catch(() => undefined);
+    })().finally(scheduleNextTreeSync);
   }, ms);
 }
 

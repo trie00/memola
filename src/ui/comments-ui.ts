@@ -19,7 +19,7 @@ import { pageCommentKey } from '../api/pages';
 import {
   apiListComments, apiAddComment, apiEditComment, apiDeleteComment,
   apiResolveThread, apiToggleReaction, hydrateAuthorNames, groupThreads,
-  openThreadCountByBlock, parseReactions,
+  openThreadCountByBlock, parseReactions, invalidateComments,
   type CommentRow, type CommentThread, type CommentScope,
 } from '../api/comments';
 
@@ -79,6 +79,9 @@ export async function loadCommentsFor(pageId: string, scopeDefault: CommentScope
   _composeBlockId = '';
   _editingId = 0;
   wirePane();
+  // Always fetch fresh on (re)open — the per-page cache must not mask
+  // comments added by other users since this page was last viewed.
+  invalidateComments(pageId);
   try {
     const rows = await apiListComments(pageId);
     await hydrateAuthorNames(rows);
@@ -114,6 +117,19 @@ async function refresh(): Promise<void> {
   _threads = groupThreads(rows);
   renderMarkers();
   renderPane();
+}
+
+/** Re-fetch comments for the open page from SP (bypassing the cache) and
+ *  re-render. Called on the sync interval so others' comments appear
+ *  without an app restart. Skips while the user is typing inside the pane
+ *  (a reply / edit / composer) so we don't wipe in-progress input. */
+export async function pollComments(): Promise<void> {
+  if (!_pageId) return;
+  const p = pane();
+  if (p && p.contains(document.activeElement) && document.activeElement !== document.body) return;
+  if (_mp) return;                 // mention picker open → don't disrupt
+  invalidateComments(_pageId);
+  await refresh();
 }
 
 /** Resolve all reactor ids → display names (for chip tooltips). Authors
