@@ -8,7 +8,6 @@
 // prior actions ("update the page I just created") across turns.
 
 import {
-  callClaudeRaw,
   type ApiMessage,
   type ContentBlock,
   type ToolUseBlock,
@@ -54,31 +53,11 @@ export async function runAgent(
     // Provider dispatch: Claude API / Azure OpenAI 互換 API / ローカル AI.
     // All three speak the same ClaudeResponse shape thanks to the
     // translation layers in openai-corp.ts and openai-local.ts.
-    const { getProvider, getClaudeModel, getCorpAiModel, getLocalAiModel } =
-      await import('../api/ai-settings');
-    const provider = getProvider();
-    let res;
-    if (provider === 'corp') {
-      const { corpAiChatRaw } = await import('../api/openai-corp');
-      res = await corpAiChatRaw({
-        messages: working, system: systemPrompt, tools: TOOL_DEFS,
-        model: getCorpAiModel(), signal,
-        stream: onTextDelta ? { onText: onTextDelta } : undefined,
-      });
-    } else if (provider === 'local') {
-      const { localAiChatRaw } = await import('../api/openai-local');
-      res = await localAiChatRaw({
-        messages: working, system: systemPrompt, tools: TOOL_DEFS,
-        model: getLocalAiModel(), signal,
-        stream: onTextDelta ? { onText: onTextDelta } : undefined,
-      });
-    } else {
-      res = await callClaudeRaw({
-        messages: working, system: systemPrompt, tools: TOOL_DEFS,
-        model: getClaudeModel(), signal,
-        stream: onTextDelta ? { onText: onTextDelta } : undefined,
-      });
-    }
+    const { dispatchChat } = await import('./dispatch');
+    const res = await dispatchChat({
+      messages: working, system: systemPrompt, tools: TOOL_DEFS, signal,
+      stream: onTextDelta ? { onText: onTextDelta } : undefined,
+    });
 
     const assistantMsg: ApiMessage = { role: 'assistant', content: res.content };
     working.push(assistantMsg);

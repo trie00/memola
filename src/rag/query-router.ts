@@ -6,7 +6,6 @@
 // ベクトル検索に任せて両者の良いとこ取り。さらに直前会話を踏まえてフォローアップ
 // 質問(指示語・省略)を standalone な vectorQuery に再構築する。
 
-import { getProvider, getClaudeModel, getCorpAiModel, getLocalAiModel } from '../api/ai-settings';
 
 export interface QueryPlan {
   /** ベクトル検索に使う再構成済みクエリ。元の質問でも可。 */
@@ -75,20 +74,9 @@ function formatHistory(history?: RouterHistoryMsg[]): string {
 
 /** tools 無しで provider にチャット要求し、本文テキストを返す (非ストリーム)。 */
 async function routerComplete(system: string, userPrompt: string, signal?: AbortSignal): Promise<string> {
-  const provider = getProvider();
-  const common = { messages: [{ role: 'user' as const, content: userPrompt }], system, tools: [], signal };
-  let res;
-  if (provider === 'corp') {
-    const { corpAiChatRaw } = await import('../api/openai-corp');
-    res = await corpAiChatRaw({ ...common, model: getCorpAiModel() });
-  } else if (provider === 'local') {
-    const { localAiChatRaw } = await import('../api/openai-local');
-    res = await localAiChatRaw({ ...common, model: getLocalAiModel() });
-  } else {
-    const { callClaudeRaw } = await import('../api/anthropic');
-    res = await callClaudeRaw({ ...common, model: getClaudeModel() });
-  }
-  return res.content.filter((b) => b.type === 'text').map((b) => (b as { text: string }).text).join('');
+  const { dispatchChat, textOf } = await import('../ai/dispatch');
+  const res = await dispatchChat({ messages: [{ role: 'user', content: userPrompt }], system, tools: [], signal });
+  return textOf(res);
 }
 
 /** 質問を LLM に投げて検索プランを得る。失敗時は安全なフォールバック (元クエリ)。

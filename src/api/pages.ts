@@ -29,7 +29,7 @@ import { collectDescendantIds } from '../lib/page-tree';
 import { getCurrentUserId } from './sync';
 import { invalidateBacklinkCache } from './backlinks';
 import { prefLastSeenEtag } from '../lib/prefs';
-import { removePages, metaById} from '../lib/page-store';
+import { removePages, metaById, setMetaPages } from '../lib/page-store';
 
 /** Org-shared pages list. Anything `Scope='org'` lives here (visible to
  *  the whole workspace). Phase 3 split: this is the workspace-shared
@@ -370,7 +370,7 @@ export function buildSourceListMap(buckets: { list: string; rows: PageRow[] }[])
   // DIFFERENT SP row (another page's body bleeding in, phantom duplicates).
   for (const bucket of buckets) {
     for (const row of bucket.rows) {
-      const pid = bucket.list === ORG_PAGES_LIST ? String(row.Id) : (bucket.list + ':' + row.Id);
+      const pid = mintPageId(bucket.list, row.Id); // 採番規則は mintPageId に一本化
       rowToPageId.set(row, pid);
       sourceListByPageId.set(pid, bucket.list);
     }
@@ -556,26 +556,27 @@ async function apiGetPagesImpl(): Promise<Page[]> {
 
   // ── pending を SP スナップショットに重ねて結果を組む(優先: delete > create/restore > SP) ──
   const result: PageMeta[] = [];
-  const seen = new Set<string>();
   for (const m of rawMetas) {
     const op = _pending.get(m.id);
     if (op && (op.state === 'delete-purge')) continue;          // 完全削除 → 除外
     if (op?.state === 'delete-soft' && !m.trashed) m.trashed = op.at; // 伝播前でも trashed 強制
     if (op?.state === 'restore' && m.trashed) delete m.trashed;       // 復元を強制
-    result.push(m); seen.add(m.id);
+    result.push(m);
   }
   // SP にまだ出ていない自分の create/restore/soft-delete をローカルから補完。
+  // (present = SP から既に出た id。重複の最終排除は setMetaPages が一括で行う)
+  const present = new Set(result.map((m) => m.id));
   for (const [id, op] of _pending) {
-    if (seen.has(id) || op.state === 'delete-purge') continue;
+    if (present.has(id) || op.state === 'delete-purge') continue;
     const prev = S.meta.pages.find((p) => p.id === id);
     if (!prev) continue;
     const clone: PageMeta = { ...prev };
     if (op.state === 'delete-soft' && !clone.trashed) clone.trashed = op.at;
     if (op.state === 'restore') delete clone.trashed;
-    result.push(clone); seen.add(id);
+    result.push(clone);
     SOURCE_LIST_BY_PAGEID.set(id, prevSource.get(id) || pagesListFor(clone.scope === 'org' ? 'org' : 'user'));
   }
-  S.meta.pages = result;
+  setMetaPages(result); // 単一チョークポイントで id 一意化して確定
 
   // Lazy GC of the current user's orphaned private comments (best-effort).
   void import('./comments').then((m) =>

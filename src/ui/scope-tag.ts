@@ -8,7 +8,7 @@
 
 import { S } from '../state';
 import { apiSetScope, apiMovePage, type PageScope } from '../api/pages';
-import { saveSiblingOrder } from '../lib/page-tree';
+import { saveSiblingOrder, countDescendants } from '../lib/page-tree';
 import { toast } from './ui-helpers';
 import { metaById } from '../lib/page-store';
 
@@ -83,7 +83,7 @@ export async function toggleCurrentPageScope(): Promise<void> {
   // the count so the user isn't surprised. For DBs, descendants in the
   // tree sense are usually 0 (rows are stored separately and don't appear
   // as children in S.pages), so the count message is suppressed.
-  const childCount = isDb ? 0 : countDescendants(id);
+  const childCount = isDb ? 0 : countDescendants(S.pages, id);
   const confirmMsg =
     '「' + (meta.title || '無題') + '」(' + noun + ') を' +
     (next === 'org' ? '組織に公開' : 'プライベート (個人) に変更') +
@@ -169,14 +169,6 @@ async function scopeChangeLinkWarning(id: string, next: PageScope): Promise<stri
   }
 }
 
-function countDescendants(rootId: string): number {
-  let n = 0;
-  const walk = (pid: string): void => {
-    S.pages.filter((p) => p.ParentId === pid).forEach((c) => { n++; walk(c.Id); });
-  };
-  walk(rootId);
-  return n;
-}
 
 /** Wire the click handler — call once at startup. */
 export function attachScopeTag(): void {

@@ -9,7 +9,6 @@ import { mdToHtml } from '../lib/blocks-html';
 import { prefXChatHistory, prefXChatOpen } from '../lib/prefs';
 import { ragInit, ragRefresh, ragSearch, ragStats, type RagHit } from '../rag/search';
 import { canEmbed } from '../rag/embed';
-import { getProvider, getClaudeModel, getCorpAiModel, getLocalAiModel } from '../api/ai-settings';
 
 interface XSource {
   docKey: string; appPageId: string; scope: 'org' | 'user';
@@ -375,27 +374,16 @@ function buildSystemPrompt(hits: RagHit[]): string {
   ].join('\n');
 }
 
-/** tools 無しで provider にチャット要求 (run-agent の dispatch を流用、ツールは渡さない)。 */
+/** tools 無しで provider にチャット要求 (dispatchChat に集約)。 */
 async function answer(
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   system: string,
   onDelta: (d: string) => void,
   signal: AbortSignal,
 ): Promise<string> {
-  const provider = getProvider();
-  const common = { messages, system, tools: [], signal, stream: { onText: onDelta } };
-  let res;
-  if (provider === 'corp') {
-    const { corpAiChatRaw } = await import('../api/openai-corp');
-    res = await corpAiChatRaw({ ...common, model: getCorpAiModel() });
-  } else if (provider === 'local') {
-    const { localAiChatRaw } = await import('../api/openai-local');
-    res = await localAiChatRaw({ ...common, model: getLocalAiModel() });
-  } else {
-    const { callClaudeRaw } = await import('../api/anthropic');
-    res = await callClaudeRaw({ ...common, model: getClaudeModel() });
-  }
-  return res.content.filter((b) => b.type === 'text').map((b) => (b as { text: string }).text).join('');
+  const { dispatchChat, textOf } = await import('../ai/dispatch');
+  const res = await dispatchChat({ messages, system, tools: [], signal, stream: { onText: onDelta } });
+  return textOf(res);
 }
 
 async function send(): Promise<void> {

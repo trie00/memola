@@ -13,6 +13,12 @@ export function collectDescendantIds(pages: Page[], rootId: string): string[] {
   return acc;
 }
 
+/** rootId 配下の子孫数 (root 自身は含まない)。tree.ts / scope-tag.ts で同じ
+ *  walk を別々に再実装していたのを集約。 */
+export function countDescendants(pages: Page[], rootId: string): number {
+  return collectDescendantIds(pages, rootId).length - 1;
+}
+
 // ── Per-parent sibling order ────────────────────────────
 
 interface OrderMap { [parentId: string]: string[] }

@@ -6,7 +6,7 @@ import { doSelect } from './views';
 import { doNew, doDel } from './actions';
 import { apiMovePage, apiSetPin, apiSetScope, scopeMismatchOnMove, type PageScope } from '../api/pages';
 import { toast } from './ui-helpers';
-import { applySiblingOrder, saveSiblingOrder, computeReorder } from '../lib/page-tree';
+import { applySiblingOrder, saveSiblingOrder, computeReorder, countDescendants } from '../lib/page-tree';
 import { metaById } from '../lib/page-store';
 
 /** Resolve a page's effective scope. Pre-`Scope`-column rows have no
@@ -23,8 +23,8 @@ export function kidsOf(pid: string): Page[] {
   // drag-reorder for this parent. Drafts are hidden — they're accessed
   // exclusively via the 「📝 下書き」 sidebar entry.
   const parentKey = pid || '';
+  // S.meta.pages の id 一意性は setMetaPages が保証済みなので、ここでの dedup は不要。
   const pool = S.pages.filter((p) => !p.IsDraft && !metaById(p.Id)?.isTemplate && p.Id !== parentKey);
-  const seen = new Set<string>();
   let natural: Page[];
   if (parentKey === '') {
     // v5 orphan repair (display-only): a page whose ParentId points to a page
@@ -33,15 +33,12 @@ export function kidsOf(pid: string): Page[] {
     // nowhere = unreachable. Promote such orphans to root so the data stays
     // reachable. Does NOT mutate the stored parent (no SP write).
     const liveIds = new Set(pool.map((p) => p.Id));
-    natural = pool.filter((p) => {
-      const par = p.ParentId || '';
-      const isRoot = par === '' || !liveIds.has(par);  // true root OR orphan → root
-      return isRoot && (seen.has(p.Id) ? false : seen.add(p.Id));
-    }).sort((a, b) => (a.Id < b.Id ? -1 : 1));
+    natural = pool
+      .filter((p) => { const par = p.ParentId || ''; return par === '' || !liveIds.has(par); })
+      .sort((a, b) => (a.Id < b.Id ? -1 : 1));
   } else {
     natural = pool
-      .filter((p) => (p.ParentId || '') === parentKey
-        && (seen.has(p.Id) ? false : seen.add(p.Id)))
+      .filter((p) => (p.ParentId || '') === parentKey)
       .sort((a, b) => (a.Id < b.Id ? -1 : 1));
   }
   return applySiblingOrder(parentKey, natural);
@@ -135,14 +132,7 @@ async function confirmAndMaybeMigrateScope(
   return res ? res.rootId : dragId;
 }
 
-function countDescendantsLocal(rootId: string): number {
-  let n = 0;
-  const walk = (pid: string): void => {
-    S.pages.filter((p) => p.ParentId === pid).forEach((c) => { n++; walk(c.Id); });
-  };
-  walk(rootId);
-  return n;
-}
+const countDescendantsLocal = (rootId: string): number => countDescendants(S.pages, rootId);
 
 /** Given a Y offset within a row, decide whether the drop is ABOVE / INTO /
  *  BELOW. Top and bottom bands are 25% each; middle 50% = into. */

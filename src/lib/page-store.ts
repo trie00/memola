@@ -21,6 +21,14 @@ export function metaById(id: string | null | undefined): PageMeta | null {
   return S.meta.pages.find((p) => p.id === id) || null;
 }
 
+/** ページストア全置換の **単一チョークポイント**。ここで id 重複を一度だけ
+ *  排除(先勝ち)し、「S.meta.pages に同一 id が2つ存在しない」を1か所で保証する。
+ *  これにより kidsOf / reconcile 等の散在した防御的 dedup を不要にする。 */
+export function setMetaPages(pages: PageMeta[]): void {
+  const seen = new Set<string>();
+  S.meta.pages = pages.filter((p) => (seen.has(p.id) ? false : seen.add(p.id)));
+}
+
 /** Add a page to the canonical store. Idempotent — re-adding an
  *  existing id is a no-op. The meta entry is derived from the Page
  *  row plus the caller's `extras` (icon / scope / list / authorId
