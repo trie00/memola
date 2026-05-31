@@ -153,6 +153,8 @@ function wirePane(): void {
     // Enter in a reply input sends the reply.
     list?.addEventListener('keydown', (e) => {
       const ke = e as KeyboardEvent;
+      // Ignore the Enter that confirms an IME conversion (composition).
+      if (ke.isComposing || ke.keyCode === 229) return;
       const inp = (ke.target as HTMLElement).closest<HTMLElement>('.memola-cmt-reply-inp');
       if (inp && ke.key === 'Enter' && !ke.shiftKey) {
         ke.preventDefault();
@@ -165,8 +167,9 @@ function wirePane(): void {
     const ta = p.querySelector('#memola-comments-ta');
     ta?.addEventListener('keydown', (e) => {
       const ke = e as KeyboardEvent;
-      // Enter submits; Shift+Enter inserts a newline (chat-style, matches
-      // the reply box so a plain Enter never leaves a stray blank line).
+      // Ignore the Enter that confirms an IME conversion (composition) — only
+      // a committed Enter submits. Shift+Enter inserts a newline.
+      if (ke.isComposing || ke.keyCode === 229) return;
       if (ke.key === 'Enter' && !ke.shiftKey) { ke.preventDefault(); void doAddFromComposer(); }
     });
     p.querySelector('#memola-comments-scope-org')?.addEventListener('click', () => { _composeScope = 'org'; syncComposer(); });
