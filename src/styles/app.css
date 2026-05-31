@@ -956,11 +956,13 @@
 
 /* Right pane (sibling of outline / props in #memola-content-row) */
 #memola-overlay #memola-comments-pane {
-  width: 320px; flex-shrink: 0; display: none; flex-direction: column;
-  background: var(--paper); border-left: 1px solid var(--paper-3);
+  width: 320px; flex-shrink: 0; display: flex; flex-direction: column;
+  background: var(--paper); border-left: 1px solid var(--paper-3); border-left-width: 0;
   font-family: var(--font-ui); overflow: hidden;
+  max-width: 0; opacity: 0;
+  transition: max-width 0.22s ease, opacity 0.22s ease, border-width 0.22s ease;
 }
-#memola-overlay #memola-comments-pane.on { display: flex; }
+#memola-overlay #memola-comments-pane.on { max-width: 600px; opacity: 1; border-left-width: 1px; }
 #memola-overlay #memola-comments-hd {
   display: flex; align-items: center; padding: 14px 16px 10px;
   font-size: var(--fs-sm); font-weight: 600; color: var(--ink);
@@ -2307,13 +2309,16 @@
 }
 #memola-overlay #memola-outline {
   width: 240px; flex-shrink: 0;
-  background: var(--paper-2); border-right: 1px solid var(--paper-3);
-  display: none; flex-direction: column;
+  background: var(--paper-2); border-right: 1px solid var(--paper-3); border-right-width: 0;
+  display: flex; flex-direction: column;
   padding: 18px 18px;
   font-family: var(--font-ui); overflow: hidden;
-  transition: width 0.2s ease, opacity 0.2s ease;
+  /* Collapsed by default; slides open from the edge. We gate on max-width
+   * (not width) so the user's resized inline width still wins when open. */
+  max-width: 0; opacity: 0;
+  transition: max-width 0.22s ease, opacity 0.22s ease, border-width 0.22s ease;
 }
-#memola-overlay #memola-outline.on { display: flex; }
+#memola-overlay #memola-outline.on { max-width: 600px; opacity: 1; border-right-width: 1px; }
 #memola-overlay #memola-outline-hd {
   font-size: var(--fs-xs); font-weight: 500;
   color: var(--ink-3);
@@ -2413,13 +2418,14 @@
 /* ── Properties panel inline child of #memola-content-row ─ */
 #memola-overlay #memola-props {
   width: 260px; flex-shrink: 0;
-  background: var(--paper-2); border-left: 1px solid var(--paper-3);
-  display: none; flex-direction: column;
+  background: var(--paper-2); border-left: 1px solid var(--paper-3); border-left-width: 0;
+  display: flex; flex-direction: column;
   padding: 18px 18px;
   font-family: var(--font-ui); overflow: hidden;
-  transition: width 0.2s ease, opacity 0.2s ease;
+  max-width: 0; opacity: 0;
+  transition: max-width 0.22s ease, opacity 0.22s ease, border-width 0.22s ease;
 }
-#memola-overlay #memola-props.on { display: flex; }
+#memola-overlay #memola-props.on { max-width: 600px; opacity: 1; border-left-width: 1px; }
 #memola-overlay #memola-props-hd {
   font-size: var(--fs-xs); font-weight: 500;
   color: var(--ink-3);
@@ -2480,12 +2486,13 @@
 
 #memola-overlay #memola-ai-panel {
   width: 280px; flex-shrink: 0;
-  background: var(--paper-2); border-left: 1px solid var(--paper-3);
-  display: none; flex-direction: column; overflow: hidden;
+  background: var(--paper-2); border-left: 1px solid var(--paper-3); border-left-width: 0;
+  display: flex; flex-direction: column; overflow: hidden;
   font-family: var(--font-ui);
-  transition: width 0.2s ease, opacity 0.2s ease;
+  max-width: 0; opacity: 0;
+  transition: max-width 0.22s ease, opacity 0.22s ease, border-width 0.22s ease;
 }
-#memola-overlay #memola-ai-panel.on { display: flex; }
+#memola-overlay #memola-ai-panel.on { max-width: 600px; opacity: 1; border-left-width: 1px; }
 #memola-overlay #memola-ai-hd {
   display: flex; align-items: center; gap: 8px;
   padding: 12px 16px; border-bottom: 1px solid var(--paper-3);
