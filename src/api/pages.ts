@@ -349,29 +349,21 @@ export function buildSourceListMap(buckets: { list: string; rows: PageRow[] }[])
 } {
   const rowToPageId = new Map<PageRow, string>();
   const sourceListByPageId = new Map<string, string>();
-  // Tally numeric-id occurrences across buckets — a numeric id present
-  // in ≥2 buckets requires composite-key minting.
-  const byNumericId = new Map<number, Array<{ list: string; row: PageRow }>>();
+  // DETERMINISTIC, STABLE ids (was: opportunistic composite-on-collision).
+  //   - org list rows  → bare `num`  (shared list → identical id for all users)
+  //   - per-user rows  → `list:num`  (composite, always)
+  // These two id-spaces can never collide (number vs prefixed string), so a
+  // page's id is FIXED regardless of what the other list contains. The old
+  // "mint composite only when a number appears in both lists" scheme made an
+  // org page flip `5` ⇆ `memola-pages:5` the moment another user's per-user
+  // list happened to contain item 5 — which silently re-keyed the OPEN page
+  // on the next refresh, so the live-sync / saver started reading/writing a
+  // DIFFERENT SP row (another page's body bleeding in, phantom duplicates).
   for (const bucket of buckets) {
     for (const row of bucket.rows) {
-      const arr = byNumericId.get(row.Id) || [];
-      arr.push({ list: bucket.list, row });
-      byNumericId.set(row.Id, arr);
-    }
-  }
-  for (const [num, entries] of byNumericId) {
-    if (entries.length === 1) {
-      const { list, row } = entries[0];
-      const pid = String(num);
+      const pid = bucket.list === ORG_PAGES_LIST ? String(row.Id) : (bucket.list + ':' + row.Id);
       rowToPageId.set(row, pid);
-      sourceListByPageId.set(pid, list);
-    } else {
-      // Collision — mint composite ids for all of them.
-      for (const { list, row } of entries) {
-        const pid = list + ':' + num;
-        rowToPageId.set(row, pid);
-        sourceListByPageId.set(pid, list);
-      }
+      sourceListByPageId.set(pid, bucket.list);
     }
   }
   return { rowToPageId, sourceListByPageId };
