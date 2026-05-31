@@ -97,13 +97,16 @@ export class VectorDb {
   }
 
   /** Top-K 検索。keywordWeight>0 でハイブリッド (ベクトル + 文字bigram)。
-   *  score は 0..1 で閾値判定にそのまま使える。 */
-  search(qvec: Float32Array, topK: number, queryText = '', keywordWeight = 0): DbHit[] {
+   *  `mustKeywords` を渡すと、それらを **すべて含む** レコードに絞る(外部ベクトル 流の
+   *  完全一致必須キーワード)。絞った結果が 0 件なら絞らずにフォールバック(過剰
+   *  抽出で検索が死なないように)。score は 0..1。 */
+  search(qvec: Float32Array, topK: number, queryText = '', keywordWeight = 0, mustKeywords: string[] = []): DbHit[] {
     const q = normalize(qvec);
     const dim = q.length;
     const useKw = keywordWeight > 0 && queryText.trim().length > 0;
     const qbi = useKw ? bigrams(queryText) : null;
     const w = Math.min(1, Math.max(0, keywordWeight));
+    const kws = mustKeywords.map((k) => k.toLowerCase()).filter(Boolean);
 
     const scored: DbHit[] = [];
     for (const r of this.records.values()) {
@@ -115,8 +118,14 @@ export class VectorDb {
         : vcos;
       scored.push({ record: r, score });
     }
-    scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, topK);
+    let pool = scored;
+    if (kws.length) {
+      const hay = (r: ChunkRecord): string => `${r.title} ${r.heading ?? ''} ${r.text}`.toLowerCase();
+      const filtered = scored.filter((x) => kws.every((k) => hay(x.record).includes(k)));
+      if (filtered.length) pool = filtered; // 0件なら絞らずフォールバック
+    }
+    pool.sort((a, b) => b.score - a.score);
+    return pool.slice(0, topK);
   }
 
   private kwIndex(r: ChunkRecord): Set<string> {

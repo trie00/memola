@@ -5,6 +5,7 @@ import { appIdForCommentKey } from '../api/pages';
 import { getRagTopK, getRagMinScore } from '../api/ai-settings';
 import { embedOne, canEmbed } from './embed';
 import { orgIndex, userIndex } from './manager';
+import { classifyQuery, type RouterHistoryMsg } from './query-router';
 import type { DbHit } from './store';
 
 export interface RagHit {
@@ -64,22 +65,28 @@ export async function ragRefresh(signal?: AbortSignal, onProgress?: RagProgress)
   };
 }
 
-/** 横断検索。topK / minScore は AI 設定から (引数で上書き可)。 */
+/** 横断検索。topK / minScore は AI 設定から (引数で上書き可)。
+ *  history を渡すと、まず queryRouter でフォローアップ質問を standalone な
+ *  vectorQuery に再構築し、必須キーワードを抽出してハイブリッド検索する
+ *  (外部ベクトル と同じ流れ)。 */
 export async function ragSearch(
   query: string,
-  opts: { topK?: number; minScore?: number; signal?: AbortSignal } = {},
+  opts: { topK?: number; minScore?: number; signal?: AbortSignal; history?: RouterHistoryMsg[] } = {},
 ): Promise<RagHit[]> {
   if (!query.trim()) return [];
   if (!canEmbed()) throw new Error('RAG 未設定: AI 設定で OpenAI 互換 / ローカル AI を選んでください');
   await ragInit();
   const topK = opts.topK ?? getRagTopK();
   const minScore = opts.minScore ?? getRagMinScore();
-  const qvec = await embedOne(query, opts.signal);
 
-  // 各スコープで topK*2 取って統合 → 上位 topK。
+  // ① クエリルータ: 会話を踏まえて vectorQuery を再構築 + 必須キーワード抽出。
+  const plan = await classifyQuery(query, opts.history, opts.signal);
+  const searchText = plan.vectorQuery || query;
+  // ② vectorQuery を埋め込み、bigram テキスト + 必須キーワードでハイブリッド検索。
+  const qvec = await embedOne(searchText, opts.signal);
   const raw: DbHit[] = [
-    ...orgIndex().search(qvec, topK * 2, query, KEYWORD_WEIGHT),
-    ...userIndex().search(qvec, topK * 2, query, KEYWORD_WEIGHT),
+    ...orgIndex().search(qvec, topK * 2, searchText, KEYWORD_WEIGHT, plan.keywords),
+    ...userIndex().search(qvec, topK * 2, searchText, KEYWORD_WEIGHT, plan.keywords),
   ];
   raw.sort((a, b) => b.score - a.score);
 

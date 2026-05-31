@@ -140,8 +140,8 @@ export class ScopeIndex {
     await this.cache.setManifest(mf);
   }
 
-  search(qvec: Float32Array, topK: number, queryText: string, keywordWeight: number): DbHit[] {
-    return this.db.search(qvec, topK, queryText, keywordWeight);
+  search(qvec: Float32Array, topK: number, queryText: string, keywordWeight: number, mustKeywords: string[] = []): DbHit[] {
+    return this.db.search(qvec, topK, queryText, keywordWeight, mustKeywords);
   }
 }
 

@@ -425,14 +425,14 @@ async function send(): Promise<void> {
   try {
     // 初回ビルドが終わるまで検索しない (空インデックスへの誤検索を防ぐ)。
     await ensureReady();
-    thinking.firstChild!.textContent = '関連文書を検索中';
-    const hits = await ragSearch(q, { signal: abort.signal });
-
-    // 会話履歴 (これまでの turn) を messages に展開 + 今回の質問
+    // 会話履歴 (これまでの turn) を messages に展開。検索ルータにも渡して
+    // フォローアップ質問を standalone クエリへ再構築させる。
     const sess = ensureCurrentSession(q);
-    const msgs: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-    for (const t of sess.turns) { msgs.push({ role: 'user', content: t.q }, { role: 'assistant', content: t.a }); }
-    msgs.push({ role: 'user', content: q });
+    const history: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    for (const t of sess.turns) { history.push({ role: 'user', content: t.q }, { role: 'assistant', content: t.a }); }
+    thinking.firstChild!.textContent = 'クエリ解析・関連文書を検索中';
+    const hits = await ragSearch(q, { signal: abort.signal, history });
+    const msgs = [...history, { role: 'user' as const, content: q }];
 
     // ストリーム中はプレーンテキストで流し込み、確定時に markdown 描画。
     body.textContent = '';
