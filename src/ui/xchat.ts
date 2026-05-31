@@ -132,12 +132,16 @@ function primeIndex(force = false): Promise<void> {
       const added = r.org + r.user;
       // 失敗・空を握りつぶさず明示する。
       if (r.errors.length) { setIdx('エラー: ' + r.errors.join(' / ')); return; }
-      if (r.docsSeen === 0) { setIdx('対象文書が0件 — ページが見つかりません (リスト名/権限を確認)'); return; }
-      let prefix = '';
-      if (added > 0) prefix = `今回 +${added}チャンク ・ `;
-      else if (r.orgSkipped) prefix = '組織は別利用者が更新担当 ・ ';
-      else prefix = '変更なし ・ ';
-      showStats(prefix);
+      const st = ragStats();
+      const chunks = st.org.chunks + st.user.chunks;
+      // 診断: 読み込んだ文書数(対象) と ベクトル化済チャンク数 の両方を必ず出す。
+      // 対象>0 かつ chunks=0 なら「本文が空 or DB行で対象外」が判別できる。
+      const base = `対象 組織${r.orgDocs}/個人${r.userDocs}文書 ・ ベクトル化済 ${chunks}チャンク`;
+      if (r.docsSeen === 0) { setIdx('対象文書0件 — ' + base + ' (ページ無し/権限/リスト名を確認)'); return; }
+      if (added > 0) { setIdx(`今回 +${added}チャンク ・ ` + base); return; }
+      if (r.orgSkipped) { setIdx('組織は別利用者が更新担当 ・ ' + base); return; }
+      // 対象はあるが追加0 = 既に最新 or 本文が空(空ページはベクトル化されない)。
+      setIdx((chunks === 0 ? '本文のある文書が無い(空ページは対象外) ・ ' : '変更なし ・ ') + base);
     } catch (e) {
       setIdx('索引エラー: ' + (e as Error).message);
     } finally {

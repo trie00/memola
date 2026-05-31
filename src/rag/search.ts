@@ -39,6 +39,8 @@ export interface RagRefreshResult {
   orgSkipped: boolean;
   /** 読み込んだソース文書数 (org + user)。0 ならそもそも文書が拾えていない。 */
   docsSeen: number;
+  /** スコープ別に読み込んだソース文書数(診断用)。 */
+  orgDocs: number; userDocs: number;
   /** 失敗した場合のエラーメッセージ (握りつぶさず UI へ surface する)。 */
   errors: string[];
 }
@@ -52,10 +54,12 @@ export async function ragRefresh(signal?: AbortSignal, onProgress?: RagProgress)
     .catch((e) => { const m = (e as Error).message; console.warn('[rag] org refresh:', m); errors.push('組織: ' + m); return { changed: 0, skipped: undefined as string | undefined, docs: 0 }; });
   const user = await userIndex().refresh(signal, (d, t) => onProgress?.({ scope: 'user', done: d, total: t }))
     .catch((e) => { const m = (e as Error).message; console.warn('[rag] user refresh:', m); errors.push('個人: ' + m); return { changed: 0, docs: 0 }; });
+  const orgDocs = (org as { docs?: number }).docs ?? 0;
+  const userDocs = (user as { docs?: number }).docs ?? 0;
   return {
     org: org.changed, user: user.changed,
     orgSkipped: (org as { skipped?: string }).skipped === 'not-writer',
-    docsSeen: ((org as { docs?: number }).docs ?? 0) + ((user as { docs?: number }).docs ?? 0),
+    docsSeen: orgDocs + userDocs, orgDocs, userDocs,
     errors,
   };
 }

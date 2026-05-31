@@ -24,7 +24,8 @@ const EMBED_BATCH = 64;
  *  除外: DBや行メタ (PageType='row'/'database')、ゴミ箱、テンプレ、下書き複製。 */
 export async function loadScopeDocs(listTitle: string, scope: 'org' | 'user'): Promise<DocInput[]> {
   const sel = '$select=Id,Title,Body_blocks,PageType,Trashed,IsTemplate,OriginPageId&$top=5000';
-  const items = await getListItems(listTitle, sel).catch(() => []);
+  // 失敗は握りつぶさない(原因が見えなくなる)。呼び出し側(ragRefresh)が errors に拾う。
+  const items = await getListItems(listTitle, sel);
   const out: DocInput[] = [];
   for (const it of items) {
     const pt = String((it as Record<string, unknown>).PageType ?? '');
