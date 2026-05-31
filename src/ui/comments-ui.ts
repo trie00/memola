@@ -14,6 +14,7 @@ import { escapeHtml } from '../lib/html-escape';
 import { formatRelativeTime } from '../lib/date-utils';
 import { metaById } from '../lib/page-store';
 import { getUserNameById } from '../api/sync';
+import { searchSiteUsers, type SiteUser } from '../api/mentions';
 import {
   apiListComments, apiAddComment, apiEditComment, apiDeleteComment,
   apiResolveThread, apiToggleReaction, hydrateAuthorNames, groupThreads,
@@ -32,6 +33,9 @@ let _editingId = 0;
 let _listenersBound = false;
 let _paneWired = false;
 let _hoverBlockId = '';
+/** Selected @mention recipient ids, keyed by the input/textarea element. */
+const _mentionSel = new WeakMap<HTMLElement, number[]>();
+let _mp: { el: HTMLInputElement | HTMLTextAreaElement; float: HTMLElement; items: SiteUser[]; active: number; matchStart: number } | null = null;
 
 /** Resolved display names for reactor / author ids (for chip tooltips). */
 const _userNames = new Map<number, string>();
@@ -90,6 +94,7 @@ export function clearComments(): void {
   _threads = [];
   removeMarkers();
   closeFloat();
+  closeMentionPicker();
   _hoverBlockId = '';
   clearBlockHighlight();
   const p = pane();
@@ -151,9 +156,14 @@ function wirePane(): void {
       if (!to) { _hoverBlockId = ''; clearBlockHighlight(); }
     });
     // Enter in a reply input sends the reply.
+    // @mention picker in reply inputs.
+    list?.addEventListener('input', (e) => {
+      const inp = (e.target as HTMLElement).closest<HTMLInputElement>('.memola-cmt-reply-inp');
+      if (inp) void maybeOpenMentionPicker(inp);
+    });
     list?.addEventListener('keydown', (e) => {
       const ke = e as KeyboardEvent;
-      // Ignore the Enter that confirms an IME conversion (composition).
+      if (mentionPickerKey(ke)) return;             // picker handles ↑↓/Enter/Esc
       if (ke.isComposing || ke.keyCode === 229) return;
       const inp = (ke.target as HTMLElement).closest<HTMLElement>('.memola-cmt-reply-inp');
       if (inp && ke.key === 'Enter' && !ke.shiftKey) {
@@ -164,14 +174,17 @@ function wirePane(): void {
     });
     const composeBtn = p.querySelector('#memola-comments-add');
     composeBtn?.addEventListener('click', () => void doAddFromComposer());
-    const ta = p.querySelector('#memola-comments-ta');
+    const ta = p.querySelector('#memola-comments-ta') as HTMLTextAreaElement | null;
+    ta?.addEventListener('input', () => { if (ta) void maybeOpenMentionPicker(ta); });
     ta?.addEventListener('keydown', (e) => {
       const ke = e as KeyboardEvent;
+      if (mentionPickerKey(ke)) return;             // picker handles ↑↓/Enter/Esc
       // Ignore the Enter that confirms an IME conversion (composition) — only
       // a committed Enter submits. Shift+Enter inserts a newline.
       if (ke.isComposing || ke.keyCode === 229) return;
       if (ke.key === 'Enter' && !ke.shiftKey) { ke.preventDefault(); void doAddFromComposer(); }
     });
+    ta?.addEventListener('blur', () => setTimeout(closeMentionPicker, 150));
     p.querySelector('#memola-comments-scope-org')?.addEventListener('click', () => { _composeScope = 'org'; syncComposer(); });
     p.querySelector('#memola-comments-scope-user')?.addEventListener('click', () => { _composeScope = 'user'; syncComposer(); });
     p.querySelector('#memola-comments-target-x')?.addEventListener('click', () => { _composeBlockId = ''; syncComposer(); });
@@ -458,9 +471,10 @@ async function doAddFromComposer(): Promise<void> {
   const ta = pane()?.querySelector('#memola-comments-ta') as HTMLTextAreaElement | null;
   const body = (ta?.value || '').trim();
   if (!body) return;
+  const mentions = (ta && _mentionSel.get(ta)) || [];
   try {
-    await apiAddComment({ pageId: _pageId, blockId: _composeBlockId, body, scope: _composeScope, anchorText: anchorTextFor(_composeBlockId) });
-    if (ta) ta.value = '';
+    await apiAddComment({ pageId: _pageId, blockId: _composeBlockId, body, scope: _composeScope, anchorText: anchorTextFor(_composeBlockId), mentions });
+    if (ta) { ta.value = ''; _mentionSel.delete(ta); }
     _composeBlockId = '';
     await refresh();
   } catch (e) { toast('コメント追加失敗: ' + (e as Error).message, 'err'); }
@@ -472,8 +486,10 @@ async function doReply(rootId: string): Promise<void> {
   const inp = paneList()?.querySelector<HTMLInputElement>('.memola-cmt-thread[data-root="' + rootId + '"] .memola-cmt-reply-inp');
   const body = (inp?.value || '').trim();
   if (!body) return;
+  const mentions = (inp && _mentionSel.get(inp)) || [];
   try {
-    await apiAddComment({ pageId: _pageId, blockId: root.BlockId, body, scope: root.Scope, threadRootId: rootId });
+    await apiAddComment({ pageId: _pageId, blockId: root.BlockId, body, scope: root.Scope, threadRootId: rootId, mentions });
+    if (inp) _mentionSel.delete(inp);
     await refresh();
   } catch (e) { toast('返信失敗: ' + (e as Error).message, 'err'); }
 }
@@ -551,6 +567,95 @@ function openReactionPalette(anchor: HTMLElement, id: number): void {
     el.appendChild(b);
   }
   showFloat(anchor, el);
+}
+
+// ── @mention picker ──────────────────────────────────────
+
+async function maybeOpenMentionPicker(el: HTMLInputElement | HTMLTextAreaElement): Promise<void> {
+  const caret = el.selectionStart ?? el.value.length;
+  const before = el.value.slice(0, caret);
+  const m = before.match(/@([^\s@]*)$/);
+  if (!m) { closeMentionPicker(); return; }
+  const users = await searchSiteUsers(m[1]);
+  if (!users.length) { closeMentionPicker(); return; }
+  showMentionPicker(el, users, caret - m[0].length);
+}
+
+function showMentionPicker(el: HTMLInputElement | HTMLTextAreaElement, items: SiteUser[], matchStart: number): void {
+  closeMentionPicker();
+  const float = document.createElement('div');
+  float.className = 'memola-cmt-float memola-mention-pop';
+  _mp = { el, float, items, active: 0, matchStart };
+  renderMentionItems();
+  overlay().appendChild(float);
+  const r = el.getBoundingClientRect();
+  float.style.left = (r.left + window.scrollX) + 'px';
+  float.style.top = (r.bottom + window.scrollY + 4) + 'px';
+}
+
+function renderMentionItems(): void {
+  if (!_mp) return;
+  _mp.float.innerHTML = _mp.items.map((u, i) =>
+    '<button class="memola-mention-item' + (i === _mp!.active ? ' active' : '') + '" data-i="' + i + '">' +
+      '<span class="memola-mention-name">' + escapeHtml(u.title) + '</span>' +
+      '<span class="memola-mention-email">' + escapeHtml(u.email) + '</span></button>').join('');
+  _mp.float.querySelectorAll<HTMLElement>('.memola-mention-item').forEach((b) => {
+    b.addEventListener('mousedown', (e) => { e.preventDefault(); selectMention(Number(b.dataset.i)); });
+  });
+}
+
+function selectMention(i: number): void {
+  if (!_mp) return;
+  const u = _mp.items[i];
+  const el = _mp.el;
+  if (!u) { closeMentionPicker(); return; }
+  const caret = el.selectionStart ?? el.value.length;
+  const insert = '@' + u.title + ' ';
+  const before = el.value.slice(0, _mp.matchStart);
+  const after = el.value.slice(caret);
+  el.value = before + insert + after;
+  const pos = (before + insert).length;
+  el.setSelectionRange(pos, pos);
+  const arr = _mentionSel.get(el) || [];
+  arr.push(u.id);
+  _mentionSel.set(el, arr);
+  closeMentionPicker();
+  el.focus();
+}
+
+function closeMentionPicker(): void {
+  if (_mp) { _mp.float.remove(); _mp = null; }
+}
+
+/** Handle keys while the mention picker is open. Returns true if handled. */
+function mentionPickerKey(e: KeyboardEvent): boolean {
+  if (!_mp) return false;
+  if (e.key === 'ArrowDown') { _mp.active = Math.min(_mp.items.length - 1, _mp.active + 1); renderMentionItems(); e.preventDefault(); return true; }
+  if (e.key === 'ArrowUp') { _mp.active = Math.max(0, _mp.active - 1); renderMentionItems(); e.preventDefault(); return true; }
+  if (e.key === 'Enter') { e.preventDefault(); selectMention(_mp.active); return true; }
+  if (e.key === 'Escape') { e.preventDefault(); closeMentionPicker(); return true; }
+  return false;
+}
+
+/** Open the comments pane on `pageId` and scroll/flash a specific comment
+ *  (inbox navigation). Retries until the thread renders after load. */
+export function focusComment(pageId: string, commentId: number): void {
+  _paneOpen = true;
+  const attempt = (n: number): void => {
+    if (_pageId !== pageId) { if (n < 25) setTimeout(() => attempt(n + 1), 150); return; }
+    renderPane();
+    const el = paneList()?.querySelector<HTMLElement>('.memola-cmt-c[data-id="' + commentId + '"]');
+    if (el) {
+      const th = el.closest<HTMLElement>('.memola-cmt-thread');
+      th?.scrollIntoView({ block: 'center' });
+      el.classList.add('memola-cmt-flash');
+      setTimeout(() => el.classList.remove('memola-cmt-flash'), 1600);
+      highlightBlock(th?.dataset.blockId || '');
+      return;
+    }
+    if (n < 25) setTimeout(() => attempt(n + 1), 150);
+  };
+  attempt(0);
 }
 
 function openMoreMenu(anchor: HTMLElement, id: number): void {

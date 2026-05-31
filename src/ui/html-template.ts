@@ -19,6 +19,7 @@ export function buildHtml(): string {
         '<div class="memola-sb-fx" id="memola-sb-daily-today" title="今日のデイリーノートを開く / 作成"><span class="memola-sb-fx-ic">📅</span><span class="memola-sb-fx-lb">今日のノート</span></div>' +
         '<div class="memola-sb-fx" id="memola-sb-daily-pick" title="任意の日のデイリーノートを開く"><span class="memola-sb-fx-ic">🗓</span><span class="memola-sb-fx-lb">日付を選んで開く</span></div>' +
         '<div class="memola-sb-fx" id="memola-sb-library" title="全ページの一覧"><span class="memola-sb-fx-ic">📚</span><span class="memola-sb-fx-lb">ライブラリ</span></div>' +
+        '<div class="memola-sb-fx" id="memola-inbox-btn" title="自分宛てのメンション"><span class="memola-sb-fx-ic">📥</span><span class="memola-sb-fx-lb">受信トレイ</span><span class="memola-inbox-badge-count"></span></div>' +
       '</div>' +
       '<div class="memola-sb-fixed">' +
         '<div class="memola-sb-fx" id="memola-drafts-btn" style="display:none" title="編集中の下書き / 保存衝突で退避された編集"><span class="memola-sb-fx-ic">📝</span><span class="memola-sb-fx-lb">下書き</span><span class="memola-drafts-badge-count">0</span></div>' +
@@ -274,6 +275,14 @@ export function buildHtml(): string {
       '<div id="memola-qs-res"></div>' +
     '</div></div>' +
     '<div id="memola-emoji"><div id="memola-emoji-grid"></div><button id="memola-emoji-rm">アイコンを削除</button></div>' +
+    '<div id="memola-inbox-md"><div class="memola-mb" style="max-width:560px">' +
+      '<h2>📥 受信トレイ</h2>' +
+      '<div id="memola-inbox-list"></div>' +
+      '<div class="memola-ma">' +
+        '<button class="memola-btn ghost" id="memola-inbox-readall">すべて既読</button>' +
+        '<button class="memola-btn s" id="memola-inbox-close">閉じる</button>' +
+      '</div>' +
+    '</div></div>' +
     '<div id="memola-trash-md"><div class="memola-mb" style="max-width:540px">' +
       '<h2>ゴミ箱</h2>' +
       '<div id="memola-trash-list"></div>' +

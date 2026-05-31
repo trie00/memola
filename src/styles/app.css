@@ -1106,6 +1106,54 @@
   padding: 6px 10px; border-radius: 4px; font-family: inherit; font-size: var(--fs-sm); color: var(--ink);
 }
 #memola-overlay .memola-cmt-more-item:hover { background: var(--paper-2, rgba(55,53,47,.08)); }
+
+/* @mention picker */
+#memola-overlay .memola-mention-pop { min-width: 200px; max-width: 280px; max-height: 220px; overflow-y: auto; }
+#memola-overlay .memola-mention-item {
+  display: flex; flex-direction: column; align-items: flex-start; width: 100%;
+  background: none; border: none; cursor: pointer; padding: 5px 9px; border-radius: 4px;
+  font-family: inherit; text-align: left;
+}
+#memola-overlay .memola-mention-item.active,
+#memola-overlay .memola-mention-item:hover { background: var(--paper-2, rgba(55,53,47,.08)); }
+#memola-overlay .memola-mention-name { font-size: var(--fs-sm, 13px); color: var(--ink, #37352f); }
+#memola-overlay .memola-mention-email { font-size: var(--fs-xs, 11px); color: var(--ink-3, #9b9a97); }
+
+/* Comment flash (inbox navigation) */
+#memola-overlay .memola-cmt-flash { animation: memola-cmt-flash 1.5s ease; }
+@keyframes memola-cmt-flash {
+  0%, 30% { background: rgba(241, 196, 15, 0.28); border-radius: 6px; }
+  100% { background: transparent; }
+}
+
+/* Inbox badge (sidebar) */
+#memola-overlay .memola-inbox-badge-count { margin-left: auto; font-size: var(--fs-xs, 11px); color: var(--accent, #2f6f5e); font-weight: 600; }
+
+/* Inbox modal */
+#memola-overlay #memola-inbox-md {
+  position: fixed; inset: 0; background: rgba(15, 15, 15, .35);
+  display: none; align-items: center; justify-content: center;
+  z-index: 2147483647; padding: var(--s-9, 40px); backdrop-filter: blur(2px);
+}
+#memola-overlay #memola-inbox-md.on { display: flex; }
+#memola-overlay #memola-inbox-list { max-height: 56vh; overflow-y: auto; margin: var(--s-3, 12px) 0; }
+#memola-overlay .memola-inbox-empty { padding: 20px; color: var(--ink-3, #9b9a97); text-align: center; }
+#memola-overlay .memola-inbox-item {
+  position: relative; display: flex; gap: 8px; padding: 10px 12px 10px 20px;
+  border-radius: var(--r-2, 6px); cursor: pointer;
+}
+#memola-overlay .memola-inbox-item:hover { background: var(--paper-2, rgba(55,53,47,.06)); }
+#memola-overlay .memola-inbox-item.read { opacity: 0.62; }
+#memola-overlay .memola-inbox-dot {
+  position: absolute; left: 8px; top: 16px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent, #2f6f5e);
+}
+#memola-overlay .memola-inbox-main { flex: 1; min-width: 0; }
+#memola-overlay .memola-inbox-line1 { font-size: var(--fs-sm, 13px); color: var(--ink, #37352f); display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+#memola-overlay .memola-inbox-actor { font-weight: 600; }
+#memola-overlay .memola-inbox-time { font-size: var(--fs-xs, 11px); color: var(--ink-3, #9b9a97); margin-left: auto; }
+#memola-overlay .memola-inbox-page { font-size: var(--fs-xs, 11px); color: var(--ink-2, #5f5e5b); margin-top: 2px; }
+#memola-overlay .memola-inbox-snippet { font-size: var(--fs-xs, 11px); color: var(--ink-3, #9b9a97); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @keyframes memola-ph-pulse {
   0%,100% { opacity: 1; }
   50%     { opacity: 0.65; }

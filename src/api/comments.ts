@@ -26,6 +26,8 @@ import {
 } from './sp-list';
 import { spListUrl, spGetD } from './sp-rest';
 import { getCurrentUserId, getCurrentUser, getUserNameById } from './sync';
+import { apiAddMentions } from './mentions';
+import { metaById } from '../lib/page-store';
 
 export const ORG_COMMENTS_LIST = 'memola-comments';
 
@@ -237,6 +239,7 @@ export async function apiAddComment(opts: {
   scope: CommentScope;
   threadRootId?: string;
   anchorText?: string;
+  mentions?: number[];
 }): Promise<CommentRow> {
   await ensureCommentsLists();
   const { id, name } = await currentAuthor();
@@ -255,7 +258,19 @@ export async function apiAddComment(opts: {
   if (opts.anchorText) data.AnchorText = opts.anchorText.slice(0, 255);
   const created = await createListItem(listForScope(opts.scope), data);
   invalidateComments(opts.pageId);
-  return mapRow(created as unknown as Record<string, unknown>);
+  const row = mapRow(created as unknown as Record<string, unknown>);
+  // Notify mentioned users (once, at creation — matches the design).
+  if (opts.mentions && opts.mentions.length) {
+    await apiAddMentions({
+      recipientIds: opts.mentions,
+      pageId: opts.pageId,
+      pageTitle: metaById(opts.pageId)?.title || '',
+      commentId: row.Id,
+      blockId: opts.blockId || '',
+      snippet: opts.body,
+    }).catch(() => undefined);
+  }
+  return row;
 }
 
 /** Edit a comment's body (author only — enforced by the caller). */

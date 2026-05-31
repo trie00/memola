@@ -30,6 +30,7 @@ import { attachSidePanels } from './side-panels-wiring';
 import { attachPubTag } from './pub-tag';
 import { attachScopeTag } from './scope-tag';
 import { attachDraftsSidebar, refreshDraftsBadge } from './drafts-modal';
+import { attachInbox } from './inbox-ui';
 import { attachPresence } from './presence-ui';
 import { attachStaleBannerSuppressionReset, attachCrossTabSync } from './sync-watch';
 import { attachTabRefocusRefresh, attachPeriodicTreeSync } from './tab-refocus-refresh';
@@ -132,6 +133,7 @@ export function attachAll(): void {
 
   // Drafts sidebar entry (visible only when draft count > 0)
   attachDraftsSidebar();
+  attachInbox();
   refreshDraftsBadge();
 
   // Presence indicator (top bar avatars)

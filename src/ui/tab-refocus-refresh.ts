@@ -57,6 +57,8 @@ async function refresh(): Promise<void> {
       const { renderTree } = await import('./tree');
       renderTree();
     } catch { /* tolerate */ }
+    // Refresh the mention inbox badge on the same cadence.
+    void import('./inbox-ui').then((m) => m.refreshInboxBadge()).catch(() => undefined);
     // DB views still need re-render because S.dbItems is a snapshot of
     // the list view at open time; without this, deletions / additions
     // in other tabs leave the UI showing ghost rows. The page editor
