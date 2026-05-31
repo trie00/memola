@@ -27,6 +27,7 @@ import {
 import { spListUrl, spGetD } from './sp-rest';
 import { getCurrentUserId, getCurrentUser, getUserNameById } from './sync';
 import { apiAddMentions } from './mentions';
+import { appIdForCommentKey } from './pages';
 import { metaById } from '../lib/page-store';
 
 export const ORG_COMMENTS_LIST = 'memola-comments';
@@ -264,7 +265,7 @@ export async function apiAddComment(opts: {
     await apiAddMentions({
       recipientIds: opts.mentions,
       pageId: opts.pageId,
-      pageTitle: metaById(opts.pageId)?.title || '',
+      pageTitle: metaById(appIdForCommentKey(opts.pageId))?.title || '',
       commentId: row.Id,
       blockId: opts.blockId || '',
       snippet: opts.body,

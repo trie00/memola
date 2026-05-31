@@ -409,6 +409,27 @@ export function pageIdForListItem(sourceList: string, numericId: number): string
   return resolvePageId(SOURCE_LIST_BY_PAGEID, sourceList, numericId);
 }
 
+/** Stable, USER-INDEPENDENT key for a page, used to anchor comments so they
+ *  are shared correctly across users. The app's `pageId` can differ per
+ *  user (numeric-id collisions with each user's per-user list mint a
+ *  composite id for one user but not another), so keying comments by it
+ *  would hide A's comment from B. This key is always `<sourceList>:<itemId>`
+ *  — identical for everyone for an org page (it lives in `memola-pages` with
+ *  the same SP item id for all). */
+export function pageCommentKey(pageId: string): string {
+  return listForPageId(pageId) + ':' + pageIdToItemId(pageId);
+}
+
+/** Inverse of `pageCommentKey`: resolve a comment key back to THIS user's
+ *  app pageId (for navigation). Returns '' for `row:` keys (DB-row detail
+ *  pages — handled separately). */
+export function appIdForCommentKey(key: string): string {
+  if (!key || key.startsWith('row:')) return '';
+  const ci = key.lastIndexOf(':');
+  if (ci <= 0) return key;
+  return pageIdForListItem(key.slice(0, ci), parseInt(key.slice(ci + 1), 10));
+}
+
 /** Columns the startup page load needs — everything `rowToMetaWithId`,
  *  `filterVisiblePages` and `buildSourceListMap` read, and deliberately
  *  NOT `Body_blocks`. Without a `$select`, SP returns every column incl.
@@ -460,7 +481,7 @@ export async function apiGetPages(): Promise<Page[]> {
   // longer exists (e.g. another user purged a shared page). Best-effort,
   // fire-and-forget — self-healing, mirrors gcDbColors.
   void import('./comments').then((m) =>
-    m.gcMyOrphanComments(new Set(S.meta.pages.map((p) => p.id)))).catch(() => undefined);
+    m.gcMyOrphanComments(new Set(S.meta.pages.map((p) => pageCommentKey(p.id))))).catch(() => undefined);
   // S.pages getter recomputes from meta.pages — return the current
   // value for legacy callers (the assignment is a no-op via the setter).
   return S.pages;
@@ -840,7 +861,7 @@ export async function apiDeletePage(id: string): Promise<string[]> {
     }
     // Purge this page's comments (reachable lists). Other users' private
     // comments are GC'd lazily per-user (gcMyOrphanComments).
-    void import('./comments').then((m) => m.purgeCommentsForPage(pid)).catch(() => undefined);
+    void import('./comments').then((m) => m.purgeCommentsForPage(pageCommentKey(pid))).catch(() => undefined);
     // 3. Best-effort cleanup of orphan storage. If we crash here, the
     //    SP list and row bodies persist as unreachable garbage — they
     //    no longer break the UI but they consume storage. A future

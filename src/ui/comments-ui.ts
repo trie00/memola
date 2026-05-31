@@ -15,6 +15,7 @@ import { formatRelativeTime } from '../lib/date-utils';
 import { metaById } from '../lib/page-store';
 import { getUserNameById } from '../api/sync';
 import { searchSiteUsers, type SiteUser } from '../api/mentions';
+import { pageCommentKey } from '../api/pages';
 import {
   apiListComments, apiAddComment, apiEditComment, apiDeleteComment,
   apiResolveThread, apiToggleReaction, hydrateAuthorNames, groupThreads,
@@ -53,7 +54,8 @@ export function currentCommentTarget(): { pageId: string; scope: CommentScope } 
   }
   if (S.currentType === 'page' && S.currentId) {
     const meta = metaById(S.currentId);
-    return { pageId: S.currentId, scope: meta?.scope === 'org' ? 'org' : 'user' };
+    // Stable cross-user key (sourceList:itemId), NOT the per-user app id.
+    return { pageId: pageCommentKey(S.currentId), scope: meta?.scope === 'org' ? 'org' : 'user' };
   }
   return null;
 }
@@ -84,6 +86,9 @@ export async function loadCommentsFor(pageId: string, scopeDefault: CommentScope
     if (_pageId !== pageId) return;
     _threads = groupThreads(rows);
   } catch { _threads = []; }
+  // Auto-open the pane only when the page actually has comments; pages with
+  // none start with the pane closed (open it via 💬 / a gutter marker).
+  _paneOpen = _threads.length > 0;
   renderMarkers();
   renderPane();
   bindReposition();

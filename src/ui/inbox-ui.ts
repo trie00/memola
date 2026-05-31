@@ -82,7 +82,11 @@ export async function navigateToMention(row: InboxRow): Promise<void> {
   void refreshInboxBadge();
   try {
     const { doSelect } = await import('./views');
-    await doSelect(row.PageId);
+    const { appIdForCommentKey } = await import('../api/pages');
+    // row.PageId is the stable comment key (sourceList:itemId) — resolve it
+    // to THIS user's app pageId before navigating.
+    const appId = appIdForCommentKey(row.PageId) || row.PageId;
+    await doSelect(appId);
     const cm = await import('./comments-ui');
     cm.focusComment(row.PageId, row.CommentId);
   } catch { /* navigation best-effort */ }
