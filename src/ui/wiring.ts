@@ -27,6 +27,7 @@ import { attachPageMenuWiring } from './page-menu-wiring';
 import { attachSettingsModal } from './settings-modal';
 import { attachAiChatWiring } from './ai-chat-wiring';
 import { attachXChat } from './xchat';
+import { attachTabs } from './tabs';
 import { attachCommandPalette } from './command-palette-wiring';
 import { attachSidePanels } from './side-panels-wiring';
 import { attachPubTag } from './pub-tag';
@@ -189,6 +190,9 @@ export function attachAll(): void {
   // 横断チャット (cross-document RAG chat)
   attachXChat();
 
+  // タブUI (トップバー1段目)
+  attachTabs();
+
   // Global keydown
   document.addEventListener('keydown', onKey);
 }
@@ -238,11 +242,12 @@ export async function init(): Promise<void> {
     //   2. First non-draft page (fallback)
     const { loadLastOpenedPage } = await import('./views');
     const lastId = loadLastOpenedPage();
-    const lastPage = lastId
-      ? S.pages.find((p) => p.Id === lastId && !p.IsDraft)
-      : null;
-    const target = lastPage || S.pages.find((p) => !p.IsDraft) || null;
-    if (target) await doSelect(target.Id);
+    const fallback = (lastId && S.pages.some((p) => p.Id === lastId && !p.IsDraft))
+      ? lastId
+      : (S.pages.find((p) => !p.IsDraft)?.Id ?? null);
+    // タブを復元(無ければ fallback を1タブで開く)。
+    const { restoreTabs } = await import('./tabs');
+    await restoreTabs(fallback);
   } catch (e) {
     g('em').innerHTML = '<div style="font-size:48px">⚠️</div><h2>エラー</h2><p>' + (e as Error).message + '</p>';
     g('em').style.display = 'flex';

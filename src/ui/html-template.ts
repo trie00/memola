@@ -79,10 +79,16 @@ export function buildHtml(): string {
       '</div>' +
     '</div>' +
     '<main id="memola-main">' +
-      '<div id="memola-top">' +
+      // ── 1段目: 左ペイントグル / 戻る進む / タブ列 / 新規タブ ──
+      '<div id="memola-tabbar">' +
         '<button id="memola-sb-toggle" title="サイドバー (Ctrl+\\)">' + ICONS.sidebar + '</button>' +
         '<button id="memola-nav-back" class="memola-nav-btn disabled" title="戻る (Ctrl+[)" disabled>' + ICONS.chevronLeft + '</button>' +
         '<button id="memola-nav-fwd" class="memola-nav-btn disabled" title="進む (Ctrl+])" disabled>' + ICONS.chevronRight + '</button>' +
+        '<div id="memola-tabstrip"></div>' +
+        '<button id="memola-tab-new" title="新しいタブ">' + ICONS.plus + '</button>' +
+      '</div>' +
+      // ── 2段目: パンくず(親>タイトル) / スコープ / 公開 / 各ボタン ──
+      '<div id="memola-top">' +
         '<div id="memola-bc"></div>' +
         '<div id="memola-presence" class="memola-presence" style="display:none"></div>' +
         '<button id="memola-scope-tag" class="memola-scope-tag" style="display:none" title="クリックで個人 ↔ 組織 を切替">' +

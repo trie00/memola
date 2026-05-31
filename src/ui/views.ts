@@ -252,6 +252,8 @@ export async function doSelect(id: string): Promise<void> {
   // Remember the last-opened page so the next app session reopens it.
   // Keyed by SITE so each workspace gets its own "last page" memory.
   rememberLastOpenedPage(id);
+  // タブ: アクティブタブの中身をこのページに差し替える(= 同一タブ内遷移)。
+  void import('./tabs').then((m) => m.openInActiveTab(id, (page.Title || '無題')));
 }
 
 function rememberLastOpenedPage(pageId: string): void {

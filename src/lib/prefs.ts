@@ -127,6 +127,9 @@ export const prefPresenceEnabled  = strPref('memola.presence.enabled', '1');
 
 // ── Editor / pages ────────────────────────────────────────────────────
 export const prefLastOpenedPages  = jsonPref<Record<string, string>>('memola.lastOpenedPage', {});
+// 開いているタブ構成 (ワークスペース毎)。{ tabs: Tab[]; active: tabId } を保存し、
+// アプリ再起動時に直前のタブ状態を復元する。
+export const prefTabs             = jsonPref<Record<string, { tabs: unknown[]; active: string | null }>>('memola.tabs', {});
 
 // ── Sidebar layout ───────────────────────────────────────────────────
 // Use string for legacy compatibility — older versions may have stored

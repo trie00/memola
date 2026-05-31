@@ -4092,3 +4092,20 @@
 #memola-xchat .tdr-hist-item:hover .del{opacity:1}
 #memola-xchat .tdr-hist-item .del:hover{color:var(--danger)}
 #memola-xchat .tdr-hist-empty{padding:10px;color:var(--ink-4);font-size:var(--fs-sm)}
+
+/* ── タブUI (トップバー1段目) ─────────────────────────────── */
+#memola-overlay #memola-tabbar{display:flex;align-items:center;gap:4px;height:36px;padding:0 8px;border-bottom:1px solid var(--paper-3);background:var(--paper-2);flex:0 0 auto}
+#memola-overlay #memola-tabstrip{flex:1;display:flex;align-items:flex-end;gap:2px;overflow-x:auto;min-width:0;height:100%}
+#memola-overlay #memola-tabstrip::-webkit-scrollbar{height:0}
+#memola-overlay .memola-tab{display:flex;align-items:center;gap:6px;max-width:200px;min-width:96px;padding:0 4px 0 10px;border-radius:7px 7px 0 0;cursor:pointer;color:var(--ink-3);font-size:var(--fs-sm);border:1px solid transparent;border-bottom:none;height:30px}
+#memola-overlay .memola-tab:hover{background:var(--paper-3)}
+#memola-overlay .memola-tab.on{background:var(--paper);color:var(--ink);border-color:var(--paper-3)}
+#memola-overlay .memola-tab-ic{flex:0 0 auto;font-size:13px;display:inline-flex;align-items:center}
+#memola-overlay .memola-tab-ic svg{width:13px;height:13px}
+#memola-overlay .memola-tab-lbl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#memola-overlay .memola-tab-x{flex:0 0 auto;border:0;background:transparent;color:var(--ink-4);cursor:pointer;width:18px;height:18px;border-radius:4px;font-size:14px;line-height:1;opacity:0}
+#memola-overlay .memola-tab:hover .memola-tab-x,#memola-overlay .memola-tab.on .memola-tab-x{opacity:1}
+#memola-overlay .memola-tab-x:hover{background:rgba(0,0,0,.1);color:var(--ink)}
+#memola-overlay #memola-tab-new{flex:0 0 auto;border:0;background:transparent;color:var(--ink-3);cursor:pointer;width:26px;height:26px;border-radius:6px;display:grid;place-items:center}
+#memola-overlay #memola-tab-new:hover{background:var(--paper-3);color:var(--ink)}
+#memola-overlay #memola-tab-new svg{width:15px;height:15px}

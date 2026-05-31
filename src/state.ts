@@ -76,12 +76,25 @@ export interface ListItem {
   [key: string]: unknown;
 }
 
+/** A browser-like open tab. `kind:'page'` references a page/DB by app pageId;
+ *  `kind:'search'` is a cross-document chat session (searchId). */
+export interface Tab {
+  tabId: string;
+  kind: 'page' | 'search';
+  pageId?: string;   // kind='page'
+  searchId?: string; // kind='search'
+  title: string;
+}
+
 export interface AppState {
   /** Derived, read-only view of `meta.pages` (see the getter on `S`).
    *  Mutate the store via `lib/page-store.ts` helpers, never by
    *  assigning to `S.pages`. */
   readonly pages: Page[];
   meta: Meta;
+  /** Open tabs (browser-like). Persisted per workspace; restored on boot. */
+  tabs: Tab[];
+  activeTabId: string | null;
   currentId: string | null;
   currentType: 'page' | 'database';
   dbFields: ListField[];
@@ -146,6 +159,8 @@ export const S: AppState = {
       }));
   },
   meta: { pages: [] },
+  tabs: [],
+  activeTabId: null,
   currentId: null,
   currentType: 'page',
   dbFields: [],
@@ -170,6 +185,8 @@ export const S: AppState = {
 export function resetAppState(): void {
   // S.pages is a derived view — clearing meta.pages also clears the view.
   S.meta = { pages: [] };
+  S.tabs = [];
+  S.activeTabId = null;
   S.currentId = null;
   S.currentType = 'page';
   S.dbFields = [];
