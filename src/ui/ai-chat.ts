@@ -10,6 +10,7 @@ import { getBlocks } from './editor2/editor2-bridge';
 import { escapeHtml } from '../lib/html-escape';
 import { nowJSTContext } from '../lib/date-utils';
 import { metaById } from '../lib/page-store';
+import { currentCommentsContext } from './comments-ui';
 import { prefAiHistory, prefAiPaneOpen } from '../lib/prefs';
 
 const MAX_HISTORY = 20;
@@ -199,6 +200,8 @@ function pageContext(): string {
   if (md.trim()) {
     lines.push('', 'body (markdown):', md);
   }
+  const comments = currentCommentsContext();
+  if (comments) { lines.push('', comments); }
   return lines.join('\n');
 }
 

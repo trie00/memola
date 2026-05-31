@@ -44,6 +44,30 @@ const _userNames = new Map<number, string>();
 const REACTION_EMOJIS = ['👍', '❤️', '🎉', '😄', '🙏', '👀'];
 const AVATAR_COLORS = ['#e07a5f', '#3d82c4', '#5a9e6f', '#b06fb0', '#c99a3b', '#4aa3a3', '#c4677b', '#7a82c4'];
 
+/** Compact text snapshot of the open page's comments for the AI context.
+ *  Reads the already-loaded threads (no fetch). Empty when none. */
+export function currentCommentsContext(): string {
+  if (!_pageId || _threads.length === 0) return '';
+  const oneLine = (s: string): string => (s || '').replace(/\s*\n\s*/g, ' ').trim();
+  const lines: string[] = ['── このページのコメント ──'];
+  const CAP = 40;
+  let n = 0;
+  for (const t of _threads) {
+    if (n >= CAP) { lines.push('… (以降のコメントは省略)'); break; }
+    const scope = t.root.Scope === 'user' ? '個人' : '組織';
+    const resolved = t.resolved ? ' [解決済み]' : '';
+    const anchor = t.root.AnchorText ? ` (対象: ${oneLine(t.root.AnchorText)})` : '';
+    lines.push(`- [${scope}]${resolved} ${t.root.AuthorName || '誰か'}: ${oneLine(t.root.Body)}${anchor}`);
+    n++;
+    for (const r of t.replies) {
+      if (n >= CAP) break;
+      lines.push(`    └ ${r.AuthorName || '誰か'}: ${oneLine(r.Body)}`);
+      n++;
+    }
+  }
+  return lines.join('\n');
+}
+
 export function currentCommentTarget(): { pageId: string; scope: CommentScope } | null {
   if (S.currentRow) {
     const db = metaById(S.currentRow.dbId);
