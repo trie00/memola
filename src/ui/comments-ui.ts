@@ -252,7 +252,7 @@ function reactionChips(c: CommentRow): string {
   return chips.length ? '<div class="memola-cmt-reacts">' + chips.join('') + '</div>' : '';
 }
 
-function commentHtml(c: CommentRow, isRoot: boolean): string {
+function commentHtml(c: CommentRow, isRoot: boolean, withHover = true): string {
   const mine = c.AuthorId === (S.meta.myUserId || -1);
   const when = c.Created ? formatRelativeTime(Date.parse(c.Created)) : '';
   if (c.Deleted) {
@@ -272,12 +272,13 @@ function commentHtml(c: CommentRow, isRoot: boolean): string {
   const scopeBadge = isRoot && c.Scope === 'user' ? '<span class="memola-cmt-badge priv">🔒</span>' : '';
   const bodyHtml = escapeHtml((c.Body || '').replace(/\r\n?/g, '\n').trim()).replace(/\n/g, '<br>');
   const edited = c.Edited ? '<span class="memola-cmt-edited">編集済み</span>' : '';
-  const hover =
-    '<div class="memola-cmt-hover">' +
-      '<button class="memola-cmt-hbtn" data-act="react" data-id="' + c.Id + '" title="リアクション">🙂<sup>+</sup></button>' +
-      (isRoot ? '<button class="memola-cmt-hbtn" data-act="resolve" data-root="' + c.Id + '" title="解決">✓</button>' : '') +
-      (mine ? '<button class="memola-cmt-hbtn" data-act="more" data-id="' + c.Id + '" title="その他">⋯</button>' : '') +
-    '</div>';
+  const hover = withHover
+    ? '<div class="memola-cmt-hover">' +
+        '<button class="memola-cmt-hbtn" data-act="react" data-id="' + c.Id + '" title="リアクション">🙂<sup>+</sup></button>' +
+        (isRoot ? '<button class="memola-cmt-hbtn" data-act="resolve" data-root="' + c.Id + '" title="解決">✓</button>' : '') +
+        (mine ? '<button class="memola-cmt-hbtn" data-act="more" data-id="' + c.Id + '" title="その他">⋯</button>' : '') +
+      '</div>'
+    : '';
   const avatar = '<div class="memola-cmt-avatar" style="background:' + avatarColor(c.AuthorId) + '">' +
     escapeHtml(initialOf(c.AuthorName || '')) + '</div>';
   if (!isRoot) {
@@ -310,11 +311,21 @@ function threadHtml(t: CommentThread): string {
   const anchor = t.blockId
     ? '<div class="memola-cmt-anchor">' + escapeHtml(t.root.AnchorText || '（ブロック）') + '</div>' : '';
   const replies = t.replies.length
-    ? '<div class="memola-cmt-replies">' + t.replies.map((r) => commentHtml(r, false)).join('') + '</div>' : '';
+    ? '<div class="memola-cmt-replies">' + t.replies.map((r) => commentHtml(r, false, true)).join('') + '</div>' : '';
+  const rootMine = t.root.AuthorId === (S.meta.myUserId || -1);
+  // Single thread-level action bar (top-right of the whole thread): acts on
+  // the PARENT comment — リアクション / 解決 / ⋯(編集・削除).
+  const threadHover =
+    '<div class="memola-cmt-thread-hover">' +
+      '<button class="memola-cmt-hbtn" data-act="react" data-id="' + t.root.Id + '" title="リアクション">🙂<sup>+</sup></button>' +
+      '<button class="memola-cmt-hbtn" data-act="resolve" data-root="' + t.root.Id + '" title="解決">✓</button>' +
+      (rootMine ? '<button class="memola-cmt-hbtn" data-act="more" data-id="' + t.root.Id + '" title="その他">⋯</button>' : '') +
+    '</div>';
   return '<div class="memola-cmt-thread' + (t.resolved ? ' resolved' : '') + '" data-root="' + t.root.Id + '"' +
     (t.blockId ? ' data-block-id="' + escapeHtml(t.blockId) + '"' : '') + '>' +
+    threadHover +
     (t.resolved ? '<div class="memola-cmt-resolved-tag">✓ 解決済み</div>' : '') +
-    anchor + commentHtml(t.root, true) + replies +
+    anchor + commentHtml(t.root, true, false) + replies +
     '<div class="memola-cmt-replybar">' +
       '<input class="memola-cmt-reply-inp" type="text" placeholder="返信...">' +
       '<button class="memola-cmt-reply-send" data-act="reply" data-root="' + t.root.Id + '">↵</button>' +

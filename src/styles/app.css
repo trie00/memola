@@ -973,9 +973,18 @@
 
 /* Thread card */
 #memola-overlay .memola-cmt-thread {
+  position: relative;
   padding: 10px; margin: 8px 0; border-radius: var(--r-3, 8px);
   background: var(--paper-2, #f7f7f5); border: 1px solid var(--paper-3, transparent);
 }
+/* Thread-level action bar — top-right of the whole thread, acts on the root */
+#memola-overlay .memola-cmt-thread-hover {
+  position: absolute; top: 6px; right: 6px; z-index: 2; display: flex; gap: 1px;
+  background: var(--paper, #fff); border: 1px solid var(--paper-3, rgba(55,53,47,.12));
+  border-radius: var(--r-2, 6px); box-shadow: 0 1px 4px rgba(0,0,0,.10); padding: 1px;
+  opacity: 0; pointer-events: none; transition: opacity var(--tr-fast, .12s);
+}
+#memola-overlay .memola-cmt-thread:hover > .memola-cmt-thread-hover { opacity: 1; pointer-events: auto; }
 #memola-overlay .memola-cmt-thread.resolved { opacity: 0.55; }
 #memola-overlay .memola-cmt-resolved-tag { font-size: var(--fs-xs); color: #2f8a5b; margin-bottom: 6px; }
 #memola-overlay .memola-cmt-resolved-sep { font-size: var(--fs-xs); color: var(--ink-3); margin: 14px 4px 4px; text-transform: none; }
@@ -1026,6 +1035,7 @@
   padding: 1px; opacity: 0; pointer-events: none; transition: opacity var(--tr-fast, .12s);
 }
 #memola-overlay .memola-cmt-c:hover > .memola-cmt-hover { opacity: 1; pointer-events: auto; }
+#memola-overlay .memola-cmt-c.reply > .memola-cmt-hover { top: 0; }
 #memola-overlay .memola-cmt-hbtn {
   background: none; border: none; cursor: pointer; padding: 3px 5px; border-radius: 4px;
   font-size: 12px; line-height: 1; color: var(--ink-2, #5f5e5b);
