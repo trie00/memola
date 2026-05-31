@@ -442,12 +442,32 @@ const PAGE_META_SELECT =
 // created/deleted ms ago may not yet be reflected). Both produced the
 // "page duplicates / self-nests / vanishes / title reverts" corruption.
 
-/** Pages created in-memory but maybe not yet returned by SP. Re-attached
- *  on refresh so an optimistic create can't vanish before SP indexes it.
- *  Dropped once SP confirms the id or the grace window lapses. */
-const _recentlyCreated = new Map<string, number>();
-const RECENT_CREATE_GRACE_MS = 60_000;
-export function markRecentlyCreated(pageId: string): void { _recentlyCreated.set(pageId, Date.now()); }
+// ── per-id pending op state machine (v5) ───────────────────────────────
+// 各 pageId につき「自分が出した未確定の操作」をちょうど1つだけ持つ。
+// reconcile はこれを SP スナップショットに重ねて適用する。クリアは「時間」
+// ではなく「SP が結果を正に観測した(収束)」ときだけ(負の証拠で進めない)。
+//   create       : SP がまだ返さなくても保持。SP に出現したらクリア。
+//   delete-soft  : ゴミ箱(Trashed)。SP がまだ Trashed=0 でも trashed を強制。
+//                  SP が Trashed>0 を観測したらクリア。
+//   delete-purge : 完全削除(行は物理削除)。SP がまだ返してもツリーから除外。
+//                  連続 absentReads>=2 (= 確定不在) でクリア。
+//   restore      : ゴミ箱から復元。SP が untrashed を観測したらクリア。
+type PendingState = 'create' | 'delete-soft' | 'delete-purge' | 'restore';
+interface PendingOp { state: PendingState; at: number; absentReads?: number }
+const _pending = new Map<string, PendingOp>();
+// create/restore の安全弁: SP 書込失敗でロールバックされなかった等で永久に
+// 収束しない事故を防ぐため、長め(5分)で自動失効。delete は失効させない(正観測のみ)。
+const PENDING_SAFETY_MS = 5 * 60_000;
+
+export function markPendingCreate(pageId: string): void { _pending.set(pageId, { state: 'create', at: Date.now() }); }
+/** delete 時は同 id の他状態(create 等)を上書きで消す(per-id 単一状態)。 */
+export function markPendingDelete(pageId: string, purge: boolean): void {
+  _pending.set(pageId, { state: purge ? 'delete-purge' : 'delete-soft', at: Date.now() });
+}
+export function markPendingRestore(pageId: string): void { _pending.set(pageId, { state: 'restore', at: Date.now() }); }
+export function clearPending(pageId: string): void { _pending.delete(pageId); }
+/** 旧名: 作成の保護。呼び出し側互換のため alias として維持。 */
+export function markRecentlyCreated(pageId: string): void { markPendingCreate(pageId); }
 
 /** While this window is active the periodic tree refresh skips its clobber,
  *  so it can't interleave with an in-flight create / move / scope migration
@@ -475,43 +495,78 @@ async function apiGetPagesImpl(): Promise<Page[]> {
   S.meta.myUserId = myId || 0;
   await ensurePagesList();
   const myList = getMyPagesList();
-  const buckets: { list: string; rows: PageRow[] }[] = [
-    { list: ORG_PAGES_LIST, rows: (await getListItems(ORG_PAGES_LIST, PAGE_META_SELECT)) as unknown as PageRow[] },
-  ];
-  if (myList !== ORG_PAGES_LIST) {
-    const myRows = await getListItems(myList, PAGE_META_SELECT).catch(() => [] as unknown[]);
-    buckets.push({ list: myList, rows: myRows as unknown as PageRow[] });
+
+  // ── 完全成功読みゲート ──
+  // 必要な全リストを例外なく取り切れたときだけ reconcile を進める。1つでも
+  // 失敗したらローカルを上書きしない(現状維持)。空配列での全消去を禁止。
+  let orgRows: PageRow[];
+  try {
+    orgRows = (await getListItems(ORG_PAGES_LIST, PAGE_META_SELECT)) as unknown as PageRow[];
+  } catch {
+    return S.pages; // org 取得失敗 → 上書きしない
   }
-  // Capture the pre-rebuild source map so re-attached optimistic creates
-  // keep a correct list routing even though we clear+rebuild below.
+  const buckets: { list: string; rows: PageRow[] }[] = [{ list: ORG_PAGES_LIST, rows: orgRows }];
+  if (myList !== ORG_PAGES_LIST) {
+    try {
+      const myRows = (await getListItems(myList, PAGE_META_SELECT)) as unknown as PageRow[];
+      buckets.push({ list: myList, rows: myRows });
+    } catch {
+      return S.pages; // 個人リスト取得失敗 → 上書きしない(空で消さない)
+    }
+  }
+
+  // Capture the pre-rebuild source map so re-attached pending pages keep
+  // correct list routing even though we clear+rebuild below.
   const prevSource = new Map(SOURCE_LIST_BY_PAGEID);
   const { rowToPageId, sourceListByPageId } = buildSourceListMap(buckets);
   SOURCE_LIST_BY_PAGEID.clear();
   for (const [pid, list] of sourceListByPageId) SOURCE_LIST_BY_PAGEID.set(pid, list);
   const items = buckets.flatMap((b) => b.rows);
-  const topLevel = filterVisiblePages(items, myId);
-  const fresh = topLevel.map((row) => rowToMetaWithId(row, rowToPageId.get(row) ?? String(row.Id)));
+  // raw メタ(trashed も含む — Trashed を正観測して tombstone を解除するため)。
+  const rawMetas = filterVisiblePages(items, myId)
+    .map((row) => rowToMetaWithId(row, rowToPageId.get(row) ?? String(row.Id)));
+  const byId = new Map(rawMetas.map((m) => [m.id, m] as const));
 
-  // Merge (not clobber): re-attach in-memory pages that SP hasn't returned
-  // yet but were created locally within the grace window. Pages that
-  // disappeared for any other reason (e.g. another user deleted them) are
-  // dropped, as before.
-  const freshIds = new Set(fresh.map((m) => m.id));
+  // ── pending の収束判定(正観測でのみクリア。負の証拠で進めない) ──
   const now = Date.now();
-  const merged = fresh.slice();
-  for (const m of S.meta.pages) {
-    if (freshIds.has(m.id)) continue;
-    const at = _recentlyCreated.get(m.id);
-    if (at !== undefined && (now - at) < RECENT_CREATE_GRACE_MS) {
-      merged.push(m);
-      const srcList = prevSource.get(m.id) || pagesListFor(m.scope === 'org' ? 'org' : 'user');
-      SOURCE_LIST_BY_PAGEID.set(m.id, srcList);   // restore routing for the optimistic page
+  for (const [id, op] of _pending) {
+    const row = byId.get(id);
+    if (op.state === 'create') {
+      if (row || now - op.at >= PENDING_SAFETY_MS) clearPending(id);
+    } else if (op.state === 'restore') {
+      if ((row && !row.trashed) || now - op.at >= PENDING_SAFETY_MS) clearPending(id);
+    } else if (op.state === 'delete-soft') {
+      if (row && row.trashed) clearPending(id);                 // Trashed 正観測 → 収束
+      else if (!row) { op.absentReads = (op.absentReads ?? 0) + 1; if (op.absentReads >= 2) clearPending(id); }
+      else op.absentReads = 0;                                  // まだ Trashed=0(伝播待ち)
+    } else if (op.state === 'delete-purge') {
+      if (!row) { op.absentReads = (op.absentReads ?? 0) + 1; if (op.absentReads >= 2) clearPending(id); }
+      else op.absentReads = 0;                                  // まだ存在(stale) → 抑制継続
     }
   }
-  for (const [id, at] of _recentlyCreated) {
-    if (freshIds.has(id) || (now - at) >= RECENT_CREATE_GRACE_MS) _recentlyCreated.delete(id);
+
+  // ── pending を SP スナップショットに重ねて結果を組む(優先: delete > create/restore > SP) ──
+  const result: PageMeta[] = [];
+  const seen = new Set<string>();
+  for (const m of rawMetas) {
+    const op = _pending.get(m.id);
+    if (op && (op.state === 'delete-purge')) continue;          // 完全削除 → 除外
+    if (op?.state === 'delete-soft' && !m.trashed) m.trashed = op.at; // 伝播前でも trashed 強制
+    if (op?.state === 'restore' && m.trashed) delete m.trashed;       // 復元を強制
+    result.push(m); seen.add(m.id);
   }
-  S.meta.pages = merged;
+  // SP にまだ出ていない自分の create/restore/soft-delete をローカルから補完。
+  for (const [id, op] of _pending) {
+    if (seen.has(id) || op.state === 'delete-purge') continue;
+    const prev = S.meta.pages.find((p) => p.id === id);
+    if (!prev) continue;
+    const clone: PageMeta = { ...prev };
+    if (op.state === 'delete-soft' && !clone.trashed) clone.trashed = op.at;
+    if (op.state === 'restore') delete clone.trashed;
+    result.push(clone); seen.add(id);
+    SOURCE_LIST_BY_PAGEID.set(id, prevSource.get(id) || pagesListFor(clone.scope === 'org' ? 'org' : 'user'));
+  }
+  S.meta.pages = result;
 
   // Lazy GC of the current user's orphaned private comments (best-effort).
   void import('./comments').then((m) =>
@@ -917,6 +972,9 @@ export async function apiDeletePage(id: string): Promise<string[]> {
   // has been deleted — clicking it tries to load a non-existent SP list,
   // and the title→list mapping appears "shifted" against neighbouring
   // entries. Filtering here keeps both arrays consistent always.
+  // v5: 各 id を pending-delete-purge に。以後の reconcile は SP がまだ古い行を
+  // 返しても抑制し、確定不在(連続2回)まで復活させない。
+  for (const pid of ids) markPendingDelete(pid, true);
   removePages(ids);
   return ids;
 }
@@ -978,11 +1036,25 @@ export async function apiTrashPage(id: string): Promise<void> {
   // who isn't them; effectively orphaned but recoverable by manual
   // restore).
   const myId = S.meta.myUserId || (await getCurrentUserId().catch(() => 0));
+  const failed: string[] = [];
   for (const pid of ids) {
     const meta = metaById(pid);
+    const prevTrashed = meta?.trashed; const prevBy = meta?.trashedBy;
     if (meta) { meta.trashed = ts; meta.trashedBy = myId; }
-    await updatePageRow(pid, { Trashed: ts, TrashedBy: myId }).catch(() => undefined);
+    markPendingDelete(pid, false); // pending-delete-soft: SP が Trashed を返すまで trashed 強制
+    try {
+      await updatePageRow(pid, { Trashed: ts, TrashedBy: myId });
+    } catch {
+      // SP 書込失敗 → ローカルを巻き戻し pending 解除(「消えたように見える」幻想を作らない)。
+      if (meta) {
+        if (prevTrashed) meta.trashed = prevTrashed; else delete meta.trashed;
+        if (prevBy) meta.trashedBy = prevBy; else delete meta.trashedBy;
+      }
+      clearPending(pid);
+      failed.push(pid);
+    }
   }
+  if (failed.length) throw new Error('ゴミ箱への移動に失敗しました (' + failed.length + ' 件)。再度お試しください。');
 }
 
 export async function apiRestorePage(id: string): Promise<void> {
@@ -991,11 +1063,21 @@ export async function apiRestorePage(id: string): Promise<void> {
   // re-resolves the (now-active again) page id instead of falling into
   // its "create new" branch on the next note open.
   await maybeInvalidateDailyCache(ids);
+  const failed: string[] = [];
   for (const pid of ids) {
     const meta = metaById(pid);
+    const prevTrashed = meta?.trashed; const prevBy = meta?.trashedBy;
     if (meta) { delete meta.trashed; delete meta.trashedBy; }
-    await updatePageRow(pid, { Trashed: 0, TrashedBy: 0 }).catch(() => undefined);
+    markPendingRestore(pid); // pending-restore: SP が untrashed を返すまで復元を強制(re-suppress 防止)
+    try {
+      await updatePageRow(pid, { Trashed: 0, TrashedBy: 0 });
+    } catch {
+      if (meta) { if (prevTrashed) meta.trashed = prevTrashed; if (prevBy) meta.trashedBy = prevBy; }
+      clearPending(pid);
+      failed.push(pid);
+    }
   }
+  if (failed.length) throw new Error('復元に失敗しました (' + failed.length + ' 件)。再度お試しください。');
 }
 
 export async function apiPurgePage(id: string): Promise<string[]> {
