@@ -1154,6 +1154,26 @@
 #memola-overlay .memola-inbox-time { font-size: var(--fs-xs, 11px); color: var(--ink-3, #9b9a97); margin-left: auto; }
 #memola-overlay .memola-inbox-page { font-size: var(--fs-xs, 11px); color: var(--ink-2, #5f5e5b); margin-top: 2px; }
 #memola-overlay .memola-inbox-snippet { font-size: var(--fs-xs, 11px); color: var(--ink-3, #9b9a97); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Live mention toasts (top-right, stacked) */
+#memola-overlay #memola-mention-toasts {
+  position: fixed; top: calc(var(--topbar-h, 48px) + 12px); right: 16px;
+  z-index: 2147483647; display: flex; flex-direction: column; gap: 8px;
+  pointer-events: none;
+}
+#memola-overlay .memola-mention-toast {
+  pointer-events: auto; cursor: pointer; width: 300px; position: relative;
+  background: var(--paper, #fff); border: 1px solid var(--paper-3, rgba(55,53,47,.14));
+  border-left: 3px solid var(--accent, #2f6f5e);
+  border-radius: var(--r-2, 8px); box-shadow: 0 6px 20px rgba(0,0,0,.18);
+  padding: 10px 28px 10px 12px; font-family: var(--font-ui);
+  opacity: 0; transform: translateX(16px); transition: opacity .2s ease, transform .2s ease;
+}
+#memola-overlay .memola-mention-toast.on { opacity: 1; transform: translateX(0); }
+#memola-overlay .memola-mention-toast-hd { font-size: var(--fs-sm, 13px); font-weight: 600; color: var(--ink, #37352f); }
+#memola-overlay .memola-mention-toast-page { font-size: var(--fs-xs, 11px); color: var(--ink-2, #5f5e5b); margin-top: 2px; }
+#memola-overlay .memola-mention-toast-snippet { font-size: var(--fs-xs, 11px); color: var(--ink-3, #9b9a97); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#memola-overlay .memola-mention-toast-x { position: absolute; top: 6px; right: 8px; background: none; border: none; cursor: pointer; color: var(--ink-3, #9b9a97); font-size: 15px; line-height: 1; }
 @keyframes memola-ph-pulse {
   0%,100% { opacity: 1; }
   50%     { opacity: 0.65; }
