@@ -364,8 +364,20 @@ function renderPane(): void {
   if (!p || !list) return;
   if (!_paneOpen || !_pageId) { p.classList.remove('on'); return; }
   p.classList.add('on');
-  const open = _threads.filter((t) => !t.resolved);
-  const resolved = _threads.filter((t) => t.resolved);
+  // Order threads to match the body's block order. Page-level comments
+  // (no anchor block) go first; threads whose block is gone go last; ties
+  // keep creation order (groupThreads already sorted by Created).
+  const ed = getEd();
+  const order = new Map<string, number>();
+  ed.querySelectorAll<HTMLElement>('[data-block-id]').forEach((el, i) => {
+    const id = el.dataset.blockId;
+    if (id && !order.has(id)) order.set(id, i);
+  });
+  const rank = (t: CommentThread): number =>
+    t.blockId ? (order.get(t.blockId) ?? Number.MAX_SAFE_INTEGER) : -1;
+  const byBlock = (a: CommentThread, b: CommentThread): number => rank(a) - rank(b);
+  const open = _threads.filter((t) => !t.resolved).sort(byBlock);
+  const resolved = _threads.filter((t) => t.resolved).sort(byBlock);
   list.innerHTML =
     (open.length || resolved.length
       ? open.map(threadHtml).join('') +
