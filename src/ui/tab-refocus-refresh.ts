@@ -23,6 +23,7 @@
 import { S } from '../state';
 import { apiGetPages } from '../api/pages';
 import { saver } from '../lib/saver';
+import { prefSyncPollMs } from '../lib/prefs';
 
 const MIN_INTERVAL_MS = 3000;
 let _lastRefreshTs = 0;
@@ -90,4 +91,46 @@ export function attachTabRefocusRefresh(): void {
     if (document.hidden) return;
     void refresh();
   });
+}
+
+// ── Periodic tree sync ───────────────────────────────────
+//
+// Keeps the left-pane document list fresh while the tab stays focused, so
+// other users' page creates / moves show up without a tab switch. Driven
+// by the SAME 「同期チェック」 interval (`prefSyncPollMs`) as the open-page
+// poller — '0' (オフ) disables it. Reuses `refresh()`, so the same
+// dirty/busy guards and the cheap metadata-only `apiGetPages` apply. Skips
+// while the tab is hidden (visibilitychange covers the return). The loop
+// re-reads the pref each tick, so changing the setting takes effect on the
+// next cycle with no explicit restart.
+
+let _periodicTimer: ReturnType<typeof setTimeout> | null = null;
+
+function resolveSyncMs(): number {
+  const raw = prefSyncPollMs.get();
+  const n = raw ? parseInt(raw, 10) : 30000;
+  return isFinite(n) ? n : 30000;
+}
+
+function scheduleNextTreeSync(): void {
+  if (_periodicTimer) { clearTimeout(_periodicTimer); _periodicTimer = null; }
+  const ms = resolveSyncMs();
+  if (ms <= 0) {
+    // Disabled — re-check the pref in 60s so re-enabling eventually arms.
+    _periodicTimer = setTimeout(scheduleNextTreeSync, 60000);
+    return;
+  }
+  _periodicTimer = setTimeout(() => {
+    void (async () => { if (!document.hidden) await refresh(); })()
+      .finally(scheduleNextTreeSync);
+  }, ms);
+}
+
+/** Start the periodic left-pane/tree refresh on the 「同期チェック」 interval.
+ *  Idempotent. */
+export function attachPeriodicTreeSync(): void {
+  const body = document.body as HTMLElement & { dataset: DOMStringMap };
+  if (body.dataset.memolaTreeSyncWired === '1') return;
+  body.dataset.memolaTreeSyncWired = '1';
+  scheduleNextTreeSync();
 }

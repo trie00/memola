@@ -32,7 +32,7 @@ import { attachScopeTag } from './scope-tag';
 import { attachDraftsSidebar, refreshDraftsBadge } from './drafts-modal';
 import { attachPresence } from './presence-ui';
 import { attachStaleBannerSuppressionReset, attachCrossTabSync } from './sync-watch';
-import { attachTabRefocusRefresh } from './tab-refocus-refresh';
+import { attachTabRefocusRefresh, attachPeriodicTreeSync } from './tab-refocus-refresh';
 import { attachSaverBridge } from '../lib/saver-bridge';
 import { attachAutosaveScheduler } from '../lib/autosave';
 import { attachConflictModal } from './conflict-modal';
@@ -118,6 +118,7 @@ export function attachAll(): void {
   attachScopeTag();
   attachStaleBannerSuppressionReset();
   attachTabRefocusRefresh();
+  attachPeriodicTreeSync();
   attachCrossTabSync();
 
   // Saver state machine — single source of truth for save lifecycle.
