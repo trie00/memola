@@ -459,7 +459,7 @@
 #memola-overlay .memola-pub-pop {
   position: fixed;
   z-index: 1300;
-  background: var(--bg);
+  background: var(--paper, #fafaf7);   /* --bg is undefined → was transparent (see-through) */
   border: 1px solid rgba(55, 53, 47, 0.14);
   border-radius: 6px;
   box-shadow: rgba(15, 15, 15, 0.05) 0 0 0 1px, rgba(15, 15, 15, 0.10) 0 3px 6px,
