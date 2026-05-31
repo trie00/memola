@@ -25,6 +25,8 @@ let currentId = '';
 let abort: AbortController | null = null;
 let busy = false;
 let loaded = false;
+// 初回(または再構築中)のインデックス構築 Promise。send() はこれを待ってから検索する。
+let priming: Promise<void> | null = null;
 
 // ─── persistence ──────────────────────────────────────────────────────
 function load(): void {
@@ -96,20 +98,44 @@ function positionPanel(): void {
   panel.style.left = Math.max(0, right) + 'px';
 }
 
-async function primeIndex(): Promise<void> {
-  const idx = $('memola-xchat-idx');
-  if (!canEmbed()) {
-    if (idx) idx.textContent = 'AI設定が必要 (埋め込み未設定)';
-    return;
-  }
-  try {
-    if (idx) idx.textContent = 'インデックス確認中…';
-    await ragInit();
-    const r = await ragRefresh();
-    if (idx) idx.textContent = (r.org + r.user) > 0 ? `インデックス更新: +${r.org + r.user}` : 'インデックス最新';
-  } catch (e) {
-    if (idx) idx.textContent = '索引エラー: ' + (e as Error).message;
-  }
+function setIdx(text: string): void { const idx = $('memola-xchat-idx'); if (idx) idx.textContent = text; }
+
+/** インデックスを構築 (キャッシュ適用 + SP差分DL + writer なら差分ベクトル化)。
+ *  進捗を見出しに表示。多重起動はしない (既存 Promise を共有)。 */
+function primeIndex(force = false): Promise<void> {
+  if (priming && !force) return priming;
+  const btn = $('memola-xchat-rebuild');
+  priming = (async () => {
+    if (!canEmbed()) {
+      setIdx('⚠ 埋め込み未設定 — 設定→AIで構成');
+      return;
+    }
+    btn?.classList.add('spin');
+    try {
+      setIdx('インデックス読込中…');
+      await ragInit();
+      setIdx('変更を確認中…');
+      const r = await ragRefresh(undefined, (p) => {
+        const who = p.scope === 'org' ? '組織' : 'プライベート';
+        setIdx(`${who}をベクトル化中… ${p.done}/${p.total}`);
+      });
+      const total = r.org + r.user;
+      let msg = total > 0 ? `ベクトル化完了: +${total}件` : 'インデックス最新';
+      if (r.orgSkipped) msg += ' (組織は別の利用者が更新担当)';
+      setIdx(msg);
+    } catch (e) {
+      setIdx('索引エラー: ' + (e as Error).message);
+    } finally {
+      btn?.classList.remove('spin');
+    }
+  })();
+  return priming;
+}
+
+/** 検索前に「少なくとも1回はインデックス構築が走り終えている」ことを保証する。 */
+async function ensureReady(): Promise<void> {
+  if (!priming) primeIndex();
+  try { await priming; } catch { /* primeIndex 内で表示済み */ }
 }
 
 // ─── render: history list ─────────────────────────────────────────────
@@ -287,11 +313,14 @@ async function send(): Promise<void> {
   aEl.className = 'memola-xchat-a';
   const thinking = document.createElement('div');
   thinking.className = 'memola-xchat-thinking';
-  thinking.textContent = '関連文書を検索中…';
+  thinking.textContent = 'インデックス準備中…';
   host.append(qEl, thinking);
   host.scrollTop = host.scrollHeight;
 
   try {
+    // 初回ビルドが終わるまで検索しない (空インデックスへの誤検索を防ぐ)。
+    await ensureReady();
+    thinking.textContent = '関連文書を検索中…';
     const hits = await ragSearch(q, { signal: abort.signal });
     thinking.remove();
     host.appendChild(aEl);
@@ -369,6 +398,7 @@ export function attachXChat(): void {
   $('memola-xchat-launch')?.addEventListener('click', () => toggleXChat());
   $('memola-xchat-close')?.addEventListener('click', () => closeXChat());
   $('memola-xchat-new')?.addEventListener('click', () => newSession());
+  $('memola-xchat-rebuild')?.addEventListener('click', () => { void primeIndex(true); });
   $('memola-xchat-send')?.addEventListener('click', () => { void send(); });
 
   const ta = $('memola-xchat-input') as HTMLTextAreaElement | null;

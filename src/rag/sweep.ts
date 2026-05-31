@@ -42,12 +42,15 @@ export async function loadScopeDocs(listTitle: string, scope: 'org' | 'user'): P
   return out;
 }
 
-async function embedInBatches(texts: string[], signal?: AbortSignal): Promise<Float32Array[]> {
+export type SweepProgress = (done: number, total: number) => void;
+
+async function embedInBatches(texts: string[], signal?: AbortSignal, onProgress?: SweepProgress): Promise<Float32Array[]> {
   const out: Float32Array[] = [];
   for (let i = 0; i < texts.length; i += EMBED_BATCH) {
     const batch = texts.slice(i, i + EMBED_BATCH);
     const vecs = await embedTexts(batch, { inputType: 'document', signal });
     for (const v of vecs) out.push(v);
+    onProgress?.(out.length, texts.length);
   }
   return out;
 }
@@ -56,7 +59,7 @@ async function embedInBatches(texts: string[], signal?: AbortSignal): Promise<Fl
  *  - 内容ハッシュが一致する文書はスキップ (再埋め込みしない)。
  *  - 変更文書は全チャンクを upsert、余剰チャンクを delete。
  *  - 消えた文書 (db にあるが docs に無い) は全チャンクを delete。 */
-export async function computeDelta(db: VectorDb, docs: DocInput[], signal?: AbortSignal): Promise<DocRecord[]> {
+export async function computeDelta(db: VectorDb, docs: DocInput[], signal?: AbortSignal, onProgress?: SweepProgress): Promise<DocRecord[]> {
   const out: DocRecord[] = [];
   const current = new Set(docs.map((d) => d.docKey));
 
@@ -88,7 +91,7 @@ export async function computeDelta(db: VectorDb, docs: DocInput[], signal?: Abor
   const texts: string[] = [];
   for (const c of changed) for (const ch of c.chunks) texts.push(ch.text);
   if (texts.length === 0) return out;
-  const vecs = await embedInBatches(texts, signal);
+  const vecs = await embedInBatches(texts, signal, onProgress);
 
   // 4) upsert + 余剰チャンク delete
   let vi = 0;

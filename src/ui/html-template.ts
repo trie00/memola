@@ -61,6 +61,7 @@ export function buildHtml(): string {
         '<div class="memola-xchat-top">' +
           '<span class="memola-xchat-title">' + ICONS.chat + '<b>横断チャット</b><span class="memola-xchat-sub">全文書をまたいでAIに質問</span></span>' +
           '<span class="memola-xchat-idx" id="memola-xchat-idx"></span>' +
+          '<button id="memola-xchat-rebuild" title="インデックスを再構築 (変更/新規文書をベクトル化)">' + ICONS.refresh + '</button>' +
           '<button id="memola-xchat-close" title="閉じる (Esc)">' + ICONS.exit + '</button>' +
         '</div>' +
         '<div id="memola-xchat-thread"></div>' +

@@ -11,7 +11,7 @@ import { SegmentCache } from './cache';
 import { VectorDb, type DbHit } from './store';
 import { SpVectorStore, updateManifestWithCas } from './sp-store';
 import { getLease } from './lease';
-import { loadScopeDocs, computeDelta } from './sweep';
+import { loadScopeDocs, computeDelta, type SweepProgress } from './sweep';
 import {
   emptyManifest, missingSealed, nextSegmentIndex, segmentId, nowIso,
   type Manifest, type Segment, type DocRecord,
@@ -81,18 +81,19 @@ export class ScopeIndex {
   }
 
   /** writer だけが差分を取り込む。返り値で結果を報告。 */
-  async refresh(signal?: AbortSignal): Promise<{ changed: number; skipped?: string }> {
+  async refresh(signal?: AbortSignal, onProgress?: SweepProgress): Promise<{ changed: number; skipped?: string }> {
     await this.init();
-    const docs = await loadScopeDocs(this.listTitle, this.scope);
-    const recs = await computeDelta(this.db, docs, signal);
-    if (recs.length === 0) return { changed: 0 };
+    // org は writer のときだけ埋め込む。先にリースを確認し、非writer なら
+    // 埋め込み API を一切呼ばない (computeDelta すら走らせない)。
     if (this.store) {
       const ok = await getLease().ensureWriter();
       if (!ok) return { changed: 0, skipped: 'not-writer' };
-      await this.persistRemote(recs);
-    } else {
-      await this.persistLocal(recs);
     }
+    const docs = await loadScopeDocs(this.listTitle, this.scope);
+    const recs = await computeDelta(this.db, docs, signal, onProgress);
+    if (recs.length === 0) return { changed: 0 };
+    if (this.store) await this.persistRemote(recs);
+    else await this.persistLocal(recs);
     return { changed: recs.length };
   }
 

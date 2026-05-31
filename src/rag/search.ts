@@ -28,13 +28,21 @@ export async function ragInit(): Promise<void> {
   await Promise.all([orgIndex().init(), userIndex().init()]);
 }
 
-/** writer だけが差分を取り込む (org=リース保持者 / user=本人)。 */
-export async function ragRefresh(signal?: AbortSignal): Promise<{ org: number; user: number }> {
-  const [org, user] = await Promise.all([
-    orgIndex().refresh(signal).catch((e) => { console.warn('[rag] org refresh:', (e as Error).message); return { changed: 0 }; }),
-    userIndex().refresh(signal).catch((e) => { console.warn('[rag] user refresh:', (e as Error).message); return { changed: 0 }; }),
-  ]);
-  return { org: org.changed, user: user.changed };
+export interface RagRefreshResult {
+  org: number; user: number;
+  /** org が他者のリース保持中で更新できなかった (= 自分は writer でない)。 */
+  orgSkipped: boolean;
+}
+export type RagProgress = (p: { scope: 'org' | 'user'; done: number; total: number }) => void;
+
+/** writer だけが差分を取り込む (org=リース保持者 / user=本人)。
+ *  org→user の順で直列実行 (Voyage のレート制限と進捗表示を分かりやすく)。 */
+export async function ragRefresh(signal?: AbortSignal, onProgress?: RagProgress): Promise<RagRefreshResult> {
+  const org = await orgIndex().refresh(signal, (d, t) => onProgress?.({ scope: 'org', done: d, total: t }))
+    .catch((e) => { console.warn('[rag] org refresh:', (e as Error).message); return { changed: 0, skipped: 'error' as string | undefined }; });
+  const user = await userIndex().refresh(signal, (d, t) => onProgress?.({ scope: 'user', done: d, total: t }))
+    .catch((e) => { console.warn('[rag] user refresh:', (e as Error).message); return { changed: 0 }; });
+  return { org: org.changed, user: user.changed, orgSkipped: (org as { skipped?: string }).skipped === 'not-writer' };
 }
 
 /** 横断検索。topK / minScore は AI 設定から (引数で上書き可)。 */
