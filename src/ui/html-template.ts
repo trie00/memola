@@ -58,7 +58,7 @@ export function buildHtml(): string {
         '<div class="tdr-topbar">' +
           '<div class="tdr-brand"><span class="mark">𝕄</span><span class="name">横断チャット</span><span class="sub" id="memola-xchat-idx">全文書をまたいで AI に質問</span></div>' +
           '<div style="flex:1"></div>' +
-          '<button class="tdr-icon-btn" id="memola-xchat-rebuild" title="インデックスを再構築 (変更/新規文書をベクトル化)">' + ICONS.refresh + '</button>' +
+          '<button class="tdr-icon-btn tdr-btn-labeled" id="memola-xchat-rebuild" title="全文書をベクトル化してインデックスを更新する">' + ICONS.refresh + '<span>文書を読み込み</span></button>' +
           '<button class="tdr-icon-btn" id="memola-xchat-close" title="閉じる (Esc)">' + ICONS.exit + '</button>' +
         '</div>' +
         '<div class="tdr-thread" id="memola-xchat-thread"></div>' +

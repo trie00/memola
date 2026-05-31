@@ -3994,6 +3994,9 @@
 #memola-xchat .tdr-icon-btn{flex:0 0 auto;width:30px;height:30px;display:grid;place-items:center;border:1px solid var(--line);border-radius:var(--r-2);background:var(--paper-2);color:var(--ink-3);cursor:pointer}
 #memola-xchat .tdr-icon-btn:hover{color:var(--accent-strong);border-color:var(--accent-strong);background:var(--accent-soft)}
 #memola-xchat .tdr-icon-btn svg{width:15px;height:15px}
+#memola-xchat .tdr-btn-labeled{width:auto;gap:6px;padding:0 12px;display:inline-flex;align-items:center;font:inherit;font-size:var(--fs-sm);font-weight:600;white-space:nowrap;background:var(--accent);color:#fff;border-color:var(--accent)}
+#memola-xchat .tdr-btn-labeled:hover{background:var(--accent-strong);border-color:var(--accent-strong);color:#fff}
+#memola-xchat .tdr-btn-labeled.spin{opacity:.7}
 #memola-xchat #memola-xchat-rebuild.spin svg{animation:memola-xspin 1s linear infinite}
 @keyframes memola-xspin{to{transform:rotate(360deg)}}
 
