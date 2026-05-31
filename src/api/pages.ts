@@ -916,67 +916,46 @@ export async function apiDeletePage(id: string): Promise<string[]> {
   // out the deleted dbPageId and subsequent row creates write to a
   // non-existent SP list (404) or an orphaned memola-pages row.
   await maybeInvalidateDailyCache(ids);
-  // Delete order is chosen for "**worst-case integrity**": if a process
-  // dies mid-loop or a SP request fails, the remaining state should be
-  // user-INVISIBLE rather than half-broken-and-clickable.
-  //   1. Unpublish first (needs metadata that's still on the registration row)
-  //   2. Delete the memola-pages registration row → page disappears
-  //      from sidebar IMMEDIATELY. Any later step's failure leaves only
-  //      orphan data that the user can't see or interact with.
-  //   3. Cleanup orphan data (per-DB list rows + the SP list itself).
-  // Reverse of the older "rows → list → registration" order, which on
-  // partial failure left a clickable DB whose backing list was gone
-  // (404 toast on click).
-  for (const pid of ids) {
+  // v5: 削除は **葉→親** 順(ids は親→子なので reverse)。各行ごとに SP 削除の
+  // 成否を確認し、**成功したものだけ** pending-delete-purge + ローカル除去する。
+  // 失敗した行はツリーに残す(「消えたように見える」幻想を作らない)。親が消え子が
+  // 失敗で残っても orphan repair が root へ昇格させるので到達不能にはならない。
+  // 各行の手順: 1.Unpublish → 2.登録行 delete(成否判定) → 3.成功時のみ
+  //            コメント purge + 子DBリスト掃除。
+  const succeeded: string[] = [];
+  const failed: string[] = [];
+  for (const pid of [...ids].reverse()) {
     const meta = metaById(pid);
-    // Capture cleanup target BEFORE any mutation (we still need the list
-    // name to delete its rows/list AFTER the registration is gone).
     const dbListToCleanup = (meta?.type === 'database' && meta.list) ? meta.list : null;
-    // 1. Unpublish published mirror — must happen before registration
-    //    deletion because unpublishPage() reads publishedSitePageId off
-    //    the registration row.
     if (meta?.published) {
       const { unpublishPage } = await import('./publish');
       await unpublishPage(pid).catch(() => undefined);
     }
-    // 2. Hide the page from the user by removing its registration. Any
-    //    later step's failure leaves only invisible orphan data.
-    //    The list is resolved from the pageId — Phase 3 will route
-    //    user-scope pages to per-user lists.
-    // Use `pageIdToItemId` so composite ids ('memola-pages-user:42')
-    // resolve to the numeric SP itemId. `parseInt(pid, 10)` returned
-    // NaN for those, so the SP delete was silently skipped and the row
-    // re-surfaced on next reload.
+    // `pageIdToItemId` で composite id ('list:42') も numeric itemId に解決。
     const itemId = pageIdToItemId(pid);
-    if (itemId) {
-      await deleteListItem(listForPageId(pid), itemId).catch(() => undefined);
+    try {
+      // deleteListItem は 404(既に無い)を成功扱いで返す。非OK非404のみ throw。
+      if (itemId) await deleteListItem(listForPageId(pid), itemId);
+      succeeded.push(pid);
+    } catch {
+      failed.push(pid);
+      continue; // SP 削除失敗 → mark/remove せず、子DBリストも消さない(行は残る)
     }
-    // Purge this page's comments (reachable lists). Other users' private
-    // comments are GC'd lazily per-user (gcMyOrphanComments).
     void import('./comments').then((m) => m.purgeCommentsForPage(pageCommentKey(pid))).catch(() => undefined);
-    // 3. Best-effort cleanup of orphan storage. If we crash here, the
-    //    SP list and row bodies persist as unreachable garbage — they
-    //    no longer break the UI but they consume storage. A future
-    //    "garbage collection" pass could clean these up by scanning
-    //    for memola-db-* lists not referenced by any registration row.
     if (dbListToCleanup) {
       const { deleteAllRowEntriesForList } = await import('./page-row-entries');
       await deleteAllRowEntriesForList(dbListToCleanup).catch(() => undefined);
       await deleteList(dbListToCleanup).catch(() => undefined);
     }
   }
-  // Drop the purged ids from BOTH state mirrors. Previously only
-  // `S.meta.pages` was filtered; `S.pages` was left to whatever the
-  // caller did next. When the caller forgets (trash modal's empty path
-  // historically did), the tree shows a ghost page whose backing list
-  // has been deleted — clicking it tries to load a non-existent SP list,
-  // and the title→list mapping appears "shifted" against neighbouring
-  // entries. Filtering here keeps both arrays consistent always.
-  // v5: 各 id を pending-delete-purge に。以後の reconcile は SP がまだ古い行を
-  // 返しても抑制し、確定不在(連続2回)まで復活させない。
-  for (const pid of ids) markPendingDelete(pid, true);
-  removePages(ids);
-  return ids;
+  // 成功した id だけを pending-delete-purge に + ローカル除去。reconcile は SP が
+  // まだ古い行を返しても抑制し、確定不在(連続2回)まで復活させない。
+  for (const pid of succeeded) markPendingDelete(pid, true);
+  removePages(succeeded);
+  if (failed.length) {
+    throw new Error('削除に失敗しました (' + failed.length + ' 件)。一部のページは残っています。再度お試しください。');
+  }
+  return succeeded;
 }
 
 export async function apiMovePage(id: string, newParentId: string): Promise<void> {
