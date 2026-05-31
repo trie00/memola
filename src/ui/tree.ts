@@ -22,10 +22,13 @@ export function kidsOf(pid: string): Page[] {
   // Default natural order (creation = ascending Id) then apply any user-saved
   // drag-reorder for this parent. Drafts are hidden — they're accessed
   // exclusively via the 「📝 下書き」 sidebar entry.
+  const seen = new Set<string>();
   const natural = S.pages
     .filter((p) => !p.IsDraft && !metaById(p.Id)?.isTemplate
-      && (p.ParentId || '') === (pid || ''))
-    .sort((a, b) => (a.Id < b.Id ? -1 : 1));
+      && (p.ParentId || '') === (pid || '')
+      && p.Id !== (pid || '')                 // never render a page under itself
+      && (seen.has(p.Id) ? false : seen.add(p.Id)))  // dedupe by id (defensive)
+      .sort((a, b) => (a.Id < b.Id ? -1 : 1));
   return applySiblingOrder(pid || '', natural);
 }
 

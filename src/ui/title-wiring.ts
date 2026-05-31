@@ -9,7 +9,7 @@
 import { S } from '../state';
 import { g, getEd } from './dom';
 import { autoR, toast } from './ui-helpers';
-import { apiSetTitle } from '../api/pages';
+import { apiSetTitle, markStructuralOp } from '../api/pages';
 import { renderTree } from './tree';
 import { schedSave } from './save-control';
 import { setPageTitle } from '../lib/page-store';
@@ -33,6 +33,10 @@ export function attachTitleWiring(): void {
   g('dv-ttl').addEventListener('input', () => {
     const newTitle = (g('dv-ttl').textContent || '').trim() || '無題';
     if (S.currentId) {
+      // The DB title isn't tracked by the Saver, so the periodic refresh
+      // would otherwise clobber this un-persisted edit and revert the title.
+      // Holding the structural window makes the refresh skip while typing.
+      markStructuralOp(4000);
       setPageTitle(S.currentId, newTitle);
       renderTree();
     }

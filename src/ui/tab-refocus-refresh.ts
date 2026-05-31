@@ -21,7 +21,7 @@
 //     the user rapid-switches tabs.
 
 import { S } from '../state';
-import { apiGetPages } from '../api/pages';
+import { apiGetPages, isStructuralOpActive } from '../api/pages';
 import { saver } from '../lib/saver';
 import { prefSyncPollMs } from '../lib/prefs';
 
@@ -33,6 +33,9 @@ async function refresh(): Promise<void> {
   if (_inFlight) return;
   if (Date.now() - _lastRefreshTs < MIN_INTERVAL_MS) return;
   if (saver.isBusy()) return;
+  // Don't clobber the store mid create/move/scope-migration — that's how the
+  // periodic refresh surfaced transient duplicates / dropped the op.
+  if (isStructuralOpActive()) return;
   // Skip refresh entirely when the user has unsaved local edits.
   // apiGetPages replaces S.meta.pages with the SP snapshot, which clobbers
   // any in-memory title edits (= the live tree update from title-wiring).

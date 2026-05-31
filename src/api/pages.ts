@@ -434,25 +434,46 @@ const PAGE_META_SELECT =
   'Published,PublishedUrl,PublishedPageId,PublishedDirty,OriginDailyDate,' +
   'OriginPageId,Scope,AuthorId,TrashedBy,IsTemplate';
 
-/** Refresh `S.meta.pages` from the union of the org-shared list and
- *  the current user's per-user list. `S.pages` is a derived view that
- *  picks up the change automatically — callers don't need to capture
- *  the return value (it's `S.pages` for legacy callers that expect an
- *  array, but `await apiGetPages()` followed by reading `S.pages` is
- *  the new pattern). */
-export async function apiGetPages(): Promise<Page[]> {
-  // Resolve the SP user id FIRST so `getMyPagesList()` (consulted by
-  // ensurePagesList → provisionOnePagesList for the per-user list)
-  // returns the right name. Cache it for downstream helpers
-  // (`listForPageId`, `pagesListFor`) that route writes by scope.
+// ── Concurrency guards for the page store ────────────────
+//
+// `apiGetPages` does a FULL REPLACE of `S.meta.pages`. Run naively it
+// races (a) other apiGetPages calls (two clobbers interleaving) and (b)
+// local optimistic mutations + SharePoint read-after-write lag (a row
+// created/deleted ms ago may not yet be reflected). Both produced the
+// "page duplicates / self-nests / vanishes / title reverts" corruption.
+
+/** Pages created in-memory but maybe not yet returned by SP. Re-attached
+ *  on refresh so an optimistic create can't vanish before SP indexes it.
+ *  Dropped once SP confirms the id or the grace window lapses. */
+const _recentlyCreated = new Map<string, number>();
+const RECENT_CREATE_GRACE_MS = 60_000;
+export function markRecentlyCreated(pageId: string): void { _recentlyCreated.set(pageId, Date.now()); }
+
+/** While this window is active the periodic tree refresh skips its clobber,
+ *  so it can't interleave with an in-flight create / move / scope migration
+ *  (which would otherwise surface a transient duplicate or drop the op). */
+let _structuralUntil = 0;
+export function markStructuralOp(ms = 5000): void { _structuralUntil = Math.max(_structuralUntil, Date.now() + ms); }
+export function isStructuralOpActive(): boolean { return Date.now() < _structuralUntil; }
+
+/** Serialize apiGetPages: each call runs after the previous finishes (fresh
+ *  read each time), so two full-store clobbers never interleave and a
+ *  refresh queued after a structural op observes the post-op state. */
+let _getPagesChain: Promise<unknown> = Promise.resolve();
+
+/** Refresh `S.meta.pages` from the union of the org-shared list and the
+ *  current user's per-user list. Serialized + merges optimistic creates. */
+export function apiGetPages(): Promise<Page[]> {
+  const run = _getPagesChain.then(() => apiGetPagesImpl(), () => apiGetPagesImpl());
+  _getPagesChain = run.catch(() => undefined);
+  return run;
+}
+
+async function apiGetPagesImpl(): Promise<Page[]> {
+  // Resolve the SP user id FIRST so `getMyPagesList()` returns the right name.
   const myId = await getCurrentUserId().catch(() => 0);
   S.meta.myUserId = myId || 0;
   await ensurePagesList();
-  // Phase 3 union read: pages live in the org-shared list (Scope='org')
-  // OR in the current user's per-user list (Scope='user'). Read both
-  // in parallel and merge. When myUserId can't be resolved we fall
-  // back to a single-list read against the org list — the user sees a
-  // degraded view but doesn't lose data.
   const myList = getMyPagesList();
   const buckets: { list: string; rows: PageRow[] }[] = [
     { list: ORG_PAGES_LIST, rows: (await getListItems(ORG_PAGES_LIST, PAGE_META_SELECT)) as unknown as PageRow[] },
@@ -461,21 +482,40 @@ export async function apiGetPages(): Promise<Page[]> {
     const myRows = await getListItems(myList, PAGE_META_SELECT).catch(() => [] as unknown[]);
     buckets.push({ list: myList, rows: myRows as unknown as PageRow[] });
   }
-  // Codex review PS1: detect itemId collisions across lists and mint
-  // composite pageIds where needed.
+  // Capture the pre-rebuild source map so re-attached optimistic creates
+  // keep a correct list routing even though we clear+rebuild below.
+  const prevSource = new Map(SOURCE_LIST_BY_PAGEID);
   const { rowToPageId, sourceListByPageId } = buildSourceListMap(buckets);
   SOURCE_LIST_BY_PAGEID.clear();
   for (const [pid, list] of sourceListByPageId) SOURCE_LIST_BY_PAGEID.set(pid, list);
   const items = buckets.flatMap((b) => b.rows);
   const topLevel = filterVisiblePages(items, myId);
-  S.meta.pages = topLevel.map((row) => rowToMetaWithId(row, rowToPageId.get(row) ?? String(row.Id)));
-  // Lazy GC: prune the current user's private comments whose page no
-  // longer exists (e.g. another user purged a shared page). Best-effort,
-  // fire-and-forget — self-healing, mirrors gcDbColors.
+  const fresh = topLevel.map((row) => rowToMetaWithId(row, rowToPageId.get(row) ?? String(row.Id)));
+
+  // Merge (not clobber): re-attach in-memory pages that SP hasn't returned
+  // yet but were created locally within the grace window. Pages that
+  // disappeared for any other reason (e.g. another user deleted them) are
+  // dropped, as before.
+  const freshIds = new Set(fresh.map((m) => m.id));
+  const now = Date.now();
+  const merged = fresh.slice();
+  for (const m of S.meta.pages) {
+    if (freshIds.has(m.id)) continue;
+    const at = _recentlyCreated.get(m.id);
+    if (at !== undefined && (now - at) < RECENT_CREATE_GRACE_MS) {
+      merged.push(m);
+      const srcList = prevSource.get(m.id) || pagesListFor(m.scope === 'org' ? 'org' : 'user');
+      SOURCE_LIST_BY_PAGEID.set(m.id, srcList);   // restore routing for the optimistic page
+    }
+  }
+  for (const [id, at] of _recentlyCreated) {
+    if (freshIds.has(id) || (now - at) >= RECENT_CREATE_GRACE_MS) _recentlyCreated.delete(id);
+  }
+  S.meta.pages = merged;
+
+  // Lazy GC of the current user's orphaned private comments (best-effort).
   void import('./comments').then((m) =>
     m.gcMyOrphanComments(new Set(S.meta.pages.map((p) => pageCommentKey(p.id))))).catch(() => undefined);
-  // S.pages getter recomputes from meta.pages — return the current
-  // value for legacy callers (the assignment is a no-op via the setter).
   return S.pages;
 }
 
@@ -656,6 +696,8 @@ export async function apiCreatePage(
   // Codex review PS1: register the newly-created row's source list so
   // listForPageId routes correctly even before the next apiGetPages refresh.
   SOURCE_LIST_BY_PAGEID.set(id, list);
+  markRecentlyCreated(id);
+  markStructuralOp();
   S.meta.pages.push({
     id, title, parent: parentId || '',
     type: 'page', icon: '', scope, authorId: S.meta.myUserId,
@@ -688,6 +730,8 @@ export async function apiCreateDbPageRow(
   });
   const id = String(created.Id);
   SOURCE_LIST_BY_PAGEID.set(id, list);
+  markRecentlyCreated(id);
+  markStructuralOp();
   S.meta.pages.push({
     id, title, parent: parentId || '',
     type: 'database', list: listTitle, icon: '', scope, authorId: S.meta.myUserId,
@@ -802,6 +846,7 @@ async function maybeInvalidateDailyCache(ids: string[]): Promise<void> {
  *  Site Page is removed first so we don't leave orphaned `.aspx` files
  *  accessible in SharePoint after the metadata row is gone. */
 export async function apiDeletePage(id: string): Promise<string[]> {
+  markStructuralOp();
   // Defence-in-depth: the daily DB cannot be hard-deleted either. (Soft
   // delete via apiTrashPage is also blocked, so this is unreachable in
   // normal flow — but a future caller using apiDeletePage directly
@@ -878,6 +923,7 @@ export async function apiDeletePage(id: string): Promise<string[]> {
 
 export async function apiMovePage(id: string, newParentId: string): Promise<void> {
   if (id === newParentId) return;
+  markStructuralOp();
   // Prevent cycles
   let p = newParentId;
   while (p) {
@@ -912,6 +958,7 @@ export function scopeMismatchOnMove(
 }
 
 export async function apiTrashPage(id: string): Promise<void> {
+  markStructuralOp();
   // The daily DB is treated as undeletable infrastructure — its presence
   // is what makes 「今日のノート」 work without re-bootstrap. Throwing
   // here is the API-level guard; UI paths block the action with a toast
@@ -952,6 +999,7 @@ export async function apiRestorePage(id: string): Promise<void> {
 }
 
 export async function apiPurgePage(id: string): Promise<string[]> {
+  markStructuralOp();
   return apiDeletePage(id);
 }
 
@@ -997,6 +1045,10 @@ export async function apiSetScope(
   scope: PageScope,
   cascadeChildren = true,
 ): Promise<ScopeChangeResult> {
+  // Cross-list migration creates+deletes rows over several SP round-trips —
+  // hold the structural window generously so the periodic refresh can't
+  // observe the half-migrated (both-rows-present) state as a duplicate.
+  markStructuralOp(15000);
   if (scope === 'org') {
     const m = metaById(id);
     if (m?.type === 'database' && m.list === 'memola-daily') {
@@ -1057,6 +1109,7 @@ export async function apiSetScope(
     const newId = String(created.Id);
     idMap[pid] = newId;
     SOURCE_LIST_BY_PAGEID.set(newId, destList);
+    markRecentlyCreated(newId);
     await deleteListItem(srcList, itemId).catch(() => undefined);
     SOURCE_LIST_BY_PAGEID.delete(pid);
   }
@@ -1190,6 +1243,8 @@ export async function apiDuplicateAsDraft(originId: string): Promise<Page> {
   });
   const newId = String(created.Id);
   SOURCE_LIST_BY_PAGEID.set(newId, inheritList);
+  markRecentlyCreated(newId);
+  markStructuralOp();
   S.meta.pages.push({
     id: newId,
     title: draftTitle,
@@ -1244,6 +1299,8 @@ export async function apiRegisterPageAsTemplate(pageId: string): Promise<string>
   });
   const newId = String(created.Id);
   SOURCE_LIST_BY_PAGEID.set(newId, list);
+  markRecentlyCreated(newId);
+  markStructuralOp();
   S.meta.pages.push({
     id: newId, title, parent: '', type: 'page',
     icon: origin.icon || '', scope, isTemplate: true, authorId: S.meta.myUserId,
@@ -1277,6 +1334,8 @@ export async function apiCreatePageFromTemplate(templateId: string): Promise<Pag
   });
   const newId = String(created.Id);
   SOURCE_LIST_BY_PAGEID.set(newId, list);
+  markRecentlyCreated(newId);
+  markStructuralOp();
   S.meta.pages.push({
     id: newId, title, parent: '', type: 'page', icon: tpl.icon || '', scope, authorId: S.meta.myUserId,
   });
@@ -1309,6 +1368,8 @@ export async function apiDuplicatePage(id: string): Promise<Page> {
   });
   const newId = String(created.Id);
   SOURCE_LIST_BY_PAGEID.set(newId, list);
+  markRecentlyCreated(newId);
+  markStructuralOp();
   S.meta.pages.push({
     id: newId, title, parent: origin.parent || '', type: 'page',
     icon: origin.icon || '', scope, authorId: S.meta.myUserId,
