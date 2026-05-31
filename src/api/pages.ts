@@ -1045,24 +1045,32 @@ export async function apiSetScope(
     await deleteListItem(srcList, itemId).catch(() => undefined);
     SOURCE_LIST_BY_PAGEID.delete(pid);
   }
-  // Rebuild S.meta.pages: drop the old ids, push fresh metas under the new
-  // ids with remapped parents + the new scope.
-  const oldMetas = new Map<string, PageMeta | null>(ids.map((pid) => [pid, metaById(pid)]));
-  removePages(ids);
-  for (const pid of ids) {
-    const om = oldMetas.get(pid);
-    const newId = idMap[pid];
-    if (!om || !newId) continue;
-    const newParent = migrating.has(om.parent) ? (idMap[om.parent] ?? '') : om.parent;
-    S.meta.pages.push({ ...om, id: newId, parent: newParent, scope });
+  // Authoritative rebuild from SP. We deliberately re-read both lists
+  // instead of optimistically pushing bare-id metas, because the new SP
+  // item ids are minted per-list from 1 and therefore almost always
+  // COLLIDE with an item of the same numeric id in the *other* list — so
+  // `apiGetPages`/`buildSourceListMap` will key the migrated page under a
+  // COMPOSITE id (`memola-pages:N`), not the bare `N`. If we returned the
+  // bare id, the caller's `S.currentId` would point at an id that the very
+  // next `apiGetPages` (e.g. the periodic tree-sync) replaces with the
+  // composite form → the open page "loses" its meta (scope tag vanishes,
+  // view goes stale). Rebuilding here and resolving via `pageIdForListItem`
+  // returns the SAME canonical id that every later refresh will compute, so
+  // navigation stays valid.
+  await apiGetPages();
+  // Map every old subtree id → its CANONICAL new id (composite when the
+  // numeric id collided across lists, else bare).
+  const canonicalIdMap: Record<string, string> = {};
+  for (const [oldPid, bareNew] of Object.entries(idMap)) {
+    canonicalIdMap[oldPid] = pageIdForListItem(destList, pageIdToItemId(bareNew));
   }
   invalidateBacklinkCache();
   // Remap comment anchors to the reminted page ids (reachable lists only;
   // other users' private comments orphan and are GC'd lazily). Comment
   // SCOPE is intentionally NOT changed here — private memos stay private.
-  void import('./comments').then((m) => m.remapCommentsPageId(new Map(Object.entries(idMap))))
+  void import('./comments').then((m) => m.remapCommentsPageId(new Map(Object.entries(canonicalIdMap))))
     .catch(() => undefined);
-  return { rootId: idMap[id] ?? id, idMap };
+  return { rootId: canonicalIdMap[id] ?? (idMap[id] ?? id), idMap: canonicalIdMap };
 }
 
 /** Titles of PRIVATE (non-org) pages that `pageId`'s body links to,
