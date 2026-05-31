@@ -128,11 +128,15 @@ function primeIndex(force = false): Promise<void> {
         const who = p.scope === 'org' ? '組織' : 'プライベート';
         setIdx(`${who}をベクトル化中… ${p.done}/${p.total} チャンク`);
       });
+      console.log('[xchat] refresh result', r, ragStats());
       const added = r.org + r.user;
-      // 完了後は常に「現在の総件数」を出す。今回追加分があれば前置き。
+      // 失敗・空を握りつぶさず明示する。
+      if (r.errors.length) { setIdx('エラー: ' + r.errors.join(' / ')); return; }
+      if (r.docsSeen === 0) { setIdx('対象文書が0件 — ページが見つかりません (リスト名/権限を確認)'); return; }
       let prefix = '';
       if (added > 0) prefix = `今回 +${added}チャンク ・ `;
       else if (r.orgSkipped) prefix = '組織は別利用者が更新担当 ・ ';
+      else prefix = '変更なし ・ ';
       showStats(prefix);
     } catch (e) {
       setIdx('索引エラー: ' + (e as Error).message);

@@ -37,17 +37,27 @@ export interface RagRefreshResult {
   org: number; user: number;
   /** org が他者のリース保持中で更新できなかった (= 自分は writer でない)。 */
   orgSkipped: boolean;
+  /** 読み込んだソース文書数 (org + user)。0 ならそもそも文書が拾えていない。 */
+  docsSeen: number;
+  /** 失敗した場合のエラーメッセージ (握りつぶさず UI へ surface する)。 */
+  errors: string[];
 }
 export type RagProgress = (p: { scope: 'org' | 'user'; done: number; total: number }) => void;
 
 /** writer だけが差分を取り込む (org=リース保持者 / user=本人)。
  *  org→user の順で直列実行 (Voyage のレート制限と進捗表示を分かりやすく)。 */
 export async function ragRefresh(signal?: AbortSignal, onProgress?: RagProgress): Promise<RagRefreshResult> {
+  const errors: string[] = [];
   const org = await orgIndex().refresh(signal, (d, t) => onProgress?.({ scope: 'org', done: d, total: t }))
-    .catch((e) => { console.warn('[rag] org refresh:', (e as Error).message); return { changed: 0, skipped: 'error' as string | undefined }; });
+    .catch((e) => { const m = (e as Error).message; console.warn('[rag] org refresh:', m); errors.push('組織: ' + m); return { changed: 0, skipped: undefined as string | undefined, docs: 0 }; });
   const user = await userIndex().refresh(signal, (d, t) => onProgress?.({ scope: 'user', done: d, total: t }))
-    .catch((e) => { console.warn('[rag] user refresh:', (e as Error).message); return { changed: 0 }; });
-  return { org: org.changed, user: user.changed, orgSkipped: (org as { skipped?: string }).skipped === 'not-writer' };
+    .catch((e) => { const m = (e as Error).message; console.warn('[rag] user refresh:', m); errors.push('個人: ' + m); return { changed: 0, docs: 0 }; });
+  return {
+    org: org.changed, user: user.changed,
+    orgSkipped: (org as { skipped?: string }).skipped === 'not-writer',
+    docsSeen: ((org as { docs?: number }).docs ?? 0) + ((user as { docs?: number }).docs ?? 0),
+    errors,
+  };
 }
 
 /** 横断検索。topK / minScore は AI 設定から (引数で上書き可)。 */

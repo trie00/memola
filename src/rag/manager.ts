@@ -86,20 +86,20 @@ export class ScopeIndex {
   }
 
   /** writer だけが差分を取り込む。返り値で結果を報告。 */
-  async refresh(signal?: AbortSignal, onProgress?: SweepProgress): Promise<{ changed: number; skipped?: string }> {
+  async refresh(signal?: AbortSignal, onProgress?: SweepProgress): Promise<{ changed: number; skipped?: string; docs: number }> {
     await this.init();
+    const docs = await loadScopeDocs(this.listTitle, this.scope);
     // org は writer のときだけ埋め込む。先にリースを確認し、非writer なら
     // 埋め込み API を一切呼ばない (computeDelta すら走らせない)。
     if (this.store) {
       const ok = await getLease().ensureWriter();
-      if (!ok) return { changed: 0, skipped: 'not-writer' };
+      if (!ok) return { changed: 0, skipped: 'not-writer', docs: docs.length };
     }
-    const docs = await loadScopeDocs(this.listTitle, this.scope);
     const recs = await computeDelta(this.db, docs, signal, onProgress);
-    if (recs.length === 0) return { changed: 0 };
+    if (recs.length === 0) return { changed: 0, docs: docs.length };
     if (this.store) await this.persistRemote(recs);
     else await this.persistLocal(recs);
-    return { changed: recs.length };
+    return { changed: recs.length, docs: docs.length };
   }
 
   private async persistRemote(recs: DocRecord[]): Promise<void> {
