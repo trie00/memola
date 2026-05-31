@@ -23,7 +23,10 @@ const EMBED_BATCH = 64;
 /** 指定リストから「埋め込み対象の文書」を読み込む。
  *  除外: DBや行メタ (PageType='row'/'database')、ゴミ箱、テンプレ、下書き複製。 */
 export async function loadScopeDocs(listTitle: string, scope: 'org' | 'user'): Promise<DocInput[]> {
-  const sel = '$select=Id,Title,Body_blocks,PageType,Trashed,IsTemplate,OriginPageId&$top=5000';
+  // getListItems(list, select) の select は「列名だけ」を渡す($select= や $top は
+  // getListItems が内部で付与する)。クエリ文字列を渡すと $select が壊れて
+  // SP が 400 → 「データ取得失敗」になる。
+  const sel = 'Id,Title,Body_blocks,PageType,Trashed,IsTemplate,OriginPageId';
   // 失敗は握りつぶさない(原因が見えなくなる)。呼び出し側(ragRefresh)が errors に拾う。
   const items = await getListItems(listTitle, sel);
   const out: DocInput[] = [];
