@@ -453,11 +453,19 @@ async function doEditSave(id: number): Promise<void> {
 async function doDelete(id: number): Promise<void> {
   const c = findComment(id);
   if (!c) return;
-  if (!confirm('このコメントを削除しますか?')) return;
+  // If this is a thread root, deleting it removes the whole thread
+  // (parent + replies) — no tombstone.
   const thread = _threads.find((t) => t.root.Id === id);
-  const hasReplies = !!thread && thread.replies.length > 0;
-  try { await apiDeleteComment(c, hasReplies); await refresh(); }
-  catch (e) { toast('削除失敗: ' + (e as Error).message, 'err'); }
+  const replies = thread?.replies ?? [];
+  const msg = replies.length
+    ? 'このコメントと返信 ' + replies.length + ' 件を削除しますか?'
+    : 'このコメントを削除しますか?';
+  if (!confirm(msg)) return;
+  try {
+    for (const r of replies) await apiDeleteComment(r);
+    await apiDeleteComment(c);
+    await refresh();
+  } catch (e) { toast('削除失敗: ' + (e as Error).message, 'err'); }
 }
 
 // ── Floating sub-menus (reaction palette / more) ─────────

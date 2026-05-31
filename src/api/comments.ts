@@ -264,15 +264,10 @@ export async function apiEditComment(c: CommentRow): Promise<void> {
   invalidateComments(c.PageId);
 }
 
-/** Delete a comment. When it has replies, tombstone it (keep the row,
- *  blank the body) so the thread structure survives; otherwise hard-delete. */
-export async function apiDeleteComment(c: CommentRow, hasReplies: boolean): Promise<void> {
-  const list = listForScope(c.Scope);
-  if (hasReplies) {
-    await updateListItem(list, c.Id, { Deleted: 1, Body: '' });
-  } else {
-    await deleteListItem(list, c.Id);
-  }
+/** Hard-delete a comment row. (Deleting a thread root cascades to its
+ *  replies in the caller — see comments-ui doDelete.) */
+export async function apiDeleteComment(c: CommentRow): Promise<void> {
+  await deleteListItem(listForScope(c.Scope), c.Id);
   invalidateComments(c.PageId);
 }
 
