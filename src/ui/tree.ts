@@ -22,14 +22,29 @@ export function kidsOf(pid: string): Page[] {
   // Default natural order (creation = ascending Id) then apply any user-saved
   // drag-reorder for this parent. Drafts are hidden — they're accessed
   // exclusively via the 「📝 下書き」 sidebar entry.
+  const parentKey = pid || '';
+  const pool = S.pages.filter((p) => !p.IsDraft && !metaById(p.Id)?.isTemplate && p.Id !== parentKey);
   const seen = new Set<string>();
-  const natural = S.pages
-    .filter((p) => !p.IsDraft && !metaById(p.Id)?.isTemplate
-      && (p.ParentId || '') === (pid || '')
-      && p.Id !== (pid || '')                 // never render a page under itself
-      && (seen.has(p.Id) ? false : seen.add(p.Id)))  // dedupe by id (defensive)
+  let natural: Page[];
+  if (parentKey === '') {
+    // v5 orphan repair (display-only): a page whose ParentId points to a page
+    // that no longer exists in the live tree (e.g. another user deleted/trashed
+    // the parent) would otherwise vanish — present in S.pages but rendered
+    // nowhere = unreachable. Promote such orphans to root so the data stays
+    // reachable. Does NOT mutate the stored parent (no SP write).
+    const liveIds = new Set(pool.map((p) => p.Id));
+    natural = pool.filter((p) => {
+      const par = p.ParentId || '';
+      const isRoot = par === '' || !liveIds.has(par);  // true root OR orphan → root
+      return isRoot && (seen.has(p.Id) ? false : seen.add(p.Id));
+    }).sort((a, b) => (a.Id < b.Id ? -1 : 1));
+  } else {
+    natural = pool
+      .filter((p) => (p.ParentId || '') === parentKey
+        && (seen.has(p.Id) ? false : seen.add(p.Id)))
       .sort((a, b) => (a.Id < b.Id ? -1 : 1));
-  return applySiblingOrder(pid || '', natural);
+  }
+  return applySiblingOrder(parentKey, natural);
 }
 
 /** Top-level pages of a given scope. Pages without an explicit scope are
@@ -54,6 +69,17 @@ function renderScopeSection(container: HTMLElement, scope: PageScope): void {
   const roots = rootKidsOfScope(scope);
   const expanded = expandedScopeSections.has(scope);
   const shown = expanded ? roots : roots.slice(0, SCOPE_COLLAPSE_LIMIT);
+  // 現在開いているページの root 系列が collapse の裏に隠れないよう force-visible。
+  if (!expanded && S.currentId) {
+    let rid = S.currentId; let guard = 0;
+    while (guard++ < 200) {
+      const par = metaById(rid)?.parent || '';
+      if (!par || !S.pages.some((p) => p.Id === par)) break; // root or orphan-root
+      rid = par;
+    }
+    const rootPage = roots.find((r) => r.Id === rid);
+    if (rootPage && !shown.some((s) => s.Id === rid)) shown.push(rootPage);
+  }
   shown.forEach((p) => { container.appendChild(mkNode(p, 0)); });
   if (roots.length > SCOPE_COLLAPSE_LIMIT) {
     const more = document.createElement('div');
