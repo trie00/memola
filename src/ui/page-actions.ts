@@ -28,7 +28,9 @@ export async function duplicateCurrent(): Promise<void> {
     setLoad(true, '複製中...');
     const body = await apiLoadRawBody(page.Id);
     const newTitle = (page.Title || '無題') + ' (コピー)';
-    const newPage = await apiCreatePage(newTitle, page.ParentId);
+    // A copy inherits the original's scope (a copy of an org page stays org).
+    const scope = metaById(page.Id)?.scope || 'user';
+    const newPage = await apiCreatePage(newTitle, page.ParentId, scope);
     // Write the duplicated body through the unified memola-pages writer
     // so the watermark stays in sync, matching every other body-modifying
     // path.

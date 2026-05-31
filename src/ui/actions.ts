@@ -25,7 +25,10 @@ import { addPage, removePages, metaById} from '../lib/page-store';
 export async function doNew(parentId: string): Promise<void> {
   try {
     setLoad(true, 'ページを作成中...');
-    const p = await apiCreatePage('無題', parentId || '');
+    // A child page inherits its parent's scope — a child of an org page is
+    // org, a child of a private page is private. (Top-level = private.)
+    const scope = parentId ? (metaById(parentId)?.scope || 'user') : 'user';
+    const p = await apiCreatePage('無題', parentId || '', scope);
     addPage(p);
     if (parentId) S.expanded.add(parentId);
     renderTree();
