@@ -53,7 +53,17 @@ export interface CommentRow {
   AuthorName?: string;
   Edited?: number;          // 1 = edited after creation
   Deleted?: number;         // 1 = tombstone (kept because it has replies)
+  Reactions?: string;       // JSON: { [emoji]: number[] of SP user ids }
   Created?: string;         // SP ISO timestamp
+}
+
+/** Parse a comment's Reactions JSON into a map of emoji → user ids. */
+export function parseReactions(c: CommentRow): Record<string, number[]> {
+  if (!c.Reactions) return {};
+  try {
+    const o = JSON.parse(c.Reactions) as Record<string, number[]>;
+    return o && typeof o === 'object' ? o : {};
+  } catch { return {}; }
 }
 
 export interface CommentThread {
@@ -77,10 +87,11 @@ const COMMENT_FIELDS: FieldSpec[] = [
   { name: 'AuthorName', kind: 2 },
   { name: 'Edited', kind: 9 },
   { name: 'Deleted', kind: 9 },
+  { name: 'Reactions', kind: 3 },
 ];
 
 const SELECT = 'Id,PageId,BlockId,ThreadId,Body,Resolved,ResolvedBy,ResolvedAt,' +
-  'AnchorText,Scope,AuthorId,AuthorName,Edited,Deleted,Created';
+  'AnchorText,Scope,AuthorId,AuthorName,Edited,Deleted,Reactions,Created';
 
 // ── Provisioning ─────────────────────────────────────────
 
@@ -166,6 +177,7 @@ function mapRow(r: Record<string, unknown>): CommentRow {
     AuthorName: r.AuthorName ? String(r.AuthorName) : undefined,
     Edited: r.Edited ? Number(r.Edited) : 0,
     Deleted: r.Deleted ? Number(r.Deleted) : 0,
+    Reactions: r.Reactions ? String(r.Reactions) : undefined,
     Created: r.Created ? String(r.Created) : undefined,
   };
 }
@@ -274,6 +286,21 @@ export async function apiResolveThread(root: CommentRow, resolved: boolean): Pro
     ResolvedAt: resolved ? Date.now() : 0,
   });
   invalidateComments(root.PageId);
+}
+
+/** Toggle the current user's `emoji` reaction on a comment. Stored as a
+ *  JSON map on the row (emoji → user ids). Concurrent reactions are
+ *  last-write-wins on the JSON field (accepted; rare). */
+export async function apiToggleReaction(c: CommentRow, emoji: string): Promise<void> {
+  const { id } = await currentAuthor();
+  if (!id) return;
+  const map = parseReactions(c);
+  const users = map[emoji] || [];
+  const idx = users.indexOf(id);
+  if (idx >= 0) users.splice(idx, 1); else users.push(id);
+  if (users.length) map[emoji] = users; else delete map[emoji];
+  await updateListItem(listForScope(c.Scope), c.Id, { Reactions: JSON.stringify(map) });
+  invalidateComments(c.PageId);
 }
 
 // ── Lifecycle hooks (delete / scope-change / GC) ─────────

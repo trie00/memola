@@ -942,62 +942,144 @@
   color: var(--ink-3, #9b9a97); font-weight: 500;
 }
 
-/* ── Comments: gutter markers + thread popover ─────────── */
+/* ── Comments: gutter markers + right-side pane (Notion風) ── */
 #memola-overlay .memola-cmt-marker {
   position: absolute; z-index: 11; cursor: pointer;
   font-size: 13px; line-height: 1; padding: 1px 3px; border-radius: var(--r-2, 4px);
-  opacity: 0.55; transition: opacity var(--tr-fast, .12s);
+  opacity: 0.5; transition: opacity var(--tr-fast, .12s);
   user-select: none;
 }
 #memola-overlay .memola-cmt-marker:hover { opacity: 1; background: var(--paper-2, rgba(55,53,47,.08)); }
-#memola-overlay .memola-cmt-pop {
-  position: absolute; z-index: 2147483647;
-  width: 320px; max-height: 72vh; overflow-y: auto;
-  background: var(--paper, #fff);
-  border: 1px solid var(--line, rgba(55,53,47,.15));
-  border-radius: var(--r-3, 8px); box-shadow: 0 8px 28px rgba(0,0,0,.20);
-  font-size: var(--fs-sm, 13px); color: var(--ink, #37352f);
+
+/* Right pane (sibling of outline / props in #memola-content-row) */
+#memola-overlay #memola-comments-pane {
+  width: 320px; flex-shrink: 0; display: none; flex-direction: column;
+  background: var(--paper); border-left: 1px solid var(--paper-3);
+  font-family: var(--font-ui); overflow: hidden;
 }
-#memola-overlay .memola-cmt-pop-hd {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 12px; font-weight: 600; border-bottom: 1px solid var(--line, rgba(55,53,47,.1));
+#memola-overlay #memola-comments-pane.on { display: flex; }
+#memola-overlay #memola-comments-hd {
+  display: flex; align-items: center; padding: 14px 16px 10px;
+  font-size: var(--fs-sm); font-weight: 600; color: var(--ink);
 }
-#memola-overlay .memola-cmt-x { background: none; border: none; cursor: pointer; font-size: 18px; color: var(--ink-3, #9b9a97); line-height: 1; }
-#memola-overlay .memola-cmt-threads { padding: 4px 12px; }
-#memola-overlay .memola-cmt-empty { padding: 12px 0; color: var(--ink-3, #9b9a97); }
-#memola-overlay .memola-cmt-thread { padding: 8px 0; border-bottom: 1px solid var(--line, rgba(55,53,47,.06)); }
-#memola-overlay .memola-cmt-thread.resolved { opacity: 0.6; }
-#memola-overlay .memola-cmt-resolved-tag { font-size: var(--fs-xs, 11px); color: #2f8a5b; margin-bottom: 4px; }
-#memola-overlay .memola-cmt-item { padding: 4px 0; }
-#memola-overlay .memola-cmt-item.deleted { color: var(--ink-3, #9b9a97); font-style: italic; }
-#memola-overlay .memola-cmt-meta { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs, 11px); color: var(--ink-3, #9b9a97); }
-#memola-overlay .memola-cmt-author { font-weight: 600; color: var(--ink, #37352f); }
-#memola-overlay .memola-cmt-badge { padding: 0 5px; border-radius: 8px; font-size: 10px; }
-#memola-overlay .memola-cmt-badge.priv { background: #f4dfeb; color: #8a3b6b; }
-#memola-overlay .memola-cmt-badge.org { background: #ddebf1; color: #2b6285; }
-#memola-overlay .memola-cmt-edited { font-style: italic; }
-#memola-overlay .memola-cmt-body { margin: 2px 0; white-space: pre-wrap; word-break: break-word; }
-#memola-overlay .memola-cmt-body.muted { color: var(--ink-3, #9b9a97); }
-#memola-overlay .memola-cmt-rowacts { display: flex; gap: 10px; }
-#memola-overlay .memola-cmt-link { background: none; border: none; padding: 0; cursor: pointer; color: var(--ink-3, #9b9a97); font-size: var(--fs-xs, 11px); }
-#memola-overlay .memola-cmt-link:hover { color: var(--accent, #2f6f5e); text-decoration: underline; }
-#memola-overlay .memola-cmt-threadfoot { display: flex; gap: 6px; margin-top: 6px; }
-#memola-overlay .memola-cmt-reply-inp { flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid var(--line, rgba(55,53,47,.15)); border-radius: var(--r-2, 4px); font-family: inherit; font-size: var(--fs-sm, 13px); }
-#memola-overlay .memola-cmt-edit-ta,
-#memola-overlay .memola-cmt-compose textarea {
-  width: 100%; box-sizing: border-box; resize: vertical; min-height: 54px;
-  padding: 6px 8px; border: 1px solid var(--line, rgba(55,53,47,.15));
-  border-radius: var(--r-2, 4px); font-family: inherit; font-size: var(--fs-sm, 13px);
+#memola-overlay #memola-comments-hd > span:first-child { flex: 1; }
+#memola-overlay #memola-comments-list {
+  flex: 1; overflow-y: auto; padding: 0 12px 8px;
 }
-#memola-overlay .memola-cmt-compose { padding: 10px 12px; border-top: 1px solid var(--line, rgba(55,53,47,.1)); }
-#memola-overlay .memola-cmt-actions { display: flex; gap: 6px; margin-top: 4px; }
-#memola-overlay .memola-cmt-scope { display: flex; gap: 6px; margin-bottom: 6px; }
+#memola-overlay .memola-cmt-empty { padding: 16px 4px; color: var(--ink-3); font-size: var(--fs-sm); line-height: 1.6; }
+
+/* Thread card */
+#memola-overlay .memola-cmt-thread {
+  padding: 10px; margin: 8px 0; border-radius: var(--r-3, 8px);
+  background: var(--paper-2, #f7f7f5); border: 1px solid var(--paper-3, transparent);
+}
+#memola-overlay .memola-cmt-thread.resolved { opacity: 0.55; }
+#memola-overlay .memola-cmt-resolved-tag { font-size: var(--fs-xs); color: #2f8a5b; margin-bottom: 6px; }
+#memola-overlay .memola-cmt-resolved-sep { font-size: var(--fs-xs); color: var(--ink-3); margin: 14px 4px 4px; text-transform: none; }
+#memola-overlay .memola-cmt-anchor {
+  font-size: var(--fs-xs); color: var(--ink-3); margin-bottom: 6px;
+  padding-left: 8px; border-left: 2px solid var(--paper-4, #d8d8d4);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#memola-overlay .memola-cmt-replies {
+  margin-left: 11px; padding-left: 12px; border-left: 1px solid var(--paper-4, #e3e3e0); margin-top: 2px;
+}
+
+/* One comment row */
+#memola-overlay .memola-cmt-c { position: relative; display: flex; gap: 8px; padding: 4px 0; }
+#memola-overlay .memola-cmt-c.deleted { color: var(--ink-3); font-style: italic; padding-left: 32px; }
+#memola-overlay .memola-cmt-avatar {
+  flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
+  color: #fff; font-size: 11px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; user-select: none;
+}
+#memola-overlay .memola-cmt-main { flex: 1; min-width: 0; }
+#memola-overlay .memola-cmt-line1 { display: flex; align-items: baseline; gap: 6px; }
+#memola-overlay .memola-cmt-author { font-weight: 600; font-size: var(--fs-sm); color: var(--ink); }
+#memola-overlay .memola-cmt-time { font-size: var(--fs-xs); color: var(--ink-3); }
+#memola-overlay .memola-cmt-edited { font-size: 10px; color: var(--ink-3); }
+#memola-overlay .memola-cmt-badge { font-size: 10px; }
+#memola-overlay .memola-cmt-body { font-size: var(--fs-sm); line-height: 1.5; margin-top: 1px; white-space: pre-wrap; word-break: break-word; color: var(--ink); }
+#memola-overlay .memola-cmt-body.muted { color: var(--ink-3); }
+
+/* Reactions */
+#memola-overlay .memola-cmt-reacts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+#memola-overlay .memola-cmt-react-chip {
+  border: 1px solid var(--paper-4, #e0e0dc); background: var(--paper, #fff);
+  border-radius: 11px; padding: 1px 7px; font-size: 11px; cursor: pointer; line-height: 1.5;
+}
+#memola-overlay .memola-cmt-react-chip.mine { background: #e3eefb; border-color: #8db4e6; }
+
+/* Hover action bar (top-right of a comment) */
+#memola-overlay .memola-cmt-hover {
+  position: absolute; top: -4px; right: 0; display: flex; gap: 1px;
+  background: var(--paper, #fff); border: 1px solid var(--paper-3, rgba(55,53,47,.12));
+  border-radius: var(--r-2, 6px); box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  padding: 1px; opacity: 0; pointer-events: none; transition: opacity var(--tr-fast, .12s);
+}
+#memola-overlay .memola-cmt-c:hover > .memola-cmt-hover { opacity: 1; pointer-events: auto; }
+#memola-overlay .memola-cmt-hbtn {
+  background: none; border: none; cursor: pointer; padding: 3px 5px; border-radius: 4px;
+  font-size: 12px; line-height: 1; color: var(--ink-2, #5f5e5b);
+}
+#memola-overlay .memola-cmt-hbtn sup { font-size: 8px; }
+#memola-overlay .memola-cmt-hbtn:hover { background: var(--paper-2, rgba(55,53,47,.08)); }
+
+/* Reply bar + edit */
+#memola-overlay .memola-cmt-replybar { display: flex; gap: 6px; margin-top: 8px; }
+#memola-overlay .memola-cmt-reply-inp {
+  flex: 1; min-width: 0; padding: 5px 9px; border: 1px solid var(--paper-4, rgba(55,53,47,.15));
+  border-radius: 14px; font-family: inherit; font-size: var(--fs-sm); background: var(--paper, #fff);
+}
+#memola-overlay .memola-cmt-reply-send {
+  flex-shrink: 0; width: 28px; border: none; border-radius: 50%; cursor: pointer;
+  background: var(--accent, #2f6f5e); color: #fff; font-size: 13px;
+}
+#memola-overlay .memola-cmt-edit-ta {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 48px;
+  padding: 6px 8px; border: 1px solid var(--paper-4, rgba(55,53,47,.15));
+  border-radius: var(--r-2, 4px); font-family: inherit; font-size: var(--fs-sm);
+}
+#memola-overlay .memola-cmt-editacts { display: flex; gap: 6px; margin-top: 4px; }
+
+/* Composer */
+#memola-overlay #memola-comments-composer { padding: 10px 12px; border-top: 1px solid var(--paper-3); }
+#memola-overlay #memola-comments-target {
+  display: flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--ink-3);
+  margin-bottom: 5px; max-width: 100%;
+}
+#memola-overlay #memola-comments-target-lbl { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#memola-overlay #memola-comments-target-x { background: none; border: none; cursor: pointer; color: var(--ink-3); }
+#memola-overlay #memola-comments-ta {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 48px;
+  padding: 7px 9px; border: 1px solid var(--paper-4, rgba(55,53,47,.15));
+  border-radius: var(--r-2, 6px); font-family: inherit; font-size: var(--fs-sm);
+}
+#memola-overlay #memola-comments-footer { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+#memola-overlay #memola-comments-footer .memola-btn { margin-left: auto; }
+#memola-overlay .memola-cmt-scope { display: flex; gap: 4px; }
 #memola-overlay .memola-cmt-scope-btn {
-  flex: 1; padding: 4px 6px; border: 1px solid var(--line, rgba(55,53,47,.15));
-  border-radius: var(--r-2, 4px); background: var(--paper, #fff); cursor: pointer;
-  font-family: inherit; font-size: var(--fs-xs, 11px); color: var(--ink-3, #9b9a97);
+  padding: 3px 8px; border: 1px solid var(--paper-4, rgba(55,53,47,.15));
+  border-radius: 12px; background: var(--paper, #fff); cursor: pointer;
+  font-family: inherit; font-size: 11px; color: var(--ink-3);
 }
-#memola-overlay .memola-cmt-scope-btn.on { background: var(--paper-2, rgba(55,53,47,.08)); color: var(--ink, #37352f); border-color: var(--accent, #2f6f5e); }
+#memola-overlay .memola-cmt-scope-btn.on { background: var(--paper-2, rgba(55,53,47,.08)); color: var(--ink); border-color: var(--accent, #2f6f5e); }
+
+/* Floating sub-menus (reaction palette / more) */
+#memola-overlay .memola-cmt-float {
+  position: absolute; z-index: 2147483647;
+  background: var(--paper, #fff); border: 1px solid var(--paper-3, rgba(55,53,47,.15));
+  border-radius: var(--r-2, 6px); box-shadow: 0 6px 20px rgba(0,0,0,.18); padding: 3px;
+}
+#memola-overlay .memola-cmt-react-palette { display: flex; gap: 2px; }
+#memola-overlay .memola-cmt-react-opt { background: none; border: none; cursor: pointer; font-size: 17px; padding: 3px 5px; border-radius: 4px; }
+#memola-overlay .memola-cmt-react-opt:hover { background: var(--paper-2, rgba(55,53,47,.08)); }
+#memola-overlay .memola-cmt-more { min-width: 120px; }
+#memola-overlay .memola-cmt-more-item {
+  display: block; width: 100%; text-align: left; background: none; border: none; cursor: pointer;
+  padding: 6px 10px; border-radius: 4px; font-family: inherit; font-size: var(--fs-sm); color: var(--ink);
+}
+#memola-overlay .memola-cmt-more-item:hover { background: var(--paper-2, rgba(55,53,47,.08)); }
 @keyframes memola-ph-pulse {
   0%,100% { opacity: 1; }
   50%     { opacity: 0.65; }

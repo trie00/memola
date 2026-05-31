@@ -180,6 +180,21 @@ export function buildHtml(): string {
         '<div id="memola-props-hd"><span>プロパティ</span><button class="memola-pane-x" id="memola-props-x" title="閉じる">' + ICONS.close + '</button></div>' +
         '<div id="memola-props-list"></div>' +
       '</aside>' +
+      '<aside id="memola-comments-pane">' +
+        '<div id="memola-comments-hd"><span>コメント</span><button class="memola-pane-x" id="memola-comments-x" title="閉じる">' + ICONS.close + '</button></div>' +
+        '<div id="memola-comments-list"></div>' +
+        '<div id="memola-comments-composer">' +
+          '<div id="memola-comments-target" style="display:none"><span id="memola-comments-target-lbl"></span><button id="memola-comments-target-x" title="ページ全体に戻す">×</button></div>' +
+          '<textarea id="memola-comments-ta" placeholder="コメントを追加..." rows="2"></textarea>' +
+          '<div id="memola-comments-footer">' +
+            '<div class="memola-cmt-scope">' +
+              '<button class="memola-cmt-scope-btn" id="memola-comments-scope-org">組織</button>' +
+              '<button class="memola-cmt-scope-btn" id="memola-comments-scope-user">🔒 個人</button>' +
+            '</div>' +
+            '<button class="memola-btn p" id="memola-comments-add">送信</button>' +
+          '</div>' +
+        '</div>' +
+      '</aside>' +
       '<aside id="memola-ai-panel">' +
         '<div id="memola-ai-hd">' +
           '<span class="memola-ai-title">' + ICONS.sparkle + '<span>AIチャット</span></span>' +

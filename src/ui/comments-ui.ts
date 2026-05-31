@@ -1,10 +1,11 @@
-// Comments UI — gutter markers + thread popover for page/block comments.
+// Comments UI — right-side pane (default-open) + gutter markers.
 //
-// Markers float in the right gutter next to each block that has an open
-// thread; clicking one (or the ⋮⋮ handle menu's 「コメント」, or the
-// toolbar 💬) opens a popover anchored to that block showing its threads,
-// with reply / resolve / edit / delete and a new-comment composer whose
-// scope toggle (全員 / 個人) defaults to the page's scope.
+// Notion-style: each comment row shows an avatar, name, relative time and
+// body; hovering reveals a top-right action bar with リアクション + 解決
+// buttons and a ⋯ menu (編集 / 削除) for everything else. Threads group a
+// root with its replies (connector line). The pane lists all of the open
+// page's threads; the ⋮⋮ handle / toolbar 💬 / a gutter marker open it and
+// target a specific block for the composer.
 
 import { S } from '../state';
 import { getEd } from './dom';
@@ -14,7 +15,8 @@ import { formatRelativeTime } from '../lib/date-utils';
 import { metaById } from '../lib/page-store';
 import {
   apiListComments, apiAddComment, apiEditComment, apiDeleteComment,
-  apiResolveThread, hydrateAuthorNames, groupThreads, openThreadCountByBlock,
+  apiResolveThread, apiToggleReaction, hydrateAuthorNames, groupThreads,
+  openThreadCountByBlock, parseReactions,
   type CommentRow, type CommentThread, type CommentScope,
 } from '../api/comments';
 
@@ -22,15 +24,16 @@ let _pageId = '';
 let _scopeDefault: CommentScope = 'user';
 let _threads: CommentThread[] = [];
 const _markers: HTMLElement[] = [];
-let _pop: HTMLElement | null = null;
-let _popBlockId = '';
-let _editingId = 0;
+let _paneOpen = true;
+let _composeBlockId = '';
 let _composeScope: CommentScope = 'user';
+let _editingId = 0;
 let _listenersBound = false;
+let _paneWired = false;
 
-/** Resolve the comment target (pageId + default scope) for the open view.
- *  Normal pages key by their page id; DB row detail pages key by a stable
- *  `row:<list>:<itemId>` so they survive row reordering. */
+const REACTION_EMOJIS = ['👍', '❤️', '🎉', '😄', '🙏', '👀'];
+const AVATAR_COLORS = ['#e07a5f', '#3d82c4', '#5a9e6f', '#b06fb0', '#c99a3b', '#4aa3a3', '#c4677b', '#7a82c4'];
+
 export function currentCommentTarget(): { pageId: string; scope: CommentScope } | null {
   if (S.currentRow) {
     const db = metaById(S.currentRow.dbId);
@@ -46,52 +49,43 @@ export function currentCommentTarget(): { pageId: string; scope: CommentScope } 
   return null;
 }
 
-// ── First-line rect (vertical centering, mirrors editor2-drag) ──
-function firstLineRect(block: HTMLElement): { top: number; height: number } {
-  try {
-    const range = document.createRange();
-    range.selectNodeContents(block);
-    const rects = range.getClientRects();
-    for (let i = 0; i < rects.length; i++) {
-      if (rects[i].height > 0) return { top: rects[i].top, height: rects[i].height };
-    }
-  } catch { /* fall through */ }
-  const r = block.getBoundingClientRect();
-  const lh = parseFloat(window.getComputedStyle(block).lineHeight);
-  const h = isFinite(lh) && lh > 0 ? Math.min(lh, r.height) : r.height;
-  return { top: r.top, height: h };
-}
-
 function overlay(): HTMLElement {
   return document.getElementById('memola-overlay') || document.body;
 }
+function pane(): HTMLElement | null { return document.getElementById('memola-comments-pane'); }
+function paneList(): HTMLElement | null { return document.getElementById('memola-comments-list'); }
+
+function avatarColor(id: number): string { return AVATAR_COLORS[Math.abs(id || 0) % AVATAR_COLORS.length]; }
+function initialOf(name: string): string { return (name || '？').trim().charAt(0).toUpperCase() || '？'; }
+function cssEscape(s: string): string { return s.replace(/"/g, '\\"'); }
 
 // ── Load / clear ─────────────────────────────────────────
 
-/** Load comments for the given page and render the gutter markers. */
 export async function loadCommentsFor(pageId: string, scopeDefault: CommentScope): Promise<void> {
   _pageId = pageId;
   _scopeDefault = scopeDefault;
   _composeScope = scopeDefault;
-  closePopover();
+  _composeBlockId = '';
+  _editingId = 0;
+  wirePane();
   try {
     const rows = await apiListComments(pageId);
     await hydrateAuthorNames(rows);
-    if (_pageId !== pageId) return;          // navigated away during fetch
+    if (_pageId !== pageId) return;
     _threads = groupThreads(rows);
-  } catch {
-    _threads = [];
-  }
+  } catch { _threads = []; }
   renderMarkers();
+  renderPane();
   bindReposition();
 }
 
-/** Tear down markers + popover (page leave / editor unmount). */
 export function clearComments(): void {
   _pageId = '';
   _threads = [];
-  closePopover();
   removeMarkers();
+  closeFloat();
+  const p = pane();
+  if (p) p.classList.remove('on');
 }
 
 async function refresh(): Promise<void> {
@@ -100,30 +94,75 @@ async function refresh(): Promise<void> {
   await hydrateAuthorNames(rows);
   _threads = groupThreads(rows);
   renderMarkers();
-  if (_pop) renderPopover();
+  renderPane();
 }
+
+// ── Pane wiring / toggle ─────────────────────────────────
+
+function wirePane(): void {
+  const p = pane();
+  if (!p) return;
+  if (!_paneWired) {
+    _paneWired = true;
+    p.querySelector('#memola-comments-x')?.addEventListener('click', () => { _paneOpen = false; renderPane(); });
+    const list = paneList();
+    list?.addEventListener('click', onPaneClick);
+    // Enter in a reply input sends the reply.
+    list?.addEventListener('keydown', (e) => {
+      const ke = e as KeyboardEvent;
+      const inp = (ke.target as HTMLElement).closest<HTMLElement>('.memola-cmt-reply-inp');
+      if (inp && ke.key === 'Enter' && !ke.shiftKey) {
+        ke.preventDefault();
+        const root = inp.closest<HTMLElement>('.memola-cmt-thread')?.dataset.root || '';
+        void doReply(root);
+      }
+    });
+    const composeBtn = p.querySelector('#memola-comments-add');
+    composeBtn?.addEventListener('click', () => void doAddFromComposer());
+    const ta = p.querySelector('#memola-comments-ta');
+    ta?.addEventListener('keydown', (e) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key === 'Enter' && (ke.metaKey || ke.ctrlKey)) { ke.preventDefault(); void doAddFromComposer(); }
+    });
+    p.querySelector('#memola-comments-scope-org')?.addEventListener('click', () => { _composeScope = 'org'; syncComposer(); });
+    p.querySelector('#memola-comments-scope-user')?.addEventListener('click', () => { _composeScope = 'user'; syncComposer(); });
+    p.querySelector('#memola-comments-target-x')?.addEventListener('click', () => { _composeBlockId = ''; syncComposer(); });
+  }
+}
+
+/** Open the pane and target `blockId` for the composer (handle menu /
+ *  toolbar 💬 / gutter marker). Scrolls to the block's threads if any. */
+export function openCommentPopover(pageId: string, blockId: string): void {
+  if (pageId !== _pageId) return;
+  _paneOpen = true;
+  _composeBlockId = blockId;
+  _composeScope = _scopeDefault;
+  renderPane();
+  const list = paneList();
+  if (blockId && list) {
+    const t = list.querySelector<HTMLElement>('[data-block-id="' + cssEscape(blockId) + '"]');
+    t?.scrollIntoView({ block: 'center' });
+  }
+  (pane()?.querySelector('#memola-comments-ta') as HTMLTextAreaElement | null)?.focus();
+}
+
+export function closePopover(): void { closeFloat(); }
 
 // ── Markers ──────────────────────────────────────────────
 
-function removeMarkers(): void {
-  for (const m of _markers) m.remove();
-  _markers.length = 0;
-}
+function removeMarkers(): void { for (const m of _markers) m.remove(); _markers.length = 0; }
 
 function renderMarkers(): void {
   removeMarkers();
   const counts = openThreadCountByBlock(_threads);
   for (const [blockId, n] of counts) {
-    if (!blockId) continue;                  // page-level handled separately
+    if (!blockId) continue;
     const el = document.createElement('div');
     el.className = 'memola-cmt-marker';
     el.dataset.blockId = blockId;
     el.textContent = n > 1 ? '💬' + n : '💬';
     el.title = 'コメント ' + n + ' 件';
-    el.addEventListener('click', (e) => {
-      e.preventDefault(); e.stopPropagation();
-      openCommentPopover(_pageId, blockId);
-    });
+    el.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openCommentPopover(_pageId, blockId); });
     overlay().appendChild(el);
     _markers.push(el);
   }
@@ -133,8 +172,7 @@ function renderMarkers(): void {
 function positionMarkers(): void {
   const ed = getEd();
   for (const m of _markers) {
-    const blockId = m.dataset.blockId || '';
-    const block = ed.querySelector<HTMLElement>('[data-block-id="' + cssEscape(blockId) + '"]');
+    const block = ed.querySelector<HTMLElement>('[data-block-id="' + cssEscape(m.dataset.blockId || '') + '"]');
     if (!block) { m.style.display = 'none'; continue; }
     m.style.display = '';
     const rect = block.getBoundingClientRect();
@@ -145,165 +183,140 @@ function positionMarkers(): void {
   }
 }
 
-function cssEscape(s: string): string {
-  // Block ids are app-generated (safe chars), but guard quotes anyway.
-  return s.replace(/"/g, '\\"');
+function firstLineRect(block: HTMLElement): { top: number; height: number } {
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(block);
+    const rects = range.getClientRects();
+    for (let i = 0; i < rects.length; i++) if (rects[i].height > 0) return { top: rects[i].top, height: rects[i].height };
+  } catch { /* ignore */ }
+  const r = block.getBoundingClientRect();
+  const lh = parseFloat(window.getComputedStyle(block).lineHeight);
+  return { top: r.top, height: isFinite(lh) && lh > 0 ? Math.min(lh, r.height) : r.height };
 }
 
 let _repoTimer: number | null = null;
 function scheduleReposition(): void {
   if (_repoTimer != null) return;
-  _repoTimer = window.requestAnimationFrame(() => {
-    _repoTimer = null;
-    positionMarkers();
-    if (_pop) positionPopover();
-  });
+  _repoTimer = window.requestAnimationFrame(() => { _repoTimer = null; positionMarkers(); });
 }
-
 function bindReposition(): void {
   if (_listenersBound) return;
   _listenersBound = true;
   window.addEventListener('scroll', scheduleReposition, true);
   window.addEventListener('resize', scheduleReposition);
-  // Typing changes block heights → keep markers aligned. The editor root
-  // (#memola-ed) is a stable element, so binding once is enough.
   getEd().addEventListener('input', scheduleReposition);
 }
 
-// ── Popover ──────────────────────────────────────────────
+// ── Pane render ──────────────────────────────────────────
 
-export function closePopover(): void {
-  if (_pop) { _pop.remove(); _pop = null; }
-  _popBlockId = '';
-  _editingId = 0;
-  document.removeEventListener('mousedown', onOutside, true);
-  document.removeEventListener('keydown', onKey, true);
-}
-
-function onOutside(e: MouseEvent): void {
-  const t = e.target as HTMLElement;
-  if (_pop && !_pop.contains(t) && !t.closest('.memola-cmt-marker')) closePopover();
-}
-function onKey(e: KeyboardEvent): void {
-  if (e.key === 'Escape') { e.preventDefault(); closePopover(); }
-}
-
-/** Open (or move) the thread popover for a block ('' = page-level). */
-export function openCommentPopover(pageId: string, blockId: string): void {
-  if (pageId !== _pageId) return;
-  _popBlockId = blockId;
-  _editingId = 0;
-  _composeScope = _scopeDefault;
-  if (!_pop) {
-    _pop = document.createElement('div');
-    _pop.className = 'memola-cmt-pop';
-    _pop.addEventListener('click', onPopClick);
-    overlay().appendChild(_pop);
-    setTimeout(() => {
-      document.addEventListener('mousedown', onOutside, true);
-      document.addEventListener('keydown', onKey, true);
-    }, 0);
-  }
-  renderPopover();
-  positionPopover();
-  const ta = _pop.querySelector<HTMLTextAreaElement>('.memola-cmt-compose textarea');
-  ta?.focus();
-}
-
-function threadsForBlock(blockId: string): CommentThread[] {
-  return _threads.filter((t) => t.blockId === blockId);
+function reactionChips(c: CommentRow): string {
+  const map = parseReactions(c);
+  const me = S.meta.myUserId || -1;
+  const chips = Object.entries(map).filter(([, u]) => u.length > 0).map(([emoji, users]) => {
+    const mine = users.includes(me) ? ' mine' : '';
+    return '<button class="memola-cmt-react-chip' + mine + '" data-act="react-toggle" data-id="' + c.Id + '" data-emoji="' + escapeHtml(emoji) + '">' +
+      emoji + ' ' + users.length + '</button>';
+  });
+  return chips.length ? '<div class="memola-cmt-reacts">' + chips.join('') + '</div>' : '';
 }
 
 function commentHtml(c: CommentRow, isRoot: boolean): string {
   const mine = c.AuthorId === (S.meta.myUserId || -1);
   const when = c.Created ? formatRelativeTime(Date.parse(c.Created)) : '';
-  const scopeBadge = c.Scope === 'user'
-    ? '<span class="memola-cmt-badge priv">🔒 個人</span>'
-    : '<span class="memola-cmt-badge org">組織</span>';
   if (c.Deleted) {
-    return '<div class="memola-cmt-item deleted"><span class="memola-cmt-body muted">（削除されたコメント）</span></div>';
+    return '<div class="memola-cmt-c deleted"><div class="memola-cmt-main"><div class="memola-cmt-body muted">（削除されたコメント）</div></div></div>';
   }
   if (_editingId === c.Id) {
-    return '<div class="memola-cmt-item editing" data-id="' + c.Id + '">' +
-      '<textarea class="memola-cmt-edit-ta">' + escapeHtml(c.Body) + '</textarea>' +
-      '<div class="memola-cmt-actions">' +
-        '<button class="memola-btn s" data-act="edit-save" data-id="' + c.Id + '">保存</button>' +
-        '<button class="memola-btn ghost" data-act="edit-cancel">取消</button>' +
+    return '<div class="memola-cmt-c editing" data-id="' + c.Id + '">' +
+      '<div class="memola-cmt-avatar" style="background:' + avatarColor(c.AuthorId) + '">' + escapeHtml(initialOf(c.AuthorName || '')) + '</div>' +
+      '<div class="memola-cmt-main">' +
+        '<textarea class="memola-cmt-edit-ta">' + escapeHtml(c.Body) + '</textarea>' +
+        '<div class="memola-cmt-editacts">' +
+          '<button class="memola-btn s" data-act="edit-save" data-id="' + c.Id + '">保存</button>' +
+          '<button class="memola-btn ghost" data-act="edit-cancel">取消</button>' +
+        '</div>' +
       '</div></div>';
   }
-  return '<div class="memola-cmt-item" data-id="' + c.Id + '">' +
-    '<div class="memola-cmt-meta">' +
-      '<span class="memola-cmt-author">' + escapeHtml(c.AuthorName || '誰か') + '</span>' +
-      (isRoot ? ' ' + scopeBadge : '') +
-      '<span class="memola-cmt-time">' + escapeHtml(when) + '</span>' +
-      (c.Edited ? '<span class="memola-cmt-edited">(編集済み)</span>' : '') +
-    '</div>' +
-    '<div class="memola-cmt-body">' + escapeHtml(c.Body).replace(/\n/g, '<br>') + '</div>' +
-    (mine
-      ? '<div class="memola-cmt-rowacts">' +
-          '<button class="memola-cmt-link" data-act="edit" data-id="' + c.Id + '">編集</button>' +
-          '<button class="memola-cmt-link" data-act="del" data-id="' + c.Id + '">削除</button>' +
-        '</div>'
-      : '') +
+  const scopeBadge = isRoot && c.Scope === 'user' ? '<span class="memola-cmt-badge priv">🔒</span>' : '';
+  const hover =
+    '<div class="memola-cmt-hover">' +
+      '<button class="memola-cmt-hbtn" data-act="react" data-id="' + c.Id + '" title="リアクション">🙂<sup>+</sup></button>' +
+      (isRoot ? '<button class="memola-cmt-hbtn" data-act="resolve" data-root="' + c.Id + '" title="解決">✓</button>' : '') +
+      (mine ? '<button class="memola-cmt-hbtn" data-act="more" data-id="' + c.Id + '" title="その他">⋯</button>' : '') +
     '</div>';
+  return '<div class="memola-cmt-c" data-id="' + c.Id + '">' +
+    '<div class="memola-cmt-avatar" style="background:' + avatarColor(c.AuthorId) + '">' + escapeHtml(initialOf(c.AuthorName || '')) + '</div>' +
+    '<div class="memola-cmt-main">' +
+      '<div class="memola-cmt-line1">' +
+        '<span class="memola-cmt-author">' + escapeHtml(c.AuthorName || '誰か') + '</span>' +
+        '<span class="memola-cmt-time">' + escapeHtml(when) + '</span>' +
+        (c.Edited ? '<span class="memola-cmt-edited">編集済み</span>' : '') + scopeBadge +
+      '</div>' +
+      '<div class="memola-cmt-body">' + escapeHtml(c.Body).replace(/\n/g, '<br>') + '</div>' +
+      reactionChips(c) +
+    '</div>' + hover +
+  '</div>';
 }
 
 function threadHtml(t: CommentThread): string {
-  const head = commentHtml(t.root, true);
-  const replies = t.replies.map((r) => commentHtml(r, false)).join('');
-  const resolveLabel = t.resolved ? '未解決に戻す' : '解決';
-  return '<div class="memola-cmt-thread' + (t.resolved ? ' resolved' : '') + '" data-root="' + t.root.Id + '">' +
+  const anchor = t.blockId
+    ? '<div class="memola-cmt-anchor">' + escapeHtml(t.root.AnchorText || '（ブロック）') + '</div>' : '';
+  const replies = t.replies.length
+    ? '<div class="memola-cmt-replies">' + t.replies.map((r) => commentHtml(r, false)).join('') + '</div>' : '';
+  return '<div class="memola-cmt-thread' + (t.resolved ? ' resolved' : '') + '" data-root="' + t.root.Id + '"' +
+    (t.blockId ? ' data-block-id="' + escapeHtml(t.blockId) + '"' : '') + '>' +
     (t.resolved ? '<div class="memola-cmt-resolved-tag">✓ 解決済み</div>' : '') +
-    head + replies +
-    '<div class="memola-cmt-threadfoot">' +
+    anchor + commentHtml(t.root, true) + replies +
+    '<div class="memola-cmt-replybar">' +
       '<input class="memola-cmt-reply-inp" type="text" placeholder="返信...">' +
-      '<button class="memola-btn s" data-act="reply" data-root="' + t.root.Id + '">返信</button>' +
-      '<button class="memola-btn ghost" data-act="resolve" data-root="' + t.root.Id + '">' + resolveLabel + '</button>' +
+      '<button class="memola-cmt-reply-send" data-act="reply" data-root="' + t.root.Id + '">↵</button>' +
     '</div>' +
   '</div>';
 }
 
-function renderPopover(): void {
-  if (!_pop) return;
-  const blockId = _popBlockId;
-  const threads = threadsForBlock(blockId);
-  // Sort: open first, then resolved.
-  threads.sort((a, b) => Number(a.resolved) - Number(b.resolved));
-  const title = blockId ? 'ブロックのコメント' : 'ページのコメント';
-  const scopeToggle =
-    '<div class="memola-cmt-scope">' +
-      '<button class="memola-cmt-scope-btn' + (_composeScope === 'org' ? ' on' : '') + '" data-act="scope-org">組織に表示</button>' +
-      '<button class="memola-cmt-scope-btn' + (_composeScope === 'user' ? ' on' : '') + '" data-act="scope-user">🔒 個人メモ</button>' +
-    '</div>';
-  _pop.innerHTML =
-    '<div class="memola-cmt-pop-hd">' + title +
-      '<button class="memola-cmt-x" data-act="close">×</button></div>' +
-    '<div class="memola-cmt-threads">' +
-      (threads.length ? threads.map(threadHtml).join('') : '<div class="memola-cmt-empty">まだコメントはありません</div>') +
-    '</div>' +
-    '<div class="memola-cmt-compose">' +
-      scopeToggle +
-      '<textarea placeholder="コメントを追加..."></textarea>' +
-      '<button class="memola-btn p" data-act="add">コメント</button>' +
-    '</div>';
+function renderPane(): void {
+  const p = pane();
+  const list = paneList();
+  if (!p || !list) return;
+  if (!_paneOpen || !_pageId) { p.classList.remove('on'); return; }
+  p.classList.add('on');
+  const open = _threads.filter((t) => !t.resolved);
+  const resolved = _threads.filter((t) => t.resolved);
+  list.innerHTML =
+    (open.length || resolved.length
+      ? open.map(threadHtml).join('') +
+        (resolved.length ? '<div class="memola-cmt-resolved-sep">解決済み</div>' + resolved.map(threadHtml).join('') : '')
+      : '<div class="memola-cmt-empty">まだコメントはありません。<br>ブロックの ⋮⋮ から「💬 コメント」、またはツールバーの 💬 で追加できます。</div>');
+  syncComposer();
 }
 
-function onPopClick(e: Event): void {
-  const t = e.target as HTMLElement;
-  const btn = t.closest<HTMLElement>('[data-act]');
-  if (!btn) return;
-  const act = btn.dataset.act;
-  if (act === 'close') { closePopover(); return; }
-  if (act === 'scope-org') { _composeScope = 'org'; renderPopover(); return; }
-  if (act === 'scope-user') { _composeScope = 'user'; renderPopover(); return; }
-  if (act === 'add') { void doAdd(); return; }
-  if (act === 'reply') { void doReply(btn.dataset.root || ''); return; }
-  if (act === 'resolve') { void doResolve(btn.dataset.root || ''); return; }
-  if (act === 'edit') { _editingId = Number(btn.dataset.id); renderPopover(); return; }
-  if (act === 'edit-cancel') { _editingId = 0; renderPopover(); return; }
-  if (act === 'edit-save') { void doEditSave(Number(btn.dataset.id)); return; }
-  if (act === 'del') { void doDelete(Number(btn.dataset.id)); return; }
+function syncComposer(): void {
+  const p = pane();
+  if (!p) return;
+  const orgB = p.querySelector('#memola-comments-scope-org');
+  const userB = p.querySelector('#memola-comments-scope-user');
+  orgB?.classList.toggle('on', _composeScope === 'org');
+  userB?.classList.toggle('on', _composeScope === 'user');
+  const targetWrap = p.querySelector<HTMLElement>('#memola-comments-target');
+  const targetLbl = p.querySelector<HTMLElement>('#memola-comments-target-lbl');
+  if (targetWrap && targetLbl) {
+    if (_composeBlockId) {
+      targetWrap.style.display = '';
+      targetLbl.textContent = '↳ ' + (anchorTextFor(_composeBlockId) || 'このブロック');
+    } else {
+      targetWrap.style.display = 'none';
+    }
+  }
 }
+
+function anchorTextFor(blockId: string): string {
+  if (!blockId) return '';
+  const el = getEd().querySelector<HTMLElement>('[data-block-id="' + cssEscape(blockId) + '"]');
+  return (el?.textContent || '').trim().slice(0, 80);
+}
+
+// ── Events ───────────────────────────────────────────────
 
 function findComment(id: number): CommentRow | null {
   for (const t of _threads) {
@@ -314,39 +327,43 @@ function findComment(id: number): CommentRow | null {
   return null;
 }
 
-function anchorTextFor(blockId: string): string {
-  if (!blockId) return '';
-  const el = getEd().querySelector<HTMLElement>('[data-block-id="' + cssEscape(blockId) + '"]');
-  return (el?.textContent || '').trim().slice(0, 120);
+function onPaneClick(e: Event): void {
+  const t = e.target as HTMLElement;
+  const btn = t.closest<HTMLElement>('[data-act]');
+  if (!btn) return;
+  const act = btn.dataset.act;
+  const id = Number(btn.dataset.id || 0);
+  if (act === 'resolve') { void doResolve(btn.dataset.root || ''); return; }
+  if (act === 'reply') { void doReply(btn.dataset.root || ''); return; }
+  if (act === 'react') { openReactionPalette(btn, id); return; }
+  if (act === 'react-toggle') { void doReact(id, btn.dataset.emoji || ''); return; }
+  if (act === 'more') { openMoreMenu(btn, id); return; }
+  if (act === 'edit') { _editingId = id; closeFloat(); renderPane(); return; }
+  if (act === 'edit-cancel') { _editingId = 0; renderPane(); return; }
+  if (act === 'edit-save') { void doEditSave(id); return; }
+  if (act === 'del') { closeFloat(); void doDelete(id); return; }
 }
 
-async function doAdd(): Promise<void> {
-  if (!_pop) return;
-  const ta = _pop.querySelector<HTMLTextAreaElement>('.memola-cmt-compose textarea');
+async function doAddFromComposer(): Promise<void> {
+  const ta = pane()?.querySelector('#memola-comments-ta') as HTMLTextAreaElement | null;
   const body = (ta?.value || '').trim();
   if (!body) return;
   try {
-    await apiAddComment({
-      pageId: _pageId, blockId: _popBlockId, body, scope: _composeScope,
-      anchorText: anchorTextFor(_popBlockId),
-    });
+    await apiAddComment({ pageId: _pageId, blockId: _composeBlockId, body, scope: _composeScope, anchorText: anchorTextFor(_composeBlockId) });
+    if (ta) ta.value = '';
+    _composeBlockId = '';
     await refresh();
   } catch (e) { toast('コメント追加失敗: ' + (e as Error).message, 'err'); }
 }
 
 async function doReply(rootId: string): Promise<void> {
-  if (!_pop) return;
   const root = findComment(Number(rootId));
   if (!root) return;
-  const inp = _pop.querySelector<HTMLInputElement>(
-    '.memola-cmt-thread[data-root="' + rootId + '"] .memola-cmt-reply-inp');
+  const inp = paneList()?.querySelector<HTMLInputElement>('.memola-cmt-thread[data-root="' + rootId + '"] .memola-cmt-reply-inp');
   const body = (inp?.value || '').trim();
   if (!body) return;
   try {
-    await apiAddComment({
-      pageId: _pageId, blockId: root.BlockId, body, scope: root.Scope,
-      threadRootId: rootId,
-    });
+    await apiAddComment({ pageId: _pageId, blockId: root.BlockId, body, scope: root.Scope, threadRootId: rootId });
     await refresh();
   } catch (e) { toast('返信失敗: ' + (e as Error).message, 'err'); }
 }
@@ -354,25 +371,25 @@ async function doReply(rootId: string): Promise<void> {
 async function doResolve(rootId: string): Promise<void> {
   const root = findComment(Number(rootId));
   if (!root) return;
-  try {
-    await apiResolveThread(root, !(root.Resolved > 0));
-    await refresh();
-  } catch (e) { toast('解決状態の変更失敗: ' + (e as Error).message, 'err'); }
+  try { await apiResolveThread(root, !(root.Resolved > 0)); await refresh(); }
+  catch (e) { toast('解決状態の変更失敗: ' + (e as Error).message, 'err'); }
+}
+
+async function doReact(id: number, emoji: string): Promise<void> {
+  const c = findComment(id);
+  if (!c || !emoji) return;
+  try { await apiToggleReaction(c, emoji); await refresh(); }
+  catch (e) { toast('リアクション失敗: ' + (e as Error).message, 'err'); }
 }
 
 async function doEditSave(id: number): Promise<void> {
-  if (!_pop) return;
   const c = findComment(id);
   if (!c) return;
-  const ta = _pop.querySelector<HTMLTextAreaElement>(
-    '.memola-cmt-item.editing[data-id="' + id + '"] .memola-cmt-edit-ta');
+  const ta = paneList()?.querySelector<HTMLTextAreaElement>('.memola-cmt-c.editing[data-id="' + id + '"] .memola-cmt-edit-ta');
   const body = (ta?.value || '').trim();
   if (!body) return;
-  try {
-    await apiEditComment({ ...c, Body: body });
-    _editingId = 0;
-    await refresh();
-  } catch (e) { toast('編集失敗: ' + (e as Error).message, 'err'); }
+  try { await apiEditComment({ ...c, Body: body }); _editingId = 0; await refresh(); }
+  catch (e) { toast('編集失敗: ' + (e as Error).message, 'err'); }
 }
 
 async function doDelete(id: number): Promise<void> {
@@ -381,33 +398,61 @@ async function doDelete(id: number): Promise<void> {
   if (!confirm('このコメントを削除しますか?')) return;
   const thread = _threads.find((t) => t.root.Id === id);
   const hasReplies = !!thread && thread.replies.length > 0;
-  try {
-    await apiDeleteComment(c, hasReplies);
-    await refresh();
-  } catch (e) { toast('削除失敗: ' + (e as Error).message, 'err'); }
+  try { await apiDeleteComment(c, hasReplies); await refresh(); }
+  catch (e) { toast('削除失敗: ' + (e as Error).message, 'err'); }
 }
 
-function positionPopover(): void {
-  if (!_pop) return;
-  const ed = getEd();
-  let anchorRect: DOMRect;
-  if (_popBlockId) {
-    const block = ed.querySelector<HTMLElement>('[data-block-id="' + cssEscape(_popBlockId) + '"]');
-    anchorRect = (block || ed).getBoundingClientRect();
-  } else {
-    anchorRect = ed.getBoundingClientRect();
+// ── Floating sub-menus (reaction palette / more) ─────────
+
+let _float: HTMLElement | null = null;
+function closeFloat(): void {
+  if (_float) { _float.remove(); _float = null; }
+  document.removeEventListener('mousedown', onFloatOutside, true);
+}
+function onFloatOutside(e: MouseEvent): void {
+  if (_float && !_float.contains(e.target as Node)) closeFloat();
+}
+function showFloat(anchor: HTMLElement, el: HTMLElement): void {
+  closeFloat();
+  _float = el;
+  overlay().appendChild(el);
+  const r = anchor.getBoundingClientRect();
+  el.style.left = Math.min(r.left + window.scrollX, window.scrollX + window.innerWidth - (el.offsetWidth || 180) - 8) + 'px';
+  el.style.top = (r.bottom + window.scrollY + 4) + 'px';
+  setTimeout(() => document.addEventListener('mousedown', onFloatOutside, true), 0);
+}
+
+function openReactionPalette(anchor: HTMLElement, id: number): void {
+  const el = document.createElement('div');
+  el.className = 'memola-cmt-float memola-cmt-react-palette';
+  for (const emoji of REACTION_EMOJIS) {
+    const b = document.createElement('button');
+    b.className = 'memola-cmt-react-opt';
+    b.textContent = emoji;
+    b.addEventListener('mousedown', (e) => { e.preventDefault(); closeFloat(); void doReact(id, emoji); });
+    el.appendChild(b);
   }
-  const popW = _pop.offsetWidth || 320;
-  let left = anchorRect.right + window.scrollX + 32;
-  // If it would overflow right, place it to the left of the content.
-  if (left + popW > window.scrollX + window.innerWidth) {
-    left = Math.max(8 + window.scrollX, anchorRect.left + window.scrollX - popW - 16);
-  }
-  _pop.style.left = left + 'px';
-  let top = anchorRect.top + window.scrollY;
-  const popH = _pop.offsetHeight || 240;
-  if (top + popH > window.scrollY + window.innerHeight) {
-    top = Math.max(8 + window.scrollY, window.scrollY + window.innerHeight - popH - 8);
-  }
-  _pop.style.top = top + 'px';
+  showFloat(anchor, el);
+}
+
+function openMoreMenu(anchor: HTMLElement, id: number): void {
+  const el = document.createElement('div');
+  el.className = 'memola-cmt-float memola-cmt-more';
+  const mk = (label: string, act: string): HTMLElement => {
+    const b = document.createElement('button');
+    b.className = 'memola-cmt-more-item';
+    b.textContent = label;
+    b.dataset.act = act;
+    b.dataset.id = String(id);
+    b.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      closeFloat();
+      if (act === 'edit') { _editingId = id; renderPane(); }
+      else if (act === 'del') void doDelete(id);
+    });
+    return b;
+  };
+  el.appendChild(mk('編集', 'edit'));
+  el.appendChild(mk('削除', 'del'));
+  showFloat(anchor, el);
 }
