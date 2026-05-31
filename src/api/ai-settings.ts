@@ -61,6 +61,7 @@ import {
   prefAiCorpDeployPrefix, prefAiCorpOverrides,
   prefAiLocalBaseUrl, prefAiLocalKey, prefAiLocalModel, prefAiLocalModels,
   prefAiLocalReasoningModels,
+  prefAiEmbedProvider, prefAiVoyageKey, prefAiVoyageModel,
   prefAiEmbedModel, prefAiEmbedApiVersion, prefAiEmbedDimensions,
   prefRagTopK, prefRagMinScore,
 } from '../lib/prefs';
@@ -301,6 +302,28 @@ export const EMBEDDING_MODELS: string[] = [
 export const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small';
 export const DEFAULT_EMBEDDING_API_VERSION = '2024-02-01';
 
+/** Voyage AI (Anthropic 推奨の埋め込み)。CORS 対応でブラウザ直叩き = 中継不要。
+ *  Claude チャットと併用するときの推奨埋め込み。 */
+export type EmbedProvider = 'auto' | 'voyage';
+export const VOYAGE_MODELS: string[] = [
+  'voyage-3.5-lite',
+  'voyage-3.5',
+  'voyage-3-large',
+  'voyage-code-3',
+];
+export const DEFAULT_VOYAGE_MODEL = 'voyage-3.5-lite';
+
+/** 'auto' = チャットと同じ provider (corp/local)、'voyage' = Voyage AI 直叩き。 */
+export function getEmbedProvider(): EmbedProvider {
+  return prefAiEmbedProvider.get() === 'voyage' ? 'voyage' : 'auto';
+}
+export function setEmbedProvider(p: EmbedProvider): void { prefAiEmbedProvider.set(p); }
+
+export function getVoyageKey(): string { return prefAiVoyageKey.get(); }
+export function setVoyageKey(k: string): void { prefAiVoyageKey.set(k.trim()); }
+export function getVoyageModel(): string { return prefAiVoyageModel.get() || DEFAULT_VOYAGE_MODEL; }
+export function setVoyageModel(m: string): void { prefAiVoyageModel.set(m.trim()); }
+
 export function getEmbeddingModel(): string {
   return prefAiEmbedModel.get() || DEFAULT_EMBEDDING_MODEL;
 }
@@ -347,12 +370,14 @@ export function setRagMinScore(v: string): void {
 }
 
 export interface EmbeddingEndpoint {
-  provider: 'corp' | 'local';
+  provider: 'corp' | 'local' | 'voyage';
+  /** Request body / endpoint dialect. 'voyage' uses input_type + output_dimension. */
+  kind: 'openai' | 'voyage';
   /** Full POST URL for the embeddings request. */
   url: string;
   /** API key (may be empty for keyless local servers). */
   apiKey: string;
-  /** Header style: Azure uses `api-key`, OpenAI-native uses `Authorization`. */
+  /** Header style: Azure uses `api-key`, OpenAI-native / Voyage use `Authorization`. */
   authStyle: 'azure' | 'bearer';
   /** Model id to send in the request body. */
   model: string;
@@ -360,19 +385,32 @@ export interface EmbeddingEndpoint {
   dimensions: number | null;
 }
 
-/** Resolve the effective embeddings endpoint for the active provider.
- *  Returns null when provider='claude' (no embeddings API ⇒ RAG disabled). */
+/** Resolve the effective embeddings endpoint.
+ *  - embedProvider='voyage' → Voyage AI 直叩き (チャット provider に依らない。
+ *    Claude チャット + Voyage 埋め込みの中継不要構成はこれ)。
+ *  - embedProvider='auto'   → チャットと同じ corp/local。claude では null
+ *    (埋め込み API が無い ⇒ RAG 無効。Voyage を選べば有効になる)。 */
 export function resolveEmbeddingEndpoint(): EmbeddingEndpoint | null {
+  const dimensions = getEmbeddingDimensions();
+  if (getEmbedProvider() === 'voyage') {
+    const key = getVoyageKey();
+    if (!key) return null;
+    return {
+      provider: 'voyage', kind: 'voyage',
+      url: 'https://api.voyageai.com/v1/embeddings',
+      apiKey: key, authStyle: 'bearer',
+      model: getVoyageModel(), dimensions,
+    };
+  }
   const p = getProvider();
   const model = getEmbeddingModel();
-  const dimensions = getEmbeddingDimensions();
   if (p === 'corp') {
     const base = getCorpAiBaseUrl();
     if (!base) return null;
     const deploy = deploymentIdFor(model);
     const ver = getEmbeddingApiVersion();
     return {
-      provider: 'corp',
+      provider: 'corp', kind: 'openai',
       url: `${base}/openai/deployments/${deploy}/embeddings?api-version=${encodeURIComponent(ver)}`,
       apiKey: getCorpAiKey(),
       authStyle: 'azure',
@@ -384,7 +422,7 @@ export function resolveEmbeddingEndpoint(): EmbeddingEndpoint | null {
     const base = getLocalAiBaseUrl();
     if (!base) return null;
     return {
-      provider: 'local',
+      provider: 'local', kind: 'openai',
       url: `${base}/embeddings`,
       apiKey: getLocalAiKey(),
       authStyle: 'bearer',

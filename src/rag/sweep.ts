@@ -46,7 +46,7 @@ async function embedInBatches(texts: string[], signal?: AbortSignal): Promise<Fl
   const out: Float32Array[] = [];
   for (let i = 0; i < texts.length; i += EMBED_BATCH) {
     const batch = texts.slice(i, i + EMBED_BATCH);
-    const vecs = await embedTexts(batch, signal);
+    const vecs = await embedTexts(batch, { inputType: 'document', signal });
     for (const v of vecs) out.push(v);
   }
   return out;

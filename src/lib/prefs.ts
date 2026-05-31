@@ -90,6 +90,11 @@ export const prefAiLocalReasoningModels = strPref('memola.ai.localReasoningModel
 // Embeddings always go through the OpenAI-compatible endpoint of the active
 // chat provider (corp = Azure-style deployments path; local = /embeddings).
 // Claude has no embeddings API, so RAG is disabled when provider='claude'.
+// 埋め込みプロバイダ: 'auto' = チャットと同じ provider (corp/local) を使う、
+// 'voyage' = Voyage AI 直叩き (CORS対応・中継不要。Claude チャットと併用できる)。
+export const prefAiEmbedProvider    = strPref('memola.ai.embedProvider', 'auto');
+export const prefAiVoyageKey        = strPref('memola.ai.voyageKey');
+export const prefAiVoyageModel      = strPref('memola.ai.voyageModel', 'voyage-3.5-lite');
 export const prefAiEmbedModel       = strPref('memola.ai.embedModel', 'text-embedding-3-small');
 export const prefAiEmbedApiVersion  = strPref('memola.ai.embedApiVersion', '2024-02-01');
 export const prefAiEmbedDimensions  = strPref('memola.ai.embedDimensions', '');   // '' = サーバ既定

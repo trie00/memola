@@ -397,32 +397,45 @@ export function buildHtml(): string {
             // ── 横断チャット (RAG / 埋め込み) ──
             '<div class="memola-set-row"><label style="font-weight:600;border-top:1px solid var(--border,#e3e3e0);padding-top:14px">横断チャット (RAG / 埋め込み)</label>' +
               '<div class="memola-set-hint" style="border-top:1px solid var(--border,#e3e3e0);padding-top:14px">' +
-              '文書を横断して検索・回答する「横断チャット」用の埋め込み設定。埋め込みは選択中サービスの OpenAI 互換エンドポイントを使う (Azure OpenAI 互換 / ローカル AI)。' +
+              '文書を横断して検索・回答する「横断チャット」用の埋め込み設定。' +
               '</div>' +
             '</div>' +
-            '<div class="memola-set-row" data-prov="claude"><label></label>' +
-              '<div class="memola-set-hint">※ Anthropic Claude には埋め込み API が無いため横断チャット (RAG) は使えません。「Azure OpenAI 互換 API」または「ローカル AI」を選ぶと有効になります (チャット回答自体は Claude のままでも可)。</div>' +
+            '<div class="memola-set-row"><label>埋め込みプロバイダ</label>' +
+              '<select id="memola-set-embed-provider">' +
+                '<option value="voyage">Voyage AI (中継不要・Claude併用の推奨)</option>' +
+                '<option value="auto">チャットと同じ (Azure OpenAI 互換 / ローカル AI)</option>' +
+              '</select>' +
             '</div>' +
-            '<div class="memola-set-row" data-prov="corp,local"><label>埋め込みモデル</label>' +
+            '<div class="memola-set-row" data-embprov="voyage"><label>Voyage API キー</label>' +
+              '<input id="memola-set-voyage-key" type="password" placeholder="pa-... (https://dashboard.voyageai.com で取得)">' +
+            '</div>' +
+            '<div class="memola-set-row" data-embprov="voyage"><label>Voyage モデル</label>' +
+              '<select id="memola-set-voyage-model"></select>' +
+            '</div>' +
+            '<div class="memola-set-row" data-prov="claude" data-embprov="auto"><label></label>' +
+              '<div class="memola-set-hint">※ Anthropic Claude には埋め込み API が無いため、「チャットと同じ」では横断チャット (RAG) は使えません。<b>埋め込みプロバイダに「Voyage AI」を選ぶ</b>と、Claude チャットのまま中継サーバ無しで RAG が有効になります (推奨)。</div>' +
+            '</div>' +
+            '<div class="memola-set-row" data-embprov="auto" data-prov="corp,local"><label>埋め込みモデル</label>' +
               '<select id="memola-set-embed-model"></select>' +
             '</div>' +
-            '<div class="memola-set-row" data-prov="corp"><label>埋め込み api-version</label>' +
+            '<div class="memola-set-row" data-embprov="auto" data-prov="corp"><label>埋め込み api-version</label>' +
               '<input id="memola-set-embed-apiver" type="text" placeholder="2024-02-01">' +
             '</div>' +
-            '<div class="memola-set-row" data-prov="corp,local"><label>出力次元数 (任意)</label>' +
-              '<input id="memola-set-embed-dims" type="number" min="1" placeholder="空欄=サーバ既定 (3-small:1536 / 3-large:3072)">' +
+            '<div class="memola-set-row"><label>出力次元数 (任意)</label>' +
+              '<input id="memola-set-embed-dims" type="number" min="1" placeholder="空欄=モデル既定 (voyage-3.5-lite:1024 / text-embedding-3-small:1536)">' +
             '</div>' +
-            '<div class="memola-set-row" data-prov="corp,local"><label>取得件数 (top-K)</label>' +
+            '<div class="memola-set-row"><label>取得件数 (top-K)</label>' +
               '<input id="memola-set-rag-topk" type="number" min="1" max="50" placeholder="8">' +
             '</div>' +
-            '<div class="memola-set-row" data-prov="corp,local"><label>最小スコア</label>' +
+            '<div class="memola-set-row"><label>最小スコア</label>' +
               '<input id="memola-set-rag-minscore" type="number" min="0" max="1" step="0.05" placeholder="0.2">' +
             '</div>' +
-            '<div class="memola-set-row" data-prov="corp,local"><label></label>' +
+            '<div class="memola-set-row"><label></label>' +
               '<div class="memola-set-hint">' +
-              '<b>埋め込み URL</b>: corp = <code>{ベース URL}/openai/deployments/{プレフィックス+モデル名}/embeddings?api-version=...</code>、local = <code>{ベース URL}/embeddings</code>。' +
-              '<br>※ corp の埋め込みデプロイ名もチャットと同じプレフィックス規則で組み立てます。' +
-              '<br>※ 取得件数=回答時に文脈へ渡す類似チャンクの最大数、最小スコア=コサイン類似度の足切り (0〜1)。' +
+              '<b>Voyage AI</b>: ブラウザから直接呼べる (CORS対応) ため中継サーバ不要。Claude チャットとの併用に最適。' +
+              '<br><b>チャットと同じ</b>: corp=<code>{ベースURL}/openai/deployments/{プレフィックス+モデル}/embeddings</code>、local=<code>{ベースURL}/embeddings</code>。' +
+              '<br>※ 取得件数=文脈へ渡す類似チャンクの最大数、最小スコア=コサイン類似度の足切り (0〜1)。' +
+              '<br>※ 埋め込みモデル/次元を変えたら既存ベクトルは無効になります — 設定→リセットで作り直してください。' +
               '</div>' +
             '</div>' +
           '</div>' +

@@ -32,11 +32,19 @@ async function sleepRespectingAbort(ms: number, signal?: AbortSignal): Promise<v
 /** RAG が設定的に利用可能か (= 埋め込みエンドポイントが解決できるか)。 */
 export function canEmbed(): boolean { return resolveEmbeddingEndpoint() !== null; }
 
+export interface EmbedOpts {
+  /** Voyage は query/document で精度が変わる。OpenAI 系では無視。既定 'document'。 */
+  inputType?: 'query' | 'document';
+  signal?: AbortSignal;
+  maxRetries?: number;
+}
+
 /** 複数テキストをまとめて埋め込み、Float32Array[] を返す。入出力順は data[].index で対応。 */
-export async function embedTexts(texts: string[], signal?: AbortSignal, maxRetries = 5): Promise<Float32Array[]> {
+export async function embedTexts(texts: string[], opts: EmbedOpts = {}): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
   const ep = resolveEmbeddingEndpoint();
-  if (!ep) throw new Error('埋め込み未設定: AI 設定で Azure OpenAI 互換 または ローカル AI を選んでください');
+  if (!ep) throw new Error('埋め込み未設定: AI 設定で埋め込みプロバイダ (Voyage / Azure OpenAI 互換 / ローカル) を構成してください');
+  const { inputType = 'document', signal, maxRetries = 5 } = opts;
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (ep.authStyle === 'azure') {
@@ -45,7 +53,12 @@ export async function embedTexts(texts: string[], signal?: AbortSignal, maxRetri
     if (ep.apiKey) headers['Authorization'] = ep.apiKey.startsWith('Bearer ') ? ep.apiKey : `Bearer ${ep.apiKey}`;
   }
   const bodyObj: Record<string, unknown> = { input: texts, model: ep.model };
-  if (ep.dimensions) bodyObj.dimensions = ep.dimensions;
+  if (ep.kind === 'voyage') {
+    bodyObj.input_type = inputType;
+    if (ep.dimensions) bodyObj.output_dimension = ep.dimensions;
+  } else if (ep.dimensions) {
+    bodyObj.dimensions = ep.dimensions;
+  }
   const body = JSON.stringify(bodyObj);
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -69,8 +82,8 @@ export async function embedTexts(texts: string[], signal?: AbortSignal, maxRetri
   throw new Error('embed failed: max retries exceeded');
 }
 
-/** 1 件だけ埋め込む簡易版 (クエリ用)。 */
+/** 1 件だけ埋め込む簡易版 (クエリ用 — Voyage では input_type=query)。 */
 export async function embedOne(text: string, signal?: AbortSignal): Promise<Float32Array> {
-  const [v] = await embedTexts([text], signal);
+  const [v] = await embedTexts([text], { inputType: 'query', signal });
   return v;
 }

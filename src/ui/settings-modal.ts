@@ -39,6 +39,9 @@ export function attachSettingsModal(): void {
   const setLocalModels = document.getElementById('memola-set-localai-models') as HTMLTextAreaElement | null;
   const setLocalReasoning = document.getElementById('memola-set-localai-reasoning') as HTMLInputElement | null;
   // 横断チャット (RAG / 埋め込み) — optional; absent fields degrade gracefully.
+  const setEmbedProvider = document.getElementById('memola-set-embed-provider') as HTMLSelectElement | null;
+  const setVoyageKey = document.getElementById('memola-set-voyage-key') as HTMLInputElement | null;
+  const setVoyageModel = document.getElementById('memola-set-voyage-model') as HTMLSelectElement | null;
   const setEmbedModel = document.getElementById('memola-set-embed-model') as HTMLSelectElement | null;
   const setEmbedApiVer = document.getElementById('memola-set-embed-apiver') as HTMLInputElement | null;
   const setEmbedDims = document.getElementById('memola-set-embed-dims') as HTMLInputElement | null;
@@ -91,6 +94,13 @@ export function attachSettingsModal(): void {
         setEmbedModel.appendChild(o);
       });
     }
+    if (setVoyageModel) {
+      ai.VOYAGE_MODELS.forEach((id) => {
+        const o = document.createElement('option');
+        o.value = id; o.textContent = id;
+        setVoyageModel.appendChild(o);
+      });
+    }
   });
 
   // From here on, every `set*` ref has been null-guarded by the early
@@ -101,14 +111,20 @@ export function attachSettingsModal(): void {
    *  has a `data-prov` attribute matching the provider value. */
   function syncProviderRows(): void {
     const cur = provEl.value;
-    // `data-prov` may list multiple providers (comma-separated) for rows that
-    // apply to more than one back-end (e.g. embeddings work for corp + local).
-    document.querySelectorAll<HTMLElement>('.memola-set-row[data-prov]').forEach((row) => {
-      const provs = (row.dataset.prov || '').split(',').map((s) => s.trim());
-      row.style.display = provs.includes(cur) ? '' : 'none';
+    const emb = setEmbedProvider?.value || 'voyage';
+    // A row is shown iff it passes BOTH gates it declares:
+    //   data-prov     — chat provider (comma-separated allowed)
+    //   data-embprov  — embedding provider ('auto' | 'voyage')
+    document.querySelectorAll<HTMLElement>('.memola-set-row[data-prov],.memola-set-row[data-embprov]').forEach((row) => {
+      const provAttr = row.dataset.prov;
+      const embAttr = row.dataset.embprov;
+      const okProv = !provAttr || provAttr.split(',').map((s) => s.trim()).includes(cur);
+      const okEmb = !embAttr || embAttr.split(',').map((s) => s.trim()).includes(emb);
+      row.style.display = (okProv && okEmb) ? '' : 'none';
     });
   }
   provEl.addEventListener('change', syncProviderRows);
+  setEmbedProvider?.addEventListener('change', syncProviderRows);
 
   // Sidebar nav inside the settings modal — tabs switch panes.
   document.querySelectorAll<HTMLElement>('.memola-set-tab').forEach((tab) => {
@@ -150,6 +166,9 @@ export function attachSettingsModal(): void {
         setLocalModel.value = ai.getLocalAiModel();
         setLocalModels.value = ai.getLocalAiModels().join('\n');
         setLocalReasoning.value = ai.getLocalAiReasoningModels().join(' ');
+        if (setEmbedProvider) setEmbedProvider.value = ai.getEmbedProvider();
+        if (setVoyageKey) setVoyageKey.value = ai.getVoyageKey();
+        if (setVoyageModel) setVoyageModel.value = ai.getVoyageModel();
         if (setEmbedModel) setEmbedModel.value = ai.getEmbeddingModel();
         if (setEmbedApiVer) setEmbedApiVer.value = ai.getEmbeddingApiVersion();
         if (setEmbedDims) setEmbedDims.value = ai.getEmbeddingDimensions()?.toString() || '';
@@ -204,6 +223,9 @@ export function attachSettingsModal(): void {
           .split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
         ai.setLocalAiModels(localModelsList);
         ai.setLocalAiReasoningModels(setLocalReasoning.value);
+        if (setEmbedProvider) ai.setEmbedProvider(setEmbedProvider.value as 'auto' | 'voyage');
+        if (setVoyageKey) ai.setVoyageKey(setVoyageKey.value);
+        if (setVoyageModel) ai.setVoyageModel(setVoyageModel.value);
         if (setEmbedModel) ai.setEmbeddingModel(setEmbedModel.value);
         if (setEmbedApiVer) ai.setEmbeddingApiVersion(setEmbedApiVer.value);
         if (setEmbedDims) ai.setEmbeddingDimensions(setEmbedDims.value);
