@@ -2619,6 +2619,9 @@
   padding: 6px 8px; border-radius: var(--r-2);
   font-size: 10.5px; line-height: 1.55;
   white-space: pre-wrap; word-break: break-word;
+  /* ホスト環境が user-select:none を敷くので、チャット出力は明示的に選択可に
+   * する (= マウスドラッグでコピーできる)。cursor:text で選択可能を示す。 */
+  user-select: text; -webkit-user-select: text; cursor: text;
 }
 #memola-overlay .memola-ai-user {
   background: var(--paper-2-strong);
@@ -4056,3 +4059,10 @@
 #memola-xchat .tdr-note-submit:disabled{opacity:.4;cursor:default}
 #memola-xchat .tdr-note-submit svg{width:14px;height:14px}
 #memola-xchat .tdr-note-hint{margin:var(--s-2) auto 0;font-size:var(--fs-xs);color:var(--ink-4);line-height:1.4}
+
+/* 横断チャットの出力もホスト環境の user-select:none を打ち消して選択・コピー可に */
+#memola-xchat .tdr-answer,#memola-xchat .tdr-q,#memola-xchat .tdr-a-meta,
+#memola-xchat .tdr-hit-subject,#memola-xchat .tdr-hit-snippet,#memola-xchat .tdr-empty p{
+  user-select:text;-webkit-user-select:text;
+}
+#memola-xchat .tdr-answer,#memola-xchat .tdr-q{cursor:text}
