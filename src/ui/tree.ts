@@ -301,7 +301,19 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
   db.addEventListener('click', (e) => { e.stopPropagation(); doDel(page.Id); });
   acts.appendChild(db);
   row.append(tog, icEl, lbl, acts);
-  row.addEventListener('click', () => { doSelect(page.Id); });
+  // 通常クリック=同じタブで遷移 / Ctrl(⌘)+クリック=新規タブで開く(Notion流)。
+  row.addEventListener('click', (e) => {
+    if (e.metaKey || e.ctrlKey) {
+      void import('./tabs').then((m) => m.openPageInNewTab(page.Id));
+    } else { void doSelect(page.Id); }
+  });
+  // 中クリックでも新規タブ。
+  row.addEventListener('auxclick', (e) => {
+    if ((e as MouseEvent).button === 1) {
+      e.preventDefault();
+      void import('./tabs').then((m) => m.openPageInNewTab(page.Id));
+    }
+  });
 
   // Drag & drop: move page (parent change) or reorder siblings.
   // Drop zones:

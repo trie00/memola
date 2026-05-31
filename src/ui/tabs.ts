@@ -56,6 +56,15 @@ export function openInActiveTab(pageId: string, title: string): void {
   persist();
 }
 
+/** ページを新規タブで開く(Ctrl/⌘+クリック・中クリック用)。 */
+export async function openPageInNewTab(pageId: string): Promise<void> {
+  const tab: Tab = { tabId: genTabId(), kind: 'page', pageId: undefined, title: '' };
+  S.tabs.push(tab);
+  S.activeTabId = tab.tabId;
+  const { doSelect } = await import('./views');
+  await doSelect(pageId); // 新アクティブタブを openInActiveTab で埋める
+}
+
 /** 新しい空タブを開く(クリック後にツリーのページを選ぶと中身が入る)。 */
 export function newTab(): void {
   const tab: Tab = { tabId: genTabId(), kind: 'page', pageId: undefined, title: '新規タブ' };
