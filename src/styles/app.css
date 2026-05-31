@@ -993,6 +993,12 @@
   box-shadow: 0 0 0 4px rgba(241, 196, 15, 0.16);
   border-radius: 3px; transition: background var(--tr-fast, .12s);
 }
+/* Block tinted because a live auto-merge folded in another user's add/update */
+#memola-ed [data-block-id].memola-block-incoming {
+  background: rgba(82, 156, 110, 0.15);
+  box-shadow: 0 0 0 4px rgba(82, 156, 110, 0.15);
+  border-radius: 3px; transition: background var(--tr-fast, .12s);
+}
 #memola-overlay .memola-cmt-thread.resolved { opacity: 0.55; }
 #memola-overlay .memola-cmt-resolved-tag { font-size: var(--fs-xs); color: #2f8a5b; margin-bottom: 6px; }
 #memola-overlay .memola-cmt-resolved-sep { font-size: var(--fs-xs); color: var(--ink-3); margin: 14px 4px 4px; text-transform: none; }

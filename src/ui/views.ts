@@ -146,6 +146,9 @@ export async function doSelect(id: string): Promise<void> {
   if (!page) return;
   // Tear down the previous page's comment markers/popover before switching.
   void import('./comments-ui').then((m) => m.clearComments());
+  // Clear any live-merge "incoming" block highlight (leaving + returning
+  // resets it, per spec).
+  void import('./merge-highlight').then((m) => m.clearMergeHighlight());
   // Push into the back/forward history stack — pushHistory() ignores the
   // call when we're navigating *through* history (skip flag).
   pushHistory(id);

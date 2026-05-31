@@ -215,7 +215,12 @@ async function tryLiveSync(
 
   // Clean merge. Fold into the editor only if the visible content
   // actually changed (avoids a no-op reconcile).
-  if (plan.changed) reconcileEditorBlocks(plan.merged);
+  if (plan.changed) {
+    reconcileEditorBlocks(plan.merged);
+    // Tint the blocks the other user added/updated so the change is visible.
+    void import('./merge-highlight').then((m) => m.highlightIncomingBlocks(oursBody, plan.mergedBody))
+      .catch(() => undefined);
+  }
   saver.rebaseOnto(
     { pageId: id, body: theirsBody, title: editorTitle, etag: theirsEtag, modified: theirsModified },
     plan.mergedBody,
