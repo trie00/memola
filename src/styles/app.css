@@ -987,8 +987,7 @@
   opacity: 0; pointer-events: none; transition: opacity var(--tr-fast, .12s);
 }
 #memola-overlay .memola-cmt-thread:hover > .memola-cmt-thread-hover { opacity: 1; pointer-events: auto; }
-#memola-overlay .memola-cmt-thread.active { box-shadow: inset 0 0 0 1.5px var(--accent, #2f6f5e); }
-/* Body block highlight while its comment thread is active */
+/* Body block highlight while hovering its comment thread in the pane */
 #memola-ed [data-block-id].memola-cmt-block-active {
   background: rgba(241, 196, 15, 0.16);
   box-shadow: 0 0 0 4px rgba(241, 196, 15, 0.16);

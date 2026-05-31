@@ -31,6 +31,7 @@ let _composeScope: CommentScope = 'user';
 let _editingId = 0;
 let _listenersBound = false;
 let _paneWired = false;
+let _hoverBlockId = '';
 
 /** Resolved display names for reactor / author ids (for chip tooltips). */
 const _userNames = new Map<number, string>();
@@ -89,6 +90,7 @@ export function clearComments(): void {
   _threads = [];
   removeMarkers();
   closeFloat();
+  _hoverBlockId = '';
   clearBlockHighlight();
   const p = pane();
   if (p) p.classList.remove('on');
@@ -135,6 +137,19 @@ function wirePane(): void {
     p.querySelector('#memola-comments-x')?.addEventListener('click', () => { _paneOpen = false; clearBlockHighlight(); renderPane(); });
     const list = paneList();
     list?.addEventListener('click', onPaneClick);
+    // Hover a thread → highlight its anchored block in the body (no scroll).
+    list?.addEventListener('mouseover', (e) => {
+      const th = (e.target as HTMLElement).closest<HTMLElement>('.memola-cmt-thread');
+      if (!th) return;
+      const bid = th.dataset.blockId || '';
+      if (bid === _hoverBlockId) return;
+      _hoverBlockId = bid;
+      highlightBlock(bid);
+    });
+    list?.addEventListener('mouseout', (e) => {
+      const to = (e.relatedTarget as HTMLElement | null)?.closest?.('.memola-cmt-thread');
+      if (!to) { _hoverBlockId = ''; clearBlockHighlight(); }
+    });
     // Enter in a reply input sends the reply.
     list?.addEventListener('keydown', (e) => {
       const ke = e as KeyboardEvent;
@@ -171,8 +186,7 @@ export function openCommentPopover(pageId: string, blockId: string): void {
   const list = paneList();
   if (blockId && list) {
     const t = list.querySelector<HTMLElement>('.memola-cmt-thread[data-block-id="' + cssEscape(blockId) + '"]');
-    if (t) { activateThread(t); t.scrollIntoView({ block: 'center' }); }
-    else highlightBlock(blockId);
+    t?.scrollIntoView({ block: 'center' });
   }
   (pane()?.querySelector('#memola-comments-ta') as HTMLTextAreaElement | null)?.focus();
 }
@@ -378,24 +392,15 @@ function anchorTextFor(blockId: string): string {
 
 // ── Events ───────────────────────────────────────────────
 
-/** Mark a pane thread active and highlight its anchored block in the body. */
-function activateThread(threadEl: HTMLElement): void {
-  paneList()?.querySelectorAll('.memola-cmt-thread.active').forEach((el) => el.classList.remove('active'));
-  threadEl.classList.add('active');
-  highlightBlock(threadEl.dataset.blockId || '');
-}
-
-/** Highlight (and scroll to) the given block in the editor; clears any
- *  previous highlight. Empty blockId = page-level comment → just clear. */
+/** Highlight the given block in the editor (hover-driven); clears any
+ *  previous highlight. Empty blockId = page-level comment → just clear.
+ *  No scroll — hovering shouldn't move the viewport. */
 function highlightBlock(blockId: string): void {
   const ed = getEd();
   ed.querySelectorAll('.memola-cmt-block-active').forEach((el) => el.classList.remove('memola-cmt-block-active'));
   if (!blockId) return;
   const el = ed.querySelector<HTMLElement>('[data-block-id="' + cssEscape(blockId) + '"]');
-  if (el) {
-    el.classList.add('memola-cmt-block-active');
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }
+  if (el) el.classList.add('memola-cmt-block-active');
 }
 
 function clearBlockHighlight(): void {
@@ -414,14 +419,7 @@ function findComment(id: number): CommentRow | null {
 function onPaneClick(e: Event): void {
   const t = e.target as HTMLElement;
   const btn = t.closest<HTMLElement>('[data-act]');
-  if (!btn) {
-    // Clicking anywhere in a thread (not an action control) activates it:
-    // highlight the anchored block in the body so you can see what the
-    // comment refers to.
-    const threadEl = t.closest<HTMLElement>('.memola-cmt-thread');
-    if (threadEl) activateThread(threadEl);
-    return;
-  }
+  if (!btn) return;
   const act = btn.dataset.act;
   const id = Number(btn.dataset.id || 0);
   if (act === 'resolve') { void doResolve(btn.dataset.root || ''); return; }
