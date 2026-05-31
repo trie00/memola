@@ -941,6 +941,63 @@
   padding: 8px 10px 3px; font-size: var(--fs-xs, 11px);
   color: var(--ink-3, #9b9a97); font-weight: 500;
 }
+
+/* ── Comments: gutter markers + thread popover ─────────── */
+#memola-overlay .memola-cmt-marker {
+  position: absolute; z-index: 11; cursor: pointer;
+  font-size: 13px; line-height: 1; padding: 1px 3px; border-radius: var(--r-2, 4px);
+  opacity: 0.55; transition: opacity var(--tr-fast, .12s);
+  user-select: none;
+}
+#memola-overlay .memola-cmt-marker:hover { opacity: 1; background: var(--paper-2, rgba(55,53,47,.08)); }
+#memola-overlay .memola-cmt-pop {
+  position: absolute; z-index: 2147483647;
+  width: 320px; max-height: 72vh; overflow-y: auto;
+  background: var(--paper, #fff);
+  border: 1px solid var(--line, rgba(55,53,47,.15));
+  border-radius: var(--r-3, 8px); box-shadow: 0 8px 28px rgba(0,0,0,.20);
+  font-size: var(--fs-sm, 13px); color: var(--ink, #37352f);
+}
+#memola-overlay .memola-cmt-pop-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; font-weight: 600; border-bottom: 1px solid var(--line, rgba(55,53,47,.1));
+}
+#memola-overlay .memola-cmt-x { background: none; border: none; cursor: pointer; font-size: 18px; color: var(--ink-3, #9b9a97); line-height: 1; }
+#memola-overlay .memola-cmt-threads { padding: 4px 12px; }
+#memola-overlay .memola-cmt-empty { padding: 12px 0; color: var(--ink-3, #9b9a97); }
+#memola-overlay .memola-cmt-thread { padding: 8px 0; border-bottom: 1px solid var(--line, rgba(55,53,47,.06)); }
+#memola-overlay .memola-cmt-thread.resolved { opacity: 0.6; }
+#memola-overlay .memola-cmt-resolved-tag { font-size: var(--fs-xs, 11px); color: #2f8a5b; margin-bottom: 4px; }
+#memola-overlay .memola-cmt-item { padding: 4px 0; }
+#memola-overlay .memola-cmt-item.deleted { color: var(--ink-3, #9b9a97); font-style: italic; }
+#memola-overlay .memola-cmt-meta { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs, 11px); color: var(--ink-3, #9b9a97); }
+#memola-overlay .memola-cmt-author { font-weight: 600; color: var(--ink, #37352f); }
+#memola-overlay .memola-cmt-badge { padding: 0 5px; border-radius: 8px; font-size: 10px; }
+#memola-overlay .memola-cmt-badge.priv { background: #f4dfeb; color: #8a3b6b; }
+#memola-overlay .memola-cmt-badge.org { background: #ddebf1; color: #2b6285; }
+#memola-overlay .memola-cmt-edited { font-style: italic; }
+#memola-overlay .memola-cmt-body { margin: 2px 0; white-space: pre-wrap; word-break: break-word; }
+#memola-overlay .memola-cmt-body.muted { color: var(--ink-3, #9b9a97); }
+#memola-overlay .memola-cmt-rowacts { display: flex; gap: 10px; }
+#memola-overlay .memola-cmt-link { background: none; border: none; padding: 0; cursor: pointer; color: var(--ink-3, #9b9a97); font-size: var(--fs-xs, 11px); }
+#memola-overlay .memola-cmt-link:hover { color: var(--accent, #2f6f5e); text-decoration: underline; }
+#memola-overlay .memola-cmt-threadfoot { display: flex; gap: 6px; margin-top: 6px; }
+#memola-overlay .memola-cmt-reply-inp { flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid var(--line, rgba(55,53,47,.15)); border-radius: var(--r-2, 4px); font-family: inherit; font-size: var(--fs-sm, 13px); }
+#memola-overlay .memola-cmt-edit-ta,
+#memola-overlay .memola-cmt-compose textarea {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 54px;
+  padding: 6px 8px; border: 1px solid var(--line, rgba(55,53,47,.15));
+  border-radius: var(--r-2, 4px); font-family: inherit; font-size: var(--fs-sm, 13px);
+}
+#memola-overlay .memola-cmt-compose { padding: 10px 12px; border-top: 1px solid var(--line, rgba(55,53,47,.1)); }
+#memola-overlay .memola-cmt-actions { display: flex; gap: 6px; margin-top: 4px; }
+#memola-overlay .memola-cmt-scope { display: flex; gap: 6px; margin-bottom: 6px; }
+#memola-overlay .memola-cmt-scope-btn {
+  flex: 1; padding: 4px 6px; border: 1px solid var(--line, rgba(55,53,47,.15));
+  border-radius: var(--r-2, 4px); background: var(--paper, #fff); cursor: pointer;
+  font-family: inherit; font-size: var(--fs-xs, 11px); color: var(--ink-3, #9b9a97);
+}
+#memola-overlay .memola-cmt-scope-btn.on { background: var(--paper-2, rgba(55,53,47,.08)); color: var(--ink, #37352f); border-color: var(--accent, #2f6f5e); }
 @keyframes memola-ph-pulse {
   0%,100% { opacity: 1; }
   50%     { opacity: 0.65; }

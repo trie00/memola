@@ -128,6 +128,12 @@ export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void
     menu.appendChild(addMenuItem('＋ 下にブロックを追加', () => {
       editor.applyMutation((s) => insertBlockAfter(s, blockId, paragraph('')), 'structural');
     }));
+    menu.appendChild(addMenuItem('💬 コメント', () => {
+      void import('../comments-ui').then((m) => {
+        const target = m.currentCommentTarget();
+        if (target) m.openCommentPopover(target.pageId, blockId);
+      });
+    }));
     const hd = document.createElement('div');
     hd.className = 'memola-blk-menu-hd';
     hd.textContent = '種類を変更';

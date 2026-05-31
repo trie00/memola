@@ -309,6 +309,15 @@ export function editor2ExecCmd(cmd: string): boolean {
     case 'strike':     ed.toggleInlineFormat('strike'); return true;
     case 'codeInline':
     case 'code':       ed.toggleInlineFormat('code');   return true;
+    case 'comment': {
+      // Comment on the caret's block (or page-level when no caret block).
+      const id = currentBlockId() || '';
+      void import('../comments-ui').then((m) => {
+        const target = m.currentCommentTarget();
+        if (target) m.openCommentPopover(target.pageId, id);
+      });
+      return true;
+    }
     case 'link': {
       // Pre-fill with the existing href when the selection sits on a single
       // link (so the user can edit / clear it). Empty input = unlink.

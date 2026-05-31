@@ -144,6 +144,8 @@ export async function doSelect(id: string): Promise<void> {
   const navId = id;
   const page = S.pages.find((p) => p.Id === id);
   if (!page) return;
+  // Tear down the previous page's comment markers/popover before switching.
+  void import('./comments-ui').then((m) => m.clearComments());
   // Push into the back/forward history stack — pushHistory() ignores the
   // call when we're navigating *through* history (skip flag).
   pushHistory(id);
@@ -238,6 +240,11 @@ export async function doSelect(id: string): Promise<void> {
     syncPresenceForCurrent();
     // Backlinks panel — render lazily after the editor itself is ready.
     void import('./backlinks').then((m) => m.renderBacklinks());
+    // Comments — load + render gutter markers for this page.
+    void import('./comments-ui').then((m) => {
+      const target = m.currentCommentTarget();
+      if (target && S.currentId === navId) void m.loadCommentsFor(target.pageId, target.scope);
+    });
   }
   // Remember the last-opened page so the next app session reopens it.
   // Keyed by SITE so each workspace gets its own "last page" memory.
@@ -360,6 +367,7 @@ function syncDraftBanner(): void {
 
 export async function doSelectDb(id: string, page: Page): Promise<void> {
   S.currentType = 'database';
+  void import('./comments-ui').then((m) => m.clearComments());
   stopWatching();
   saver.unload();
   syncPubTag();

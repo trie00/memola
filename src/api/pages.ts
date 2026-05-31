@@ -456,6 +456,11 @@ export async function apiGetPages(): Promise<Page[]> {
   const items = buckets.flatMap((b) => b.rows);
   const topLevel = filterVisiblePages(items, myId);
   S.meta.pages = topLevel.map((row) => rowToMetaWithId(row, rowToPageId.get(row) ?? String(row.Id)));
+  // Lazy GC: prune the current user's private comments whose page no
+  // longer exists (e.g. another user purged a shared page). Best-effort,
+  // fire-and-forget — self-healing, mirrors gcDbColors.
+  void import('./comments').then((m) =>
+    m.gcMyOrphanComments(new Set(S.meta.pages.map((p) => p.id)))).catch(() => undefined);
   // S.pages getter recomputes from meta.pages — return the current
   // value for legacy callers (the assignment is a no-op via the setter).
   return S.pages;
@@ -831,6 +836,9 @@ export async function apiDeletePage(id: string): Promise<string[]> {
     if (itemId) {
       await deleteListItem(listForPageId(pid), itemId).catch(() => undefined);
     }
+    // Purge this page's comments (reachable lists). Other users' private
+    // comments are GC'd lazily per-user (gcMyOrphanComments).
+    void import('./comments').then((m) => m.purgeCommentsForPage(pid)).catch(() => undefined);
     // 3. Best-effort cleanup of orphan storage. If we crash here, the
     //    SP list and row bodies persist as unreachable garbage — they
     //    no longer break the UI but they consume storage. A future
@@ -1049,6 +1057,11 @@ export async function apiSetScope(
     S.meta.pages.push({ ...om, id: newId, parent: newParent, scope });
   }
   invalidateBacklinkCache();
+  // Remap comment anchors to the reminted page ids (reachable lists only;
+  // other users' private comments orphan and are GC'd lazily). Comment
+  // SCOPE is intentionally NOT changed here — private memos stay private.
+  void import('./comments').then((m) => m.remapCommentsPageId(new Map(Object.entries(idMap))))
+    .catch(() => undefined);
   return { rootId: idMap[id] ?? id, idMap };
 }
 

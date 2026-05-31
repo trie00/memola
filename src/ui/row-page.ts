@@ -91,6 +91,11 @@ export async function openRowAsPage(dbId: string, item: ListItem): Promise<void>
   // renderBacklinks() itself respects S.currentRow (set just above) and
   // will hide+empty the container in that case.
   void import('./backlinks').then((m) => m.renderBacklinks());
+  // Comments — DB row detail pages get comments too (keyed by row:list:id).
+  void import('./comments-ui').then((m) => {
+    const target = m.currentCommentTarget();
+    if (target) void m.loadCommentsFor(target.pageId, target.scope);
+  });
 }
 
 /** Save the row's title (DB list) + body (memola-pages). */
