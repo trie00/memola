@@ -8,7 +8,7 @@
 import { ICONS } from '../icons';
 import { mdToHtml } from '../lib/blocks-html';
 import { prefXChatHistory, prefXChatOpen } from '../lib/prefs';
-import { ragInit, ragRefresh, ragSearch, type RagHit } from '../rag/search';
+import { ragInit, ragRefresh, ragSearch, ragStats, type RagHit } from '../rag/search';
 import { canEmbed } from '../rag/embed';
 import { getProvider, getClaudeModel, getCorpAiModel, getLocalAiModel } from '../api/ai-settings';
 
@@ -101,6 +101,14 @@ function positionPanel(): void {
 
 function setIdx(text: string): void { const idx = $('memola-xchat-idx'); if (idx) idx.textContent = text; }
 
+/** 現在のベクトル化件数を常時表示 (確認用)。prefix で前置きメッセージを足せる。 */
+function showStats(prefix = ''): void {
+  const { org, user } = ragStats();
+  const total = org.chunks + user.chunks;
+  if (total === 0 && !prefix) { setIdx('未ベクトル化 — 「文書を読み込み」を押してください'); return; }
+  setIdx(`${prefix}ベクトル化済: 組織 ${org.docs}文書 / 個人 ${user.docs}文書 ・計 ${total} チャンク`);
+}
+
 /** インデックスを構築 (キャッシュ適用 + SP差分DL + writer なら差分ベクトル化)。
  *  進捗を見出しに表示。多重起動はしない (既存 Promise を共有)。 */
 function primeIndex(force = false): Promise<void> {
@@ -115,15 +123,17 @@ function primeIndex(force = false): Promise<void> {
     try {
       setIdx('インデックス読込中…');
       await ragInit();
-      setIdx('変更を確認中…');
+      showStats('現在の');
       const r = await ragRefresh(undefined, (p) => {
         const who = p.scope === 'org' ? '組織' : 'プライベート';
-        setIdx(`${who}をベクトル化中… ${p.done}/${p.total}`);
+        setIdx(`${who}をベクトル化中… ${p.done}/${p.total} チャンク`);
       });
-      const total = r.org + r.user;
-      let msg = total > 0 ? `ベクトル化完了: +${total}件` : 'インデックス最新';
-      if (r.orgSkipped) msg += ' (組織は別の利用者が更新担当)';
-      setIdx(msg);
+      const added = r.org + r.user;
+      // 完了後は常に「現在の総件数」を出す。今回追加分があれば前置き。
+      let prefix = '';
+      if (added > 0) prefix = `今回 +${added}チャンク ・ `;
+      else if (r.orgSkipped) prefix = '組織は別利用者が更新担当 ・ ';
+      showStats(prefix);
     } catch (e) {
       setIdx('索引エラー: ' + (e as Error).message);
     } finally {

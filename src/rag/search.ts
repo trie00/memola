@@ -28,6 +28,11 @@ export async function ragInit(): Promise<void> {
   await Promise.all([orgIndex().init(), userIndex().init()]);
 }
 
+/** 現在ベクトル化済みの件数 (文書数 / チャンク数) をスコープ別に返す。 */
+export function ragStats(): { org: { docs: number; chunks: number }; user: { docs: number; chunks: number } } {
+  return { org: orgIndex().stats(), user: userIndex().stats() };
+}
+
 export interface RagRefreshResult {
   org: number; user: number;
   /** org が他者のリース保持中で更新できなかった (= 自分は writer でない)。 */

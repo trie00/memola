@@ -36,6 +36,11 @@ export class ScopeIndex {
 
   get size(): number { return this.db.size; }
 
+  /** 現在インデックス済みの文書数 + チャンク数 (= ベクトル件数)。 */
+  stats(): { docs: number; chunks: number } {
+    return { docs: this.db.allDocKeys().size, chunks: this.db.size };
+  }
+
   /** キャッシュ適用 → (org) SP 差分DL。検索可能になるまで。冪等。 */
   async init(): Promise<void> {
     if (this.inited) return;
