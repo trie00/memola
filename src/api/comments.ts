@@ -58,6 +58,9 @@ export interface CommentRow {
   Deleted?: number;         // 1 = tombstone (kept because it has replies)
   Reactions?: string;       // JSON: { [emoji]: number[] of SP user ids }
   Created?: string;         // SP ISO timestamp
+  /** SP list this row was actually read from. Mutations target THIS list
+   *  (not a Scope-derived guess) so edits/reactions hit the right row. */
+  _list?: string;
 }
 
 /** Parse a comment's Reactions JSON into a map of emoji → user ids. */
@@ -192,7 +195,7 @@ async function fetchFromList(listTitle: string, pageId: string): Promise<Comment
     '&$filter=' + encodeURIComponent(filter) +
     '&$orderby=Created&$top=500');
   const d = await spGetD<{ results: Array<Record<string, unknown>> }>(url).catch(() => null);
-  return (d?.results || []).map(mapRow);
+  return (d?.results || []).map((r) => { const m = mapRow(r); m._list = listTitle; return m; });
 }
 
 const _cache = new Map<string, CommentRow[]>();
@@ -212,7 +215,12 @@ export async function apiListComments(pageId: string): Promise<CommentRow[]> {
   const mine = getMyCommentsList();
   if (mine) lists.push(mine);
   const batches = await Promise.all(lists.map((l) => fetchFromList(l, pageId)));
-  const all = batches.flat();
+  const me = S.meta.myUserId || 0;
+  // Visibility: org comments are shared; private (user-scope) comments are
+  // only the current user's own. This also defends against a private comment
+  // that leaked into the shared list (e.g. created while myUserId was still
+  // unresolved) — others must never see it.
+  const all = batches.flat().filter((c) => c.Scope === 'org' || !me || c.AuthorId === me);
   _cache.set(pageId, all);
   return all;
 }
@@ -222,6 +230,14 @@ export async function apiListComments(pageId: string): Promise<CommentRow[]> {
 function listForScope(scope: CommentScope): string {
   if (scope === 'org') return ORG_COMMENTS_LIST;
   return getMyCommentsList() || ORG_COMMENTS_LIST;
+}
+
+/** The list a comment actually lives in. Prefer the list it was READ from
+ *  (`_list`) — Scope-derived routing is fragile (an org comment whose Scope
+ *  field is empty would otherwise be written to the per-user list under the
+ *  shared row's item id = wrong row, so reactions/edits never sync). */
+function listForComment(c: CommentRow): string {
+  return c._list || listForScope(c.Scope);
 }
 
 async function currentAuthor(): Promise<{ id: number; name: string }> {
@@ -276,14 +292,14 @@ export async function apiAddComment(opts: {
 
 /** Edit a comment's body (author only — enforced by the caller). */
 export async function apiEditComment(c: CommentRow): Promise<void> {
-  await updateListItem(listForScope(c.Scope), c.Id, { Body: c.Body, Edited: 1 });
+  await updateListItem(listForComment(c), c.Id, { Body: c.Body, Edited: 1 });
   invalidateComments(c.PageId);
 }
 
 /** Hard-delete a comment row. (Deleting a thread root cascades to its
  *  replies in the caller — see comments-ui doDelete.) */
 export async function apiDeleteComment(c: CommentRow): Promise<void> {
-  await deleteListItem(listForScope(c.Scope), c.Id);
+  await deleteListItem(listForComment(c), c.Id);
   invalidateComments(c.PageId);
 }
 
@@ -291,7 +307,7 @@ export async function apiDeleteComment(c: CommentRow): Promise<void> {
  *  access may resolve. */
 export async function apiResolveThread(root: CommentRow, resolved: boolean): Promise<void> {
   const { id } = await currentAuthor();
-  await updateListItem(listForScope(root.Scope), root.Id, {
+  await updateListItem(listForComment(root), root.Id, {
     Resolved: resolved ? 1 : 0,
     ResolvedBy: resolved ? id : 0,
     ResolvedAt: resolved ? Date.now() : 0,
@@ -310,7 +326,7 @@ export async function apiToggleReaction(c: CommentRow, emoji: string): Promise<v
   const idx = users.indexOf(id);
   if (idx >= 0) users.splice(idx, 1); else users.push(id);
   if (users.length) map[emoji] = users; else delete map[emoji];
-  await updateListItem(listForScope(c.Scope), c.Id, { Reactions: JSON.stringify(map) });
+  await updateListItem(listForComment(c), c.Id, { Reactions: JSON.stringify(map) });
   invalidateComments(c.PageId);
 }
 
