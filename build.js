@@ -30,7 +30,9 @@ const result = esbuild.buildSync({
   target: 'es2020',
   loader: { '.css': 'text' },
   write: false,
-  minify: false,
+  // minify: ブックマークレットは javascript: URL 1本に丸ごと埋め込むため、
+  // ブラウザの URL 長制限(約2MB)を超えると無言で実行されなくなる。縮小必須。
+  minify: true,
   legalComments: 'none',
   define: {
     '__BUILD_ID__': JSON.stringify(BUILD_ID),
