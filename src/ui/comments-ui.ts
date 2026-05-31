@@ -89,6 +89,7 @@ export function clearComments(): void {
   _threads = [];
   removeMarkers();
   closeFloat();
+  clearBlockHighlight();
   const p = pane();
   if (p) p.classList.remove('on');
 }
@@ -131,7 +132,7 @@ function wirePane(): void {
   if (!p) return;
   if (!_paneWired) {
     _paneWired = true;
-    p.querySelector('#memola-comments-x')?.addEventListener('click', () => { _paneOpen = false; renderPane(); });
+    p.querySelector('#memola-comments-x')?.addEventListener('click', () => { _paneOpen = false; clearBlockHighlight(); renderPane(); });
     const list = paneList();
     list?.addEventListener('click', onPaneClick);
     // Enter in a reply input sends the reply.
@@ -169,8 +170,9 @@ export function openCommentPopover(pageId: string, blockId: string): void {
   renderPane();
   const list = paneList();
   if (blockId && list) {
-    const t = list.querySelector<HTMLElement>('[data-block-id="' + cssEscape(blockId) + '"]');
-    t?.scrollIntoView({ block: 'center' });
+    const t = list.querySelector<HTMLElement>('.memola-cmt-thread[data-block-id="' + cssEscape(blockId) + '"]');
+    if (t) { activateThread(t); t.scrollIntoView({ block: 'center' }); }
+    else highlightBlock(blockId);
   }
   (pane()?.querySelector('#memola-comments-ta') as HTMLTextAreaElement | null)?.focus();
 }
@@ -376,6 +378,30 @@ function anchorTextFor(blockId: string): string {
 
 // ── Events ───────────────────────────────────────────────
 
+/** Mark a pane thread active and highlight its anchored block in the body. */
+function activateThread(threadEl: HTMLElement): void {
+  paneList()?.querySelectorAll('.memola-cmt-thread.active').forEach((el) => el.classList.remove('active'));
+  threadEl.classList.add('active');
+  highlightBlock(threadEl.dataset.blockId || '');
+}
+
+/** Highlight (and scroll to) the given block in the editor; clears any
+ *  previous highlight. Empty blockId = page-level comment → just clear. */
+function highlightBlock(blockId: string): void {
+  const ed = getEd();
+  ed.querySelectorAll('.memola-cmt-block-active').forEach((el) => el.classList.remove('memola-cmt-block-active'));
+  if (!blockId) return;
+  const el = ed.querySelector<HTMLElement>('[data-block-id="' + cssEscape(blockId) + '"]');
+  if (el) {
+    el.classList.add('memola-cmt-block-active');
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+}
+
+function clearBlockHighlight(): void {
+  getEd().querySelectorAll('.memola-cmt-block-active').forEach((el) => el.classList.remove('memola-cmt-block-active'));
+}
+
 function findComment(id: number): CommentRow | null {
   for (const t of _threads) {
     if (t.root.Id === id) return t.root;
@@ -388,7 +414,14 @@ function findComment(id: number): CommentRow | null {
 function onPaneClick(e: Event): void {
   const t = e.target as HTMLElement;
   const btn = t.closest<HTMLElement>('[data-act]');
-  if (!btn) return;
+  if (!btn) {
+    // Clicking anywhere in a thread (not an action control) activates it:
+    // highlight the anchored block in the body so you can see what the
+    // comment refers to.
+    const threadEl = t.closest<HTMLElement>('.memola-cmt-thread');
+    if (threadEl) activateThread(threadEl);
+    return;
+  }
   const act = btn.dataset.act;
   const id = Number(btn.dataset.id || 0);
   if (act === 'resolve') { void doResolve(btn.dataset.root || ''); return; }
