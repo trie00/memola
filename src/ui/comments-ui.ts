@@ -577,6 +577,9 @@ function openReactionPalette(anchor: HTMLElement, id: number): void {
 // ── @mention picker ──────────────────────────────────────
 
 async function maybeOpenMentionPicker(el: HTMLInputElement | HTMLTextAreaElement): Promise<void> {
+  // No mentions on private pages — only the author can see them, so there's
+  // nobody to notify. (@ still types as plain text.)
+  if (_scopeDefault !== 'org') { closeMentionPicker(); return; }
   const caret = el.selectionStart ?? el.value.length;
   const before = el.value.slice(0, caret);
   const m = before.match(/@([^\s@]*)$/);
