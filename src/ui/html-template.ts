@@ -370,6 +370,37 @@ export function buildHtml(): string {
               '<br>※ Function Calling (ツール経由のページ/DB 操作) は OpenAI 互換 tools パラメータを実装したサーバ (Ollama 0.3+ 等) のみ動作。' +
               '</div>' +
             '</div>' +
+            // ── 横断チャット (RAG / 埋め込み) ──
+            '<div class="memola-set-row"><label style="font-weight:600;border-top:1px solid var(--border,#e3e3e0);padding-top:14px">横断チャット (RAG / 埋め込み)</label>' +
+              '<div class="memola-set-hint" style="border-top:1px solid var(--border,#e3e3e0);padding-top:14px">' +
+              '文書を横断して検索・回答する「横断チャット」用の埋め込み設定。埋め込みは選択中サービスの OpenAI 互換エンドポイントを使う (Azure OpenAI 互換 / ローカル AI)。' +
+              '</div>' +
+            '</div>' +
+            '<div class="memola-set-row" data-prov="claude"><label></label>' +
+              '<div class="memola-set-hint">※ Anthropic Claude には埋め込み API が無いため横断チャット (RAG) は使えません。「Azure OpenAI 互換 API」または「ローカル AI」を選ぶと有効になります (チャット回答自体は Claude のままでも可)。</div>' +
+            '</div>' +
+            '<div class="memola-set-row" data-prov="corp,local"><label>埋め込みモデル</label>' +
+              '<select id="memola-set-embed-model"></select>' +
+            '</div>' +
+            '<div class="memola-set-row" data-prov="corp"><label>埋め込み api-version</label>' +
+              '<input id="memola-set-embed-apiver" type="text" placeholder="2024-02-01">' +
+            '</div>' +
+            '<div class="memola-set-row" data-prov="corp,local"><label>出力次元数 (任意)</label>' +
+              '<input id="memola-set-embed-dims" type="number" min="1" placeholder="空欄=サーバ既定 (3-small:1536 / 3-large:3072)">' +
+            '</div>' +
+            '<div class="memola-set-row" data-prov="corp,local"><label>取得件数 (top-K)</label>' +
+              '<input id="memola-set-rag-topk" type="number" min="1" max="50" placeholder="8">' +
+            '</div>' +
+            '<div class="memola-set-row" data-prov="corp,local"><label>最小スコア</label>' +
+              '<input id="memola-set-rag-minscore" type="number" min="0" max="1" step="0.05" placeholder="0.2">' +
+            '</div>' +
+            '<div class="memola-set-row" data-prov="corp,local"><label></label>' +
+              '<div class="memola-set-hint">' +
+              '<b>埋め込み URL</b>: corp = <code>{ベース URL}/openai/deployments/{プレフィックス+モデル名}/embeddings?api-version=...</code>、local = <code>{ベース URL}/embeddings</code>。' +
+              '<br>※ corp の埋め込みデプロイ名もチャットと同じプレフィックス規則で組み立てます。' +
+              '<br>※ 取得件数=回答時に文脈へ渡す類似チャンクの最大数、最小スコア=コサイン類似度の足切り (0〜1)。' +
+              '</div>' +
+            '</div>' +
           '</div>' +
           // Save / sync / presence pane
           '<div class="memola-set-pane" data-pane="save">' +

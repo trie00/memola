@@ -38,6 +38,12 @@ export function attachSettingsModal(): void {
   const setLocalModel = document.getElementById('memola-set-localai-model') as HTMLInputElement | null;
   const setLocalModels = document.getElementById('memola-set-localai-models') as HTMLTextAreaElement | null;
   const setLocalReasoning = document.getElementById('memola-set-localai-reasoning') as HTMLInputElement | null;
+  // 横断チャット (RAG / 埋め込み) — optional; absent fields degrade gracefully.
+  const setEmbedModel = document.getElementById('memola-set-embed-model') as HTMLSelectElement | null;
+  const setEmbedApiVer = document.getElementById('memola-set-embed-apiver') as HTMLInputElement | null;
+  const setEmbedDims = document.getElementById('memola-set-embed-dims') as HTMLInputElement | null;
+  const setRagTopK = document.getElementById('memola-set-rag-topk') as HTMLInputElement | null;
+  const setRagMinScore = document.getElementById('memola-set-rag-minscore') as HTMLInputElement | null;
   const setDensity = document.getElementById('memola-set-density') as HTMLSelectElement | null;
   const setTheme = document.getElementById('memola-set-theme') as HTMLSelectElement | null;
   const setSaveDelay = document.getElementById('memola-set-savedelay') as HTMLSelectElement | null;
@@ -78,6 +84,13 @@ export function attachSettingsModal(): void {
       o.textContent = m.id + (m.reasoning ? ' (推論)' : '') + (m.vision ? ' 🖼' : '');
       setCorpModel.appendChild(o);
     });
+    if (setEmbedModel) {
+      ai.EMBEDDING_MODELS.forEach((id) => {
+        const o = document.createElement('option');
+        o.value = id; o.textContent = id;
+        setEmbedModel.appendChild(o);
+      });
+    }
   });
 
   // From here on, every `set*` ref has been null-guarded by the early
@@ -88,8 +101,11 @@ export function attachSettingsModal(): void {
    *  has a `data-prov` attribute matching the provider value. */
   function syncProviderRows(): void {
     const cur = provEl.value;
+    // `data-prov` may list multiple providers (comma-separated) for rows that
+    // apply to more than one back-end (e.g. embeddings work for corp + local).
     document.querySelectorAll<HTMLElement>('.memola-set-row[data-prov]').forEach((row) => {
-      row.style.display = (row.dataset.prov === cur) ? '' : 'none';
+      const provs = (row.dataset.prov || '').split(',').map((s) => s.trim());
+      row.style.display = provs.includes(cur) ? '' : 'none';
     });
   }
   provEl.addEventListener('change', syncProviderRows);
@@ -134,6 +150,11 @@ export function attachSettingsModal(): void {
         setLocalModel.value = ai.getLocalAiModel();
         setLocalModels.value = ai.getLocalAiModels().join('\n');
         setLocalReasoning.value = ai.getLocalAiReasoningModels().join(' ');
+        if (setEmbedModel) setEmbedModel.value = ai.getEmbeddingModel();
+        if (setEmbedApiVer) setEmbedApiVer.value = ai.getEmbeddingApiVersion();
+        if (setEmbedDims) setEmbedDims.value = ai.getEmbeddingDimensions()?.toString() || '';
+        if (setRagTopK) setRagTopK.value = String(ai.getRagTopK());
+        if (setRagMinScore) setRagMinScore.value = String(ai.getRagMinScore());
         setDensity.value = prefDensity.get();
         setTheme.value = prefTheme.get();
         setSaveDelay.value = prefSaveDelayMs.get();
@@ -183,6 +204,11 @@ export function attachSettingsModal(): void {
           .split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
         ai.setLocalAiModels(localModelsList);
         ai.setLocalAiReasoningModels(setLocalReasoning.value);
+        if (setEmbedModel) ai.setEmbeddingModel(setEmbedModel.value);
+        if (setEmbedApiVer) ai.setEmbeddingApiVersion(setEmbedApiVer.value);
+        if (setEmbedDims) ai.setEmbeddingDimensions(setEmbedDims.value);
+        if (setRagTopK) ai.setRagTopK(setRagTopK.value);
+        if (setRagMinScore) ai.setRagMinScore(setRagMinScore.value);
         prefDensity.set(setDensity.value);
         prefTheme.set(setTheme.value);
         prefSaveDelayMs.set(setSaveDelay.value);

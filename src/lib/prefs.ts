@@ -86,6 +86,16 @@ export const prefAiLocalModel           = strPref('memola.ai.localModel');
 export const prefAiLocalModels          = strPref('memola.ai.localModels');           // raw JSON array
 export const prefAiLocalReasoningModels = strPref('memola.ai.localReasoningModels');  // CSV / whitespace-separated
 
+// ── 埋め込み / 横断 RAG (cross-document chat) ──────────────────────────
+// Embeddings always go through the OpenAI-compatible endpoint of the active
+// chat provider (corp = Azure-style deployments path; local = /embeddings).
+// Claude has no embeddings API, so RAG is disabled when provider='claude'.
+export const prefAiEmbedModel       = strPref('memola.ai.embedModel', 'text-embedding-3-small');
+export const prefAiEmbedApiVersion  = strPref('memola.ai.embedApiVersion', '2024-02-01');
+export const prefAiEmbedDimensions  = strPref('memola.ai.embedDimensions', '');   // '' = サーバ既定
+export const prefRagTopK            = strPref('memola.rag.topK', '8');
+export const prefRagMinScore        = strPref('memola.rag.minScore', '0.2');
+
 // ── Workspace ─────────────────────────────────────────────────────────
 export const prefWorkspaces       = strPref('memola.workspaces');        // raw JSON
 export const prefCurrentWsName    = strPref('memola.workspace.current');

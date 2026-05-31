@@ -61,6 +61,8 @@ import {
   prefAiCorpDeployPrefix, prefAiCorpOverrides,
   prefAiLocalBaseUrl, prefAiLocalKey, prefAiLocalModel, prefAiLocalModels,
   prefAiLocalReasoningModels,
+  prefAiEmbedModel, prefAiEmbedApiVersion, prefAiEmbedDimensions,
+  prefRagTopK, prefRagMinScore,
 } from '../lib/prefs';
 
 const DEFAULT_PROVIDER: Provider = 'claude';
@@ -277,4 +279,123 @@ export function setLocalAiReasoningModels(csv: string): void {
 export function isLocalReasoningModel(modelId: string): boolean {
   const lc = modelId.toLowerCase();
   return getLocalAiReasoningModels().some((r) => lc.includes(r));
+}
+
+// ─── 埋め込み (Embeddings) / 横断 RAG ───────────────────────────────────
+//
+// 横断チャット (cross-document chat) はドキュメント本文を埋め込みベクトル化
+// して類似検索する。埋め込みは「チャットと同じ provider」の OpenAI 互換
+// エンドポイントを使う:
+//   - corp  : {baseUrl}/openai/deployments/{deploy}/embeddings?api-version=...
+//   - local : {baseUrl}/embeddings
+//   - claude: 埋め込み API が無いため RAG 無効 (resolveEmbeddingEndpoint→null)
+
+/** Catalog of common OpenAI-compatible embedding model ids. Free text is
+ *  also allowed in the settings, but these populate the picker. */
+export const EMBEDDING_MODELS: string[] = [
+  'text-embedding-3-small',
+  'text-embedding-3-large',
+  'text-embedding-ada-002',
+];
+
+export const DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small';
+export const DEFAULT_EMBEDDING_API_VERSION = '2024-02-01';
+
+export function getEmbeddingModel(): string {
+  return prefAiEmbedModel.get() || DEFAULT_EMBEDDING_MODEL;
+}
+export function setEmbeddingModel(model: string): void {
+  prefAiEmbedModel.set(model.trim());
+}
+
+/** api-version used for the Azure-style embeddings path (corp only). */
+export function getEmbeddingApiVersion(): string {
+  return prefAiEmbedApiVersion.get() || DEFAULT_EMBEDDING_API_VERSION;
+}
+export function setEmbeddingApiVersion(v: string): void {
+  prefAiEmbedApiVersion.set(v.trim());
+}
+
+/** Optional reduced output dimensionality (text-embedding-3-* supports it).
+ *  null = use the server default (1536 for 3-small, 3072 for 3-large). */
+export function getEmbeddingDimensions(): number | null {
+  const raw = prefAiEmbedDimensions.get().trim();
+  if (!raw) return null;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+export function setEmbeddingDimensions(v: string): void {
+  prefAiEmbedDimensions.set(v.trim());
+}
+
+/** How many top chunks RAG retrieves for the chat context. */
+export function getRagTopK(): number {
+  const n = parseInt(prefRagTopK.get(), 10);
+  return Number.isFinite(n) && n > 0 ? n : 8;
+}
+export function setRagTopK(v: string): void {
+  prefRagTopK.set(v.trim());
+}
+
+/** Minimum cosine similarity a chunk must clear to be included. */
+export function getRagMinScore(): number {
+  const n = parseFloat(prefRagMinScore.get());
+  return Number.isFinite(n) ? n : 0.2;
+}
+export function setRagMinScore(v: string): void {
+  prefRagMinScore.set(v.trim());
+}
+
+export interface EmbeddingEndpoint {
+  provider: 'corp' | 'local';
+  /** Full POST URL for the embeddings request. */
+  url: string;
+  /** API key (may be empty for keyless local servers). */
+  apiKey: string;
+  /** Header style: Azure uses `api-key`, OpenAI-native uses `Authorization`. */
+  authStyle: 'azure' | 'bearer';
+  /** Model id to send in the request body. */
+  model: string;
+  /** Optional reduced dimensionality. */
+  dimensions: number | null;
+}
+
+/** Resolve the effective embeddings endpoint for the active provider.
+ *  Returns null when provider='claude' (no embeddings API ⇒ RAG disabled). */
+export function resolveEmbeddingEndpoint(): EmbeddingEndpoint | null {
+  const p = getProvider();
+  const model = getEmbeddingModel();
+  const dimensions = getEmbeddingDimensions();
+  if (p === 'corp') {
+    const base = getCorpAiBaseUrl();
+    if (!base) return null;
+    const deploy = deploymentIdFor(model);
+    const ver = getEmbeddingApiVersion();
+    return {
+      provider: 'corp',
+      url: `${base}/openai/deployments/${deploy}/embeddings?api-version=${encodeURIComponent(ver)}`,
+      apiKey: getCorpAiKey(),
+      authStyle: 'azure',
+      model,
+      dimensions,
+    };
+  }
+  if (p === 'local') {
+    const base = getLocalAiBaseUrl();
+    if (!base) return null;
+    return {
+      provider: 'local',
+      url: `${base}/embeddings`,
+      apiKey: getLocalAiKey(),
+      authStyle: 'bearer',
+      model,
+      dimensions,
+    };
+  }
+  return null; // claude
+}
+
+/** Is RAG (cross-document chat) usable with the current settings? */
+export function isRagAvailable(): boolean {
+  return resolveEmbeddingEndpoint() !== null;
 }
