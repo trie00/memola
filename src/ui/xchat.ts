@@ -286,46 +286,64 @@ function fillAnswer(body: HTMLElement, answerMd: string, sources: XSource[], at?
   }
 }
 
-/** 出典セクション (折りたたみヘッダ + .tdr-hit カード) を body に追加し、list 要素を返す。 */
+/** 出典セクション。検索はチャンク単位だが、表示は **文書単位に集約** する
+ *  (同一文書の複数セクションが別カードに割れないように)。引用番号 [n] は
+ *  チャンク順のまま LLM に渡しているので、各カードは自分が含むチャンク番号を
+ *  data-ns に保持し、[n] クリックでその文書カードへジャンプできるようにする。 */
 function buildSources(body: HTMLElement, sources: XSource[], cited: Set<number>): HTMLElement {
-  const collapsed = cited.size > 0; // 引用があれば既定で畳む (外部ベクトル 流)
+  // docKey ごとに集約(初出順を保持)。各チャンクの引用番号 n(=index+1) を覚える。
+  const groups = new Map<string, { items: Array<{ s: XSource; n: number }> }>();
+  sources.forEach((s, i) => {
+    let g = groups.get(s.docKey);
+    if (!g) { g = { items: [] }; groups.set(s.docKey, g); }
+    g.items.push({ s, n: i + 1 });
+  });
+  const collapsed = cited.size > 0; // 引用があれば既定で畳む
   const hdr = document.createElement('div');
   hdr.className = 'tdr-sources-h' + (collapsed ? ' collapsed' : '');
-  hdr.innerHTML = CHEVRON + `<span>参照した文書 ${sources.length} 件</span>`;
+  hdr.innerHTML = CHEVRON + `<span>参照した文書 ${groups.size} 件</span>`;
   const list = document.createElement('div');
   list.className = 'tdr-sources' + (collapsed ? ' collapsed' : '');
   hdr.addEventListener('click', () => { hdr.classList.toggle('collapsed'); list.classList.toggle('collapsed'); });
-  sources.forEach((s, i) => list.appendChild(buildHitCard(s, i + 1)));
+  for (const g of groups.values()) list.appendChild(buildDocCard(g.items));
   body.append(hdr, list);
   return list;
 }
 
-function buildHitCard(s: XSource, n: number): HTMLElement {
+/** 1文書ぶんの出典カード。含むチャンク(該当箇所)をまとめて表示。 */
+function buildDocCard(items: Array<{ s: XSource; n: number }>): HTMLElement {
+  // スコア最大のチャンクを代表に。
+  const best = items.reduce((a, b) => (b.s.score > a.s.score ? b : a));
+  const s = best.s;
+  const ns = items.map((i) => i.n);
   const card = document.createElement('div');
   card.className = 'tdr-hit';
-  card.dataset.n = String(n);
+  card.dataset.ns = ns.join(' '); // [n] クリックの照合用(空白区切り→ [data-ns~="n"])
   const head = document.createElement('div');
   head.className = 'tdr-hit-head';
-  const num = document.createElement('span'); num.className = 'tdr-hit-num'; num.textContent = String(n);
+  // 引用番号チップ(この文書が対応する [n] を列挙)
+  const num = document.createElement('span'); num.className = 'tdr-hit-num';
+  num.textContent = ns.length === 1 ? String(ns[0]) : ns.join(',');
   const subj = document.createElement('span'); subj.className = 'tdr-hit-subject'; subj.textContent = s.title;
   const badge = document.createElement('span'); badge.className = 'tdr-hit-badge'; badge.textContent = s.scope === 'org' ? '組織' : 'プライベート';
   head.append(num, subj, badge);
   if (s.score != null) { const sc = document.createElement('span'); sc.className = 'tdr-hit-score'; sc.textContent = s.score.toFixed(2); head.appendChild(sc); }
   const snip = document.createElement('div'); snip.className = 'tdr-hit-snippet';
-  snip.textContent = (s.heading ? `${s.heading} — ` : '') + s.snippet;
+  const more = items.length > 1 ? `（他 ${items.length - 1} 箇所が該当）` : '';
+  snip.textContent = (s.heading ? `${s.heading} — ` : '') + s.snippet + more;
   card.append(head, snip);
   if (s.appPageId) card.addEventListener('click', () => { void navigateToSource(s.appPageId); });
   else card.style.cursor = 'default';
   return card;
 }
 
-/** 回答中の [n] クリックで該当カードへスクロール + 展開 + フラッシュ。 */
+/** 回答中の [n] クリックで、その番号を含む文書カードへスクロール + 展開 + フラッシュ。 */
 function wireCite(ans: HTMLElement, list: HTMLElement): void {
   ans.querySelectorAll<HTMLElement>('.cite').forEach((c) => {
     c.addEventListener('click', (e) => {
       e.stopPropagation();
       const n = c.dataset.n; if (!n) return;
-      const card = list.querySelector<HTMLElement>(`.tdr-hit[data-n="${n}"]`);
+      const card = list.querySelector<HTMLElement>(`.tdr-hit[data-ns~="${n}"]`);
       if (!card) return;
       list.classList.remove('collapsed');
       (list.previousElementSibling as HTMLElement | null)?.classList.remove('collapsed');
