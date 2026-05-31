@@ -219,6 +219,10 @@ function renderMarkers(): void {
 
 function positionMarkers(): void {
   const ed = getEd();
+  // Right boundary of the editor area — the marker must stay left of this so
+  // it doesn't overlap the comments pane (which sits to the right when open).
+  const ea = document.getElementById('memola-ea') || ed;
+  const boundRight = ea.getBoundingClientRect().right;
   for (const m of _markers) {
     const block = ed.querySelector<HTMLElement>('[data-block-id="' + cssEscape(m.dataset.blockId || '') + '"]');
     if (!block) { m.style.display = 'none'; continue; }
@@ -226,8 +230,10 @@ function positionMarkers(): void {
     const rect = block.getBoundingClientRect();
     const fl = firstLineRect(block);
     const h = m.offsetHeight || 20;
+    const w = m.offsetWidth || 24;
     m.style.top = (fl.top + window.scrollY + (fl.height - h) / 2) + 'px';
-    m.style.left = (rect.right + window.scrollX + 8) + 'px';
+    const left = Math.min(rect.right + 8, boundRight - w - 4);
+    m.style.left = (left + window.scrollX) + 'px';
   }
 }
 
