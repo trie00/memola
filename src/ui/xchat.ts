@@ -5,6 +5,7 @@
 // 出典カード (クリックでソース文書へ遷移)。セッションは localStorage に保存し、
 // 左ペインの右側の履歴一覧から再表示できる。
 
+import { S } from '../state';
 import { mdToHtml } from '../lib/blocks-html';
 import { prefXChatHistory, prefXChatOpen } from '../lib/prefs';
 import { ragInit, ragRefresh, ragSearch, ragStats, type RagHit } from '../rag/search';
@@ -92,10 +93,57 @@ export function toggleXChat(): void { isXChatOpen() ? closeXChat() : openXChat()
 
 function positionPanel(): void {
   const panel = $('memola-xchat');
-  const sb = $('memola-sb');
   if (!panel) return;
-  const right = sb ? sb.getBoundingClientRect().right : 280;
-  panel.style.left = Math.max(0, right) + 'px';
+  // タブのコンテンツ扱い: 2段トップバーの下・左ペインの右(= #memola-content-row)に
+  // ぴったり重ねる。これでタブ列/パンくずは見えたまま、本文領域だけを覆う。
+  const cr = $('memola-content-row');
+  if (cr) {
+    const r = cr.getBoundingClientRect();
+    panel.style.top = r.top + 'px';
+    panel.style.left = r.left + 'px';
+    panel.style.right = '0';
+    panel.style.bottom = '0';
+  } else {
+    const sb = $('memola-sb');
+    panel.style.left = Math.max(0, sb ? sb.getBoundingClientRect().right : 280) + 'px';
+  }
+}
+
+// ─── タブ統合 (横断検索を1タブ扱いに) ───────────────────────────────────
+/** 新しいチャットセッション用の id を採番(タブの searchId に使う)。 */
+export function newSearchId(): string { return genId(); }
+
+/** タブのラベル用: セッションのタイトル(未送信なら既定)。 */
+export function searchSessionTitle(sessionId: string): string {
+  load();
+  const s = sessions.find((x) => x.id === sessionId);
+  return (s && s.turns.length) ? (s.title || '横断チャット') : '横断チャット';
+}
+
+/** 指定セッションを「アクティブな検索タブの中身」として表示する。 */
+export function showSearchTab(sessionId: string): void {
+  load();
+  const panel = $('memola-xchat');
+  if (!panel) return;
+  currentId = sessionId;
+  positionPanel();
+  panel.classList.add('on');
+  panel.setAttribute('aria-hidden', 'false');
+  renderThread();
+  updateTitle();
+  focusInput();
+  void primeIndex();
+  window.removeEventListener('resize', positionPanel);
+  window.addEventListener('resize', positionPanel);
+}
+
+/** 検索タブから離れる(パネルを隠す)。タブ表示状態は tabs 側が管理。 */
+export function hideSearchTab(): void {
+  const panel = $('memola-xchat');
+  if (!panel) return;
+  panel.classList.remove('on');
+  panel.setAttribute('aria-hidden', 'true');
+  window.removeEventListener('resize', positionPanel);
 }
 
 function setIdx(text: string): void { const idx = $('memola-xchat-idx'); if (idx) idx.textContent = text; }
@@ -442,6 +490,7 @@ async function send(): Promise<void> {
     // 永続化
     sess.turns.push({ q, a: text, sources, at });
     if (!sess.title) sess.title = q.slice(0, 40);
+    void import('./tabs').then((m) => m.updateActiveSearchTitle(sess.title));
     save();
     updateTitle();
   } catch (e) {
@@ -490,9 +539,13 @@ function autoGrow(ta: HTMLTextAreaElement): void {
 // ─── wiring ───────────────────────────────────────────────────────────
 export function attachXChat(): void {
   load();
-  $('memola-xchat-launch')?.addEventListener('click', () => toggleXChat());
-  $('memola-xchat-close')?.addEventListener('click', () => closeXChat());
-  $('memola-xchat-new')?.addEventListener('click', () => newSession());
+  // 💬 / 「新規チャット」 → 横断検索を新規タブで開く(複数可)。
+  $('memola-xchat-launch')?.addEventListener('click', () => { void import('./tabs').then((m) => m.newSearchTab()); });
+  $('memola-xchat-new')?.addEventListener('click', () => { void import('./tabs').then((m) => m.newSearchTab()); });
+  // 検索パネルの × → アクティブなタブ(=この検索タブ)を閉じる。
+  $('memola-xchat-close')?.addEventListener('click', () => {
+    void import('./tabs').then((m) => { if (S.activeTabId) void m.closeTab(S.activeTabId); });
+  });
   $('memola-xchat-rebuild')?.addEventListener('click', () => { void primeIndex(true); });
   $('memola-xchat-send')?.addEventListener('click', () => { void send(); });
 
@@ -533,7 +586,7 @@ export function attachXChat(): void {
     }
     const row = t.closest<HTMLElement>('.tdr-hist-item');
     const sid = row?.dataset.sid;
-    if (sid) { currentId = sid; renderThread(); updateTitle(); closeMenu(); focusInput(); }
+    if (sid) { currentId = sid; renderThread(); updateTitle(); closeMenu(); focusInput(); void import('./tabs').then((m) => m.openSearchSessionInActiveTab(sid)); }
   });
 
   // ESC で閉じる: メニューが開いていればメニューだけ閉じる。
@@ -543,13 +596,11 @@ export function attachXChat(): void {
     }
   }, true);
 
-  // ESC で閉じる (横断チャットが開いているときのみ、他の ESC 処理に優先)。
+  // ESC: 生成中なら中断のみ(パネルはタブなので閉じない=他タブとの整合)。
   document.addEventListener('keydown', (ke: KeyboardEvent) => {
-    if (ke.key === 'Escape' && isXChatOpen()) {
-      // 生成中は中断のみ、開いたまま。
-      if (busy && abort) { abort.abort(); return; }
+    if (ke.key === 'Escape' && isXChatOpen() && busy && abort) {
       ke.stopPropagation();
-      closeXChat();
+      abort.abort();
     }
   }, true);
 }

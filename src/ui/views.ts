@@ -131,6 +131,8 @@ export async function doSelect(id: string): Promise<void> {
   // Critical: must run BEFORE we clear `S.currentRow`; the row-page save
   // path inside flushPendingSave keys off that flag.
   if (S.currentType !== 'database') await flushPendingSave();
+  // ページ遷移時は横断検索パネル(検索タブ表示)を隠す。
+  void import('./xchat').then((m) => m.hideSearchTab());
   // Page change — Saver ownership transfer happens automatically via
   // saver.unload() (called from stopWatching paths) and saver.loadPage()
   // (called after content load). No explicit "conflict-pending" flag

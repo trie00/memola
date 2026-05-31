@@ -42,7 +42,8 @@ function persist(): void {
  *  アクティブタブが無ければ新規に作る。 */
 export function openInActiveTab(pageId: string, title: string): void {
   let tab = activeTab();
-  if (!tab) {
+  if (!tab || tab.kind === 'search') {
+    // タブ無し / アクティブが検索タブ → 検索タブを潰さず新しいページタブで開く。
     tab = { tabId: genTabId(), kind: 'page', pageId, title };
     S.tabs.push(tab);
     S.activeTabId = tab.tabId;
@@ -82,17 +83,48 @@ export async function activateTab(tabId: string): Promise<void> {
   S.activeTabId = tabId;
   renderTabs();
   persist();
+  const x = await import('./xchat');
   if (tab.kind === 'search') {
-    // Phase 2 で本実装。暫定でオーバーレイを開く。
-    void import('./xchat').then((m) => m.openXChat());
+    x.showSearchTab(tab.searchId || x.newSearchId());
     return;
   }
+  // ページタブ: 検索パネルを隠してからページを表示。
+  x.hideSearchTab();
   if (tab.pageId) {
     const { doSelect } = await import('./views');
     await doSelect(tab.pageId);
   } else {
     void import('./views').then((m) => m.showView('empty'));
   }
+}
+
+/** 横断検索を新規タブで開く(💬 ボタン / 「新規チャット」)。複数開ける。 */
+export async function newSearchTab(): Promise<void> {
+  const x = await import('./xchat');
+  const sid = x.newSearchId();
+  const tab: Tab = { tabId: genTabId(), kind: 'search', searchId: sid, title: '横断チャット' };
+  S.tabs.push(tab);
+  S.activeTabId = tab.tabId;
+  renderTabs();
+  persist();
+  x.showSearchTab(sid);
+}
+
+/** 検索パネル内の履歴ドロップダウンで別セッションを選んだとき、アクティブな
+ *  検索タブの中身をそのセッションに差し替える。 */
+export async function openSearchSessionInActiveTab(sessionId: string): Promise<void> {
+  const t = activeTab();
+  const x = await import('./xchat');
+  if (t && t.kind === 'search') { t.searchId = sessionId; t.title = x.searchSessionTitle(sessionId); }
+  renderTabs();
+  persist();
+  x.showSearchTab(sessionId);
+}
+
+/** チャット送信でセッションタイトルが決まったらタブ名を更新。 */
+export function updateActiveSearchTitle(title: string): void {
+  const t = activeTab();
+  if (t && t.kind === 'search') { t.title = title || '横断チャット'; renderTabs(); persist(); }
 }
 
 /** タブを閉じる。アクティブを閉じたら隣を選ぶ。最後の1枚を閉じたら空タブ。 */
@@ -150,18 +182,18 @@ export function renderTabs(): void {
 export async function restoreTabs(fallbackPageId: string | null): Promise<void> {
   const saved = prefTabs.get()[SITE];
   const savedTabs = (saved?.tabs as Tab[] | undefined) || [];
-  // page タブのうち、まだ存在するページだけ残す(削除済みは捨てる)。search は当面捨てる(Phase2)。
-  const valid = savedTabs.filter((t) => t && t.kind === 'page' && t.pageId && metaById(t.pageId));
+  // page タブは存在するページのみ残す(削除済みは捨てる)。search タブは保持。
+  const valid = savedTabs.filter((t) =>
+    t && ((t.kind === 'page' && t.pageId && metaById(t.pageId)) || (t.kind === 'search' && t.searchId)));
   if (valid.length) {
-    S.tabs = valid.map((t) => ({ tabId: t.tabId || genTabId(), kind: 'page', pageId: t.pageId, title: t.title || '' }));
+    S.tabs = valid.map((t) => t.kind === 'search'
+      ? { tabId: t.tabId || genTabId(), kind: 'search', searchId: t.searchId, title: t.title || '横断チャット' }
+      : { tabId: t.tabId || genTabId(), kind: 'page', pageId: t.pageId, title: t.title || '' });
     const activeOk = S.tabs.some((t) => t.tabId === saved?.active);
     S.activeTabId = activeOk ? saved!.active : S.tabs[0].tabId;
     renderTabs();
     const active = activeTab();
-    if (active?.pageId) {
-      const { doSelect } = await import('./views');
-      await doSelect(active.pageId);
-    }
+    if (active) await activateTab(active.tabId);
     return;
   }
   // 保存タブ無し → fallback を1タブで。
