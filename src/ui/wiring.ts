@@ -26,6 +26,7 @@ import { openTodayDailyNote, showDailyPicker } from './daily-note-actions';
 import { attachPageMenuWiring } from './page-menu-wiring';
 import { attachSettingsModal } from './settings-modal';
 import { attachAiChatWiring } from './ai-chat-wiring';
+import { attachXChat } from './xchat';
 import { attachCommandPalette } from './command-palette-wiring';
 import { attachSidePanels } from './side-panels-wiring';
 import { attachPubTag } from './pub-tag';
@@ -184,6 +185,9 @@ export function attachAll(): void {
 
   // AI chat panel
   attachAiChatWiring();
+
+  // 横断チャット (cross-document RAG chat)
+  attachXChat();
 
   // Global keydown
   document.addEventListener('keydown', onKey);

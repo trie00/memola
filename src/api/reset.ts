@@ -382,5 +382,14 @@ export async function resetAll(): Promise<ResetSummary> {
   } catch (e) {
     summary.errors.push('localStorage: ' + (e as Error).message);
   }
+  // 4. 横断チャットの RAG ベクトル (SP の memola-rag ファイル + IndexedDB) を消す。
+  //    SP リスト (memola-rag-sync) は手順1で消えるが、Document Library の
+  //    ベクトルファイルと IndexedDB キャッシュはリストではないので別途掃除。
+  try {
+    const { ragHardReset } = await import('../rag/manager');
+    await ragHardReset();
+  } catch (e) {
+    summary.errors.push('rag: ' + (e as Error).message);
+  }
   return summary;
 }

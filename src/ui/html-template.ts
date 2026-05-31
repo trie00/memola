@@ -14,7 +14,8 @@ export function buildHtml(): string {
         '<button id="memola-sb-collapse" class="memola-pane-x" title="サイドバーを閉じる (Ctrl+\\)">' + ICONS.close + '</button>' +
       '</div>' +
       '<div class="memola-snav" id="memola-search-nav">' + ICONS.search + '<span>検索</span><span class="memola-snav-hint">Ctrl K</span></div>' +
-      '<div class="memola-quick-wrap"><button class="memola-quick-add" id="memola-quick-add">' + ICONS.plus + '<span>新規</span></button></div>' +
+      '<div class="memola-quick-wrap"><button class="memola-quick-add" id="memola-quick-add">' + ICONS.plus + '<span>新規</span></button>' +
+        '<button class="memola-quick-chat" id="memola-xchat-launch" title="横断チャット — 全文書をまたいでAIに質問">' + ICONS.chat + '</button></div>' +
       '<div class="memola-sb-fixed">' +
         '<div class="memola-sb-fx" id="memola-sb-daily-today" title="今日のデイリーノートを開く / 作成"><span class="memola-sb-fx-ic">📅</span><span class="memola-sb-fx-lb">今日のノート</span></div>' +
         '<div class="memola-sb-fx" id="memola-sb-daily-pick" title="任意の日のデイリーノートを開く"><span class="memola-sb-fx-ic">🗓</span><span class="memola-sb-fx-lb">日付を選んで開く</span></div>' +
@@ -46,6 +47,29 @@ export function buildHtml(): string {
         '<div id="memola-cm-templates"></div>' +
       '</div>' +
     '</aside>' +
+    // ── 横断チャット (cross-document RAG chat) overlay ──
+    // 左ペインの右側に配置: [履歴(セッション一覧)] | [スレッド + コンポーザ]
+    '<div id="memola-xchat" aria-hidden="true">' +
+      '<aside id="memola-xchat-hist">' +
+        '<div class="memola-xchat-hist-hd">' +
+          '<span>横断チャット履歴</span>' +
+          '<button id="memola-xchat-new" title="新しいチャット">' + ICONS.plus + '</button>' +
+        '</div>' +
+        '<div id="memola-xchat-hist-list"></div>' +
+      '</aside>' +
+      '<div id="memola-xchat-main">' +
+        '<div class="memola-xchat-top">' +
+          '<span class="memola-xchat-title">' + ICONS.chat + '<b>横断チャット</b><span class="memola-xchat-sub">全文書をまたいでAIに質問</span></span>' +
+          '<span class="memola-xchat-idx" id="memola-xchat-idx"></span>' +
+          '<button id="memola-xchat-close" title="閉じる (Esc)">' + ICONS.exit + '</button>' +
+        '</div>' +
+        '<div id="memola-xchat-thread"></div>' +
+        '<div class="memola-xchat-composer">' +
+          '<textarea id="memola-xchat-input" rows="1" placeholder="文書について質問… (例: 先月の障害対応の手順は?)"></textarea>' +
+          '<button id="memola-xchat-send" title="送信">' + ICONS.send + '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
     '<main id="memola-main">' +
       '<div id="memola-top">' +
         '<button id="memola-sb-toggle" title="サイドバー (Ctrl+\\)">' + ICONS.sidebar + '</button>' +

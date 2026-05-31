@@ -95,6 +95,9 @@ export const prefAiEmbedApiVersion  = strPref('memola.ai.embedApiVersion', '2024
 export const prefAiEmbedDimensions  = strPref('memola.ai.embedDimensions', '');   // '' = サーバ既定
 export const prefRagTopK            = strPref('memola.rag.topK', '8');
 export const prefRagMinScore        = strPref('memola.rag.minScore', '0.2');
+// 横断チャット (cross-document chat)
+export const prefXChatHistory       = strPref('memola.xchat.history');   // raw JSON sessions
+export const prefXChatOpen          = strPref('memola.xchat.open');       // '1' / ''
 
 // ── Workspace ─────────────────────────────────────────────────────────
 export const prefWorkspaces       = strPref('memola.workspaces');        // raw JSON

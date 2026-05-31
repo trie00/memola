@@ -153,3 +153,12 @@ export function userIndex(): ScopeIndex {
 }
 /** ワークスペース切替時に破棄 (次回アクセスで作り直し)。 */
 export function resetIndexes(): void { _org = null; _user = null; }
+
+/** 完全リセット用: org の SP ベクトルファイルを削除し、両スコープの IndexedDB
+ *  キャッシュを空にして、シングルトンを破棄する。best-effort。 */
+export async function ragHardReset(): Promise<void> {
+  try { await new SpVectorStore('org').deleteAll(); } catch { /* best-effort */ }
+  try { await new SegmentCache('org').clearAll(); } catch { /* best-effort */ }
+  try { await new SegmentCache('user').clearAll(); } catch { /* best-effort */ }
+  resetIndexes();
+}
