@@ -343,6 +343,15 @@ async function fetchOneRow(pageId: string, select?: string): Promise<FetchedRow 
  *  site that does `parseInt(pageId, 10)`. */
 const SOURCE_LIST_BY_PAGEID = new Map<string, string>();
 
+/** 作成時に buildSourceListMap と **同一規則** で app pageId を採番する。
+ *  org → bare `num` / per-user → `list:num`(composite)。
+ *  これを使わず bare 固定にすると、per-user ページで「作成時 id(bare)」と
+ *  「reconcile 時 id(composite)」が食い違い、pending-create が収束できず左ペインに
+ *  同一ページが重複(増殖)する。全 create 経路はこれを使うこと。 */
+export function mintPageId(sourceList: string, numericId: number | string): string {
+  return sourceList === ORG_PAGES_LIST ? String(numericId) : sourceList + ':' + numericId;
+}
+
 export function buildSourceListMap(buckets: { list: string; rows: PageRow[] }[]): {
   rowToPageId: Map<PageRow, string>;
   sourceListByPageId: Map<string, string>;
@@ -747,7 +756,7 @@ export async function apiCreatePage(
     Scope: scope,
     AuthorId: S.meta.myUserId,
   });
-  const id = String(created.Id);
+  const id = mintPageId(list, created.Id);
   // Codex review PS1: register the newly-created row's source list so
   // listForPageId routes correctly even before the next apiGetPages refresh.
   SOURCE_LIST_BY_PAGEID.set(id, list);
@@ -783,7 +792,7 @@ export async function apiCreateDbPageRow(
     AuthorId: S.meta.myUserId,
     ...(isTemplate ? { IsTemplate: 1 } : {}),
   });
-  const id = String(created.Id);
+  const id = mintPageId(list, created.Id);
   SOURCE_LIST_BY_PAGEID.set(id, list);
   markRecentlyCreated(id);
   markStructuralOp();
@@ -1167,7 +1176,7 @@ export async function apiSetScope(
       if (r[k] !== undefined && r[k] !== null) payload[k] = r[k];
     }
     const created = await createListItem(destList, payload);
-    const newId = String(created.Id);
+    const newId = mintPageId(destList, created.Id);
     idMap[pid] = newId;
     SOURCE_LIST_BY_PAGEID.set(newId, destList);
     markRecentlyCreated(newId);
@@ -1302,7 +1311,7 @@ export async function apiDuplicateAsDraft(originId: string): Promise<Page> {
     Scope: inheritScope,
     AuthorId: S.meta.myUserId,
   });
-  const newId = String(created.Id);
+  const newId = mintPageId(inheritList, created.Id);
   SOURCE_LIST_BY_PAGEID.set(newId, inheritList);
   markRecentlyCreated(newId);
   markStructuralOp();
@@ -1358,7 +1367,7 @@ export async function apiRegisterPageAsTemplate(pageId: string): Promise<string>
     IsTemplate: 1,
     AuthorId: S.meta.myUserId,
   });
-  const newId = String(created.Id);
+  const newId = mintPageId(list, created.Id);
   SOURCE_LIST_BY_PAGEID.set(newId, list);
   markRecentlyCreated(newId);
   markStructuralOp();
@@ -1393,7 +1402,7 @@ export async function apiCreatePageFromTemplate(templateId: string): Promise<Pag
     Scope: scope,
     AuthorId: S.meta.myUserId,
   });
-  const newId = String(created.Id);
+  const newId = mintPageId(list, created.Id);
   SOURCE_LIST_BY_PAGEID.set(newId, list);
   markRecentlyCreated(newId);
   markStructuralOp();
@@ -1427,7 +1436,7 @@ export async function apiDuplicatePage(id: string): Promise<Page> {
     Scope: scope,
     AuthorId: S.meta.myUserId,
   });
-  const newId = String(created.Id);
+  const newId = mintPageId(list, created.Id);
   SOURCE_LIST_BY_PAGEID.set(newId, list);
   markRecentlyCreated(newId);
   markStructuralOp();
