@@ -4,3 +4,6 @@ dist
 .claude/
 ai/
 dev/main.js
+
+# corp-AI relay local config (secrets)
+scripts/corp-ai-relay.env
