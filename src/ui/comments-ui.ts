@@ -13,6 +13,7 @@ import { toast } from './ui-helpers';
 import { escapeHtml } from '../lib/html-escape';
 import { formatRelativeTime } from '../lib/date-utils';
 import { metaById } from '../lib/page-store';
+import { getUserNameById } from '../api/sync';
 import {
   apiListComments, apiAddComment, apiEditComment, apiDeleteComment,
   apiResolveThread, apiToggleReaction, hydrateAuthorNames, groupThreads,
@@ -30,6 +31,9 @@ let _composeScope: CommentScope = 'user';
 let _editingId = 0;
 let _listenersBound = false;
 let _paneWired = false;
+
+/** Resolved display names for reactor / author ids (for chip tooltips). */
+const _userNames = new Map<number, string>();
 
 const REACTION_EMOJIS = ['👍', '❤️', '🎉', '😄', '🙏', '👀'];
 const AVATAR_COLORS = ['#e07a5f', '#3d82c4', '#5a9e6f', '#b06fb0', '#c99a3b', '#4aa3a3', '#c4677b', '#7a82c4'];
@@ -71,6 +75,7 @@ export async function loadCommentsFor(pageId: string, scopeDefault: CommentScope
   try {
     const rows = await apiListComments(pageId);
     await hydrateAuthorNames(rows);
+    await resolveReactorNames(rows);
     if (_pageId !== pageId) return;
     _threads = groupThreads(rows);
   } catch { _threads = []; }
@@ -92,9 +97,31 @@ async function refresh(): Promise<void> {
   if (!_pageId) return;
   const rows = await apiListComments(_pageId);
   await hydrateAuthorNames(rows);
+  await resolveReactorNames(rows);
   _threads = groupThreads(rows);
   renderMarkers();
   renderPane();
+}
+
+/** Resolve all reactor ids → display names (for chip tooltips). Authors
+ *  are seeded from the denormalized AuthorName; reactors are looked up
+ *  (session-cached). */
+async function resolveReactorNames(rows: CommentRow[]): Promise<void> {
+  const ids = new Set<number>();
+  for (const c of rows) {
+    if (c.AuthorId && c.AuthorName) _userNames.set(c.AuthorId, c.AuthorName);
+    const map = parseReactions(c);
+    for (const users of Object.values(map)) for (const u of users) ids.add(u);
+  }
+  await Promise.all(Array.from(ids).map(async (id) => {
+    if (_userNames.has(id)) return;
+    _userNames.set(id, await getUserNameById(id).catch(() => '') || ('ユーザー#' + id));
+  }));
+}
+
+function reactorNames(users: number[]): string {
+  const me = S.meta.myUserId || -1;
+  return users.map((id) => id === me ? 'あなた' : (_userNames.get(id) || ('ユーザー#' + id))).join(', ');
 }
 
 // ── Pane wiring / toggle ─────────────────────────────────
@@ -122,7 +149,9 @@ function wirePane(): void {
     const ta = p.querySelector('#memola-comments-ta');
     ta?.addEventListener('keydown', (e) => {
       const ke = e as KeyboardEvent;
-      if (ke.key === 'Enter' && (ke.metaKey || ke.ctrlKey)) { ke.preventDefault(); void doAddFromComposer(); }
+      // Enter submits; Shift+Enter inserts a newline (chat-style, matches
+      // the reply box so a plain Enter never leaves a stray blank line).
+      if (ke.key === 'Enter' && !ke.shiftKey) { ke.preventDefault(); void doAddFromComposer(); }
     });
     p.querySelector('#memola-comments-scope-org')?.addEventListener('click', () => { _composeScope = 'org'; syncComposer(); });
     p.querySelector('#memola-comments-scope-user')?.addEventListener('click', () => { _composeScope = 'user'; syncComposer(); });
@@ -215,7 +244,9 @@ function reactionChips(c: CommentRow): string {
   const me = S.meta.myUserId || -1;
   const chips = Object.entries(map).filter(([, u]) => u.length > 0).map(([emoji, users]) => {
     const mine = users.includes(me) ? ' mine' : '';
-    return '<button class="memola-cmt-react-chip' + mine + '" data-act="react-toggle" data-id="' + c.Id + '" data-emoji="' + escapeHtml(emoji) + '">' +
+    const who = escapeHtml(reactorNames(users));
+    return '<button class="memola-cmt-react-chip' + mine + '" data-act="react-toggle" data-id="' + c.Id +
+      '" data-emoji="' + escapeHtml(emoji) + '" title="' + who + '">' +
       emoji + ' ' + users.length + '</button>';
   });
   return chips.length ? '<div class="memola-cmt-reacts">' + chips.join('') + '</div>' : '';
@@ -239,21 +270,37 @@ function commentHtml(c: CommentRow, isRoot: boolean): string {
       '</div></div>';
   }
   const scopeBadge = isRoot && c.Scope === 'user' ? '<span class="memola-cmt-badge priv">🔒</span>' : '';
+  const bodyHtml = escapeHtml((c.Body || '').replace(/\r\n?/g, '\n').trim()).replace(/\n/g, '<br>');
+  const edited = c.Edited ? '<span class="memola-cmt-edited">編集済み</span>' : '';
   const hover =
     '<div class="memola-cmt-hover">' +
       '<button class="memola-cmt-hbtn" data-act="react" data-id="' + c.Id + '" title="リアクション">🙂<sup>+</sup></button>' +
       (isRoot ? '<button class="memola-cmt-hbtn" data-act="resolve" data-root="' + c.Id + '" title="解決">✓</button>' : '') +
       (mine ? '<button class="memola-cmt-hbtn" data-act="more" data-id="' + c.Id + '" title="その他">⋯</button>' : '') +
     '</div>';
+  const avatar = '<div class="memola-cmt-avatar" style="background:' + avatarColor(c.AuthorId) + '">' +
+    escapeHtml(initialOf(c.AuthorName || '')) + '</div>';
+  if (!isRoot) {
+    // Compact reply: name + body inline on one line (time on hover).
+    return '<div class="memola-cmt-c reply" data-id="' + c.Id + '" title="' + escapeHtml(when) + '">' +
+      avatar +
+      '<div class="memola-cmt-main">' +
+        '<div class="memola-cmt-replyline">' +
+          '<span class="memola-cmt-author">' + escapeHtml(c.AuthorName || '誰か') + '</span> ' +
+          '<span class="memola-cmt-body inline">' + bodyHtml + '</span> ' + edited +
+        '</div>' +
+        reactionChips(c) +
+      '</div>' + hover +
+    '</div>';
+  }
   return '<div class="memola-cmt-c" data-id="' + c.Id + '">' +
-    '<div class="memola-cmt-avatar" style="background:' + avatarColor(c.AuthorId) + '">' + escapeHtml(initialOf(c.AuthorName || '')) + '</div>' +
+    avatar +
     '<div class="memola-cmt-main">' +
       '<div class="memola-cmt-line1">' +
         '<span class="memola-cmt-author">' + escapeHtml(c.AuthorName || '誰か') + '</span>' +
-        '<span class="memola-cmt-time">' + escapeHtml(when) + '</span>' +
-        (c.Edited ? '<span class="memola-cmt-edited">編集済み</span>' : '') + scopeBadge +
+        '<span class="memola-cmt-time">' + escapeHtml(when) + '</span>' + edited + scopeBadge +
       '</div>' +
-      '<div class="memola-cmt-body">' + escapeHtml(c.Body).replace(/\n/g, '<br>') + '</div>' +
+      '<div class="memola-cmt-body">' + bodyHtml + '</div>' +
       reactionChips(c) +
     '</div>' + hover +
   '</div>';

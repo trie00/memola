@@ -787,7 +787,10 @@
 #memola-ed em { font-style: italic; }
 #memola-ed s { text-decoration: line-through; }
 #memola-ed hr { border: none; border-top: 1px solid rgba(55, 53, 47, 0.09); margin: 1em 0; }
-#memola-ed a { color: var(--accent); text-decoration: underline; }
+#memola-ed a { color: var(--accent); text-decoration: underline; cursor: pointer; }
+/* Reinforce the link cursor inside the contenteditable, where the default
+ * is the text caret. Covers URL/UNC links (data-href) and page/daily links. */
+#memola-ed a[data-href], #memola-ed a[data-page-id], #memola-ed a[data-daily-date] { cursor: pointer; }
 
 /* ── Callout block ────────────────────────────────────── */
 /* The controlled editor (editor2) renders the wrapper as
@@ -1001,6 +1004,11 @@
 #memola-overlay .memola-cmt-badge { font-size: 10px; }
 #memola-overlay .memola-cmt-body { font-size: var(--fs-sm); line-height: 1.5; margin-top: 1px; white-space: pre-wrap; word-break: break-word; color: var(--ink); }
 #memola-overlay .memola-cmt-body.muted { color: var(--ink-3); }
+/* Compact reply: avatar a touch smaller, name + body share one line */
+#memola-overlay .memola-cmt-c.reply .memola-cmt-avatar { width: 18px; height: 18px; font-size: 10px; }
+#memola-overlay .memola-cmt-replyline { font-size: var(--fs-sm); line-height: 1.5; word-break: break-word; color: var(--ink); }
+#memola-overlay .memola-cmt-replyline .memola-cmt-author { margin-right: 4px; }
+#memola-overlay .memola-cmt-body.inline { display: inline; margin: 0; }
 
 /* Reactions */
 #memola-overlay .memola-cmt-reacts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
