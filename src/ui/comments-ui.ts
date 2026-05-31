@@ -163,7 +163,7 @@ function wirePane(): void {
     });
     list?.addEventListener('keydown', (e) => {
       const ke = e as KeyboardEvent;
-      if (mentionPickerKey(ke)) return;             // picker handles ↑↓/Enter/Esc
+      if (mentionPickerKey(ke)) { ke.stopPropagation(); return; }             // picker handles ↑↓/Enter/Esc
       if (ke.isComposing || ke.keyCode === 229) return;
       const inp = (ke.target as HTMLElement).closest<HTMLElement>('.memola-cmt-reply-inp');
       if (inp && ke.key === 'Enter' && !ke.shiftKey) {
@@ -178,7 +178,7 @@ function wirePane(): void {
     ta?.addEventListener('input', () => { if (ta) void maybeOpenMentionPicker(ta); });
     ta?.addEventListener('keydown', (e) => {
       const ke = e as KeyboardEvent;
-      if (mentionPickerKey(ke)) return;             // picker handles ↑↓/Enter/Esc
+      if (mentionPickerKey(ke)) { ke.stopPropagation(); return; }             // picker handles ↑↓/Enter/Esc
       // Ignore the Enter that confirms an IME conversion (composition) — only
       // a committed Enter submits. Shift+Enter inserts a newline.
       if (ke.isComposing || ke.keyCode === 229) return;

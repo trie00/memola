@@ -134,26 +134,47 @@ export function onKey(e: KeyboardEvent): void {
     // the close-confirm dialog after each cycle. Ignore repeats — user
     // has to release + press ESC again to trigger another close attempt.
     if (e.repeat) return;
-    if (g('qs').classList.contains('on')) { closeSearch(); return; }
-    if (g('emoji').classList.contains('on')) { g('emoji').classList.remove('on'); return; }
-    // Modal popups (drafts / trash / settings / version history / col-add /
-    // create / general): just close the topmost modal, never the whole app.
-    const trashMd = document.getElementById('memola-trash-md');
-    if (trashMd?.classList.contains('on')) { trashMd.classList.remove('on'); return; }
-    const draftsMd = document.getElementById('memola-drafts-md');
-    if (draftsMd && draftsMd.style.display === 'flex') { draftsMd.style.display = 'none'; return; }
-    const setMd = document.getElementById('memola-settings-md');
-    if (setMd?.classList.contains('on')) { setMd.classList.remove('on'); return; }
-    const scMd = document.getElementById('memola-shortcuts-md');
-    if (scMd) { scMd.remove(); return; }
-    const verMd = document.getElementById('memola-versions-md');
-    if (verMd && verMd.style.display === 'flex') { verMd.style.display = 'none'; return; }
-    const colMd = document.getElementById('memola-col-md');
-    if (colMd?.classList.contains('on')) { colMd.classList.remove('on'); return; }
-    const wsMenu = document.getElementById('memola-ws-menu');
-    if (wsMenu) { wsMenu.remove(); return; }
-    if (g('ai-panel').classList.contains('on')) { void import('./ai-chat').then((m) => m.closeAiPanel()); return; }
-    if (isSlashActive()) { closeSlashMenu(); return; }
+    // ANY open modal / picker / menu → close just that, never the app.
+    if (dismissOpenPopup()) return;
     closeApp();
   }
+}
+
+/** Close the topmost open modal / picker / menu, if any. Returns true when
+ *  it closed something (→ ESC must NOT fall through to the app-close
+ *  confirm). Modals built on the shared modal lib already swallow ESC in
+ *  capture phase; this covers everything else (plain `.on` modals, ephemeral
+ *  floating pickers, side menus) so ESC behaviour is uniform. */
+function dismissOpenPopup(): boolean {
+  // 1) Ephemeral floating pickers/menus — appended to the overlay, removed
+  //    on dismiss. Includes comment reaction/more menus + the @mention
+  //    picker (.memola-cmt-float), block-handle menu, DB colour palette,
+  //    workspace menu, shortcuts modal.
+  const floater = document.querySelector<HTMLElement>(
+    '.memola-cmt-float, .memola-blk-menu, #memola-dbcolor-pop, #memola-ws-menu, #memola-shortcuts-md',
+  );
+  if (floater) { floater.remove(); return true; }
+
+  // 2) Quick search / command palette + emoji picker.
+  if (g('qs').classList.contains('on')) { closeSearch(); return true; }
+  const emoji = document.getElementById('memola-emoji');
+  if (emoji?.classList.contains('on')) { emoji.classList.remove('on'); return true; }
+
+  // 3) `.on`-toggled modals & menus.
+  for (const id of ['memola-trash-md', 'memola-settings-md', 'memola-col-md',
+    'memola-inbox-md', 'memola-create-menu', 'memola-pgm']) {
+    const el = document.getElementById(id);
+    if (el?.classList.contains('on')) { el.classList.remove('on'); return true; }
+  }
+
+  // 4) display:flex modals (drafts / version history).
+  for (const id of ['memola-drafts-md', 'memola-versions-md']) {
+    const el = document.getElementById(id);
+    if (el && el.style.display === 'flex') { el.style.display = 'none'; return true; }
+  }
+
+  // 5) AI side panel, then the slash menu.
+  if (g('ai-panel').classList.contains('on')) { void import('./ai-chat').then((m) => m.closeAiPanel()); return true; }
+  if (isSlashActive()) { closeSlashMenu(); return true; }
+  return false;
 }

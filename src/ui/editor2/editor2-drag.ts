@@ -96,7 +96,9 @@ export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void
     if (menu && !menu.contains(e.target as Node) && e.target !== handle) closeMenu();
   };
   const onMenuKey = (e: KeyboardEvent): void => {
-    if (e.key === 'Escape') { e.preventDefault(); closeMenu(); }
+    // stopPropagation so the global ESC handler doesn't also fire (which
+    // would otherwise pop the app-close confirm after we close the menu).
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); }
   };
   function closeMenu(): void {
     if (menu) { menu.remove(); menu = null; }
