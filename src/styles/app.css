@@ -3935,61 +3935,124 @@
   display: inline-block; margin: 0 2px; color: var(--ink-3); font-size: 11px;
 }
 
-/* ── 横断チャット (cross-document RAG chat) ───────────────────────── */
+
+/* ════════ 横断チャット (cross-document RAG chat) — 外部ベクトル レイアウト忠実移植 ════════ */
+/* 起動ボタン (+新規の隣) */
 .memola-quick-wrap{display:flex;align-items:center;gap:4px}
 #memola-overlay .memola-quick-add{flex:1 1 auto;width:auto;min-width:0}
+.memola-quick-chat{flex-shrink:0;width:32px;height:32px;border:0;border-radius:var(--r-2,6px);background:transparent;cursor:pointer;color:var(--ink-3,#6b6b66);display:grid;place-items:center}
+.memola-quick-chat:hover{background:rgba(0,0,0,.07);color:#5e6f5c}
+.memola-quick-chat svg{width:18px;height:18px}
 #memola-sb.rail .memola-quick-chat{display:none}
-.memola-quick-chat{flex-shrink:0;width:30px;height:30px;border:0;border-radius:7px;background:transparent;cursor:pointer;color:var(--ink-3,#6b6b66);display:grid;place-items:center}
-.memola-quick-chat:hover{background:rgba(0,0,0,.07);color:var(--accent,#5b8def)}
-.memola-quick-chat svg{width:17px;height:17px}
 
-#memola-xchat{position:fixed;top:0;right:0;bottom:0;left:280px;z-index:60;display:none;flex-direction:row;background:var(--paper,#fafaf7);box-shadow:-2px 0 18px rgba(0,0,0,.10);opacity:0;transition:opacity .18s ease}
+/* ── パネル本体: 外部ベクトル のデザイントークンをスコープ内に定義 (テーマに依らず 外部ベクトル 見た目) ── */
+#memola-xchat{
+  --ink:#2a2a26; --ink-3:#7a766c; --ink-4:#a8a39a;
+  --paper:#fafaf7; --paper-2:#f3f1ea; --paper-3:#e8e4d8;
+  --line:rgba(42,42,38,.12); --line-strong:rgba(42,42,38,.18);
+  --accent:#7a8a78; --accent-soft:rgba(122,138,120,.18); --accent-strong:#5e6f5c;
+  --danger:#b8534a; --danger-soft:rgba(184,83,74,.12); --hl:rgba(196,127,28,.28);
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --fs-xs:11px; --fs-sm:12px; --fs-md:13px; --fs-base:15px; --fs-lg:16px; --fs-xl:18px;
+  --s-1:4px; --s-2:6px; --s-3:8px; --s-4:10px; --s-5:12px; --s-6:14px; --s-7:18px; --s-8:22px; --s-9:28px;
+  --r-1:2px; --r-2:4px; --r-3:6px; --r-4:8px;
+  --topbar-h:48px; --gutter:24px; --thread-w:760px;
+  position:fixed;top:0;right:0;bottom:0;left:280px;z-index:60;display:none;flex-direction:row;
+  background:var(--paper);color:var(--ink);font-size:var(--fs-base);line-height:1.6;
+  box-shadow:-2px 0 22px rgba(0,0,0,.10);opacity:0;transition:opacity .16s ease;
+}
 #memola-xchat.on{display:flex;opacity:1}
-#memola-xchat-hist{width:240px;flex-shrink:0;border-right:1px solid var(--border,#e3e3e0);display:flex;flex-direction:column;background:var(--bg-2,#f3f3f0);overflow:hidden}
-.memola-xchat-hist-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;font-size:12px;font-weight:600;color:var(--ink-3,#6b6b66);border-bottom:1px solid var(--border,#e3e3e0)}
-.memola-xchat-hist-hd button{border:0;background:transparent;cursor:pointer;width:22px;height:22px;color:inherit;display:grid;place-items:center;border-radius:5px}
-.memola-xchat-hist-hd button:hover{background:rgba(0,0,0,.06)}
-.memola-xchat-hist-hd button svg{width:15px;height:15px}
-#memola-xchat-hist-list{flex:1;overflow-y:auto;padding:6px}
-.memola-xchat-sess{padding:8px 26px 8px 10px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--ink-1,#2c2c28);overflow:hidden;position:relative}
-.memola-xchat-sess:hover{background:rgba(0,0,0,.05)}
-.memola-xchat-sess.on{background:rgba(91,141,239,.16)}
-.memola-xchat-sess .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.memola-xchat-sess .t{font-size:10px;color:var(--ink-4,#9a9a94);margin-top:2px}
-.memola-xchat-sess .del{position:absolute;right:5px;top:7px;opacity:0;border:0;background:transparent;cursor:pointer;color:var(--ink-4,#9a9a94);font-size:14px;line-height:1}
-.memola-xchat-sess:hover .del{opacity:1}
 
-#memola-xchat-main{flex:1;display:flex;flex-direction:column;min-width:0}
-.memola-xchat-top{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--border,#e3e3e0)}
-.memola-xchat-title{display:flex;align-items:center;gap:7px;font-size:14px;color:var(--ink-1,#2c2c28)}
-.memola-xchat-title svg{width:17px;height:17px;color:var(--accent,#5b8def)}
-.memola-xchat-sub{font-size:11px;color:var(--ink-4,#9a9a94);font-weight:400}
-.memola-xchat-idx{margin-left:auto;font-size:11px;color:var(--ink-4,#9a9a94)}
-#memola-xchat-close{border:0;background:transparent;cursor:pointer;width:26px;height:26px;display:grid;place-items:center;border-radius:6px;color:var(--ink-3,#6b6b66)}
-#memola-xchat-close:hover{background:rgba(0,0,0,.07)}
-#memola-xchat-close svg{width:16px;height:16px}
-#memola-xchat-thread{flex:1;overflow-y:auto;padding:18px 22px;display:flex;flex-direction:column;gap:14px}
-.memola-xchat-empty{margin:auto;text-align:center;color:var(--ink-4,#9a9a94);font-size:13px;max-width:380px;line-height:1.7}
-.memola-xchat-q{align-self:flex-end;max-width:80%;background:var(--accent,#5b8def);color:#fff;padding:9px 13px;border-radius:13px 13px 3px 13px;font-size:13px;white-space:pre-wrap;word-break:break-word}
-.memola-xchat-a{align-self:flex-start;max-width:90%;font-size:13.5px;line-height:1.62;color:var(--ink-1,#2c2c28);white-space:pre-wrap;word-break:break-word}
-.memola-xchat-srcs{align-self:flex-start;max-width:90%;display:flex;flex-direction:column;gap:6px;margin-top:1px}
-.memola-xchat-srcs-lbl{font-size:10px;font-weight:600;color:var(--ink-4,#9a9a94);letter-spacing:.04em}
-.memola-xchat-src{border:1px solid var(--border,#e3e3e0);border-radius:8px;padding:8px 10px;cursor:pointer;background:var(--bg-2,#f7f7f4);transition:background .12s}
-.memola-xchat-src:hover{background:rgba(91,141,239,.10)}
-.memola-xchat-src .h{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--ink-1,#2c2c28)}
-.memola-xchat-src .ref{color:var(--accent,#5b8def);font-weight:700}
-.memola-xchat-src .badge{font-size:9px;padding:1px 5px;border-radius:4px;background:rgba(0,0,0,.08);color:var(--ink-3,#6b6b66);font-weight:600}
-.memola-xchat-src .sn{font-size:11px;color:var(--ink-3,#6b6b66);margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.memola-xchat-thinking{align-self:flex-start;color:var(--ink-4,#9a9a94);font-size:12px}
-.memola-xchat-err{align-self:flex-start;color:#c0392b;font-size:12px}
-.memola-xchat-composer{display:flex;gap:8px;align-items:flex-end;padding:12px 16px;border-top:1px solid var(--border,#e3e3e0)}
-#memola-xchat-input{flex:1;resize:none;border:1px solid var(--border,#e3e3e0);border-radius:10px;padding:9px 12px;font-size:13px;font-family:inherit;line-height:1.5;max-height:160px;background:var(--paper,#fff);color:var(--ink-1,#2c2c28)}
-#memola-xchat-input:focus{outline:none;border-color:var(--accent,#5b8def)}
-.memola-xchat-composer button{flex-shrink:0;width:38px;height:38px;border:0;border-radius:10px;background:var(--accent,#5b8def);color:#fff;cursor:pointer;display:grid;place-items:center}
-.memola-xchat-composer button:disabled{opacity:.5;cursor:default}
-.memola-xchat-composer button svg{width:17px;height:17px}
-#memola-xchat-rebuild{border:0;background:transparent;cursor:pointer;width:26px;height:26px;display:grid;place-items:center;border-radius:6px;color:var(--ink-3,#6b6b66)}
-#memola-xchat-rebuild:hover{background:rgba(0,0,0,.07);color:var(--accent,#5b8def)}
-#memola-xchat-rebuild svg{width:15px;height:15px}
-#memola-xchat-rebuild.spin svg{animation:memola-xspin 1s linear infinite}
+/* サイドバー (セッション一覧) */
+#memola-xchat .tdr-sidebar{flex:0 0 248px;display:flex;flex-direction:column;min-height:0;background:var(--paper-2);border-right:1px solid var(--line);overflow:hidden}
+#memola-xchat .tdr-new-session{display:flex;align-items:center;justify-content:center;gap:var(--s-3);margin:var(--s-5);padding:var(--s-4) var(--s-5);font:inherit;font-size:var(--fs-md);font-weight:600;color:#fff;background:var(--accent);border:1px solid var(--accent);border-radius:var(--r-3);cursor:pointer}
+#memola-xchat .tdr-new-session:hover{background:var(--accent-strong);border-color:var(--accent-strong)}
+#memola-xchat .tdr-new-session svg{width:15px;height:15px}
+#memola-xchat .tdr-session-list{flex:1;min-height:0;overflow-y:auto;padding:0 var(--s-3) var(--s-5);display:flex;flex-direction:column;gap:2px}
+#memola-xchat .tdr-session-empty{padding:var(--s-5);font-size:var(--fs-sm);color:var(--ink-4);text-align:center}
+#memola-xchat .tdr-session{display:flex;align-items:center;gap:var(--s-3);padding:var(--s-4);border-radius:var(--r-3);cursor:pointer;color:var(--ink);position:relative}
+#memola-xchat .tdr-session:hover{background:var(--paper-3)}
+#memola-xchat .tdr-session.is-active{background:var(--accent-soft);color:var(--accent-strong)}
+#memola-xchat .tdr-session-ic{flex:0 0 auto;color:var(--ink-4);display:inline-flex}
+#memola-xchat .tdr-session-ic svg{width:15px;height:15px}
+#memola-xchat .tdr-session.is-active .tdr-session-ic{color:var(--accent-strong)}
+#memola-xchat .tdr-session-title{flex:1;min-width:0;font-size:var(--fs-md);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#memola-xchat .tdr-session-del{flex:0 0 auto;display:none;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border:none;background:transparent;color:var(--ink-4);border-radius:var(--r-1);cursor:pointer;font-size:15px;line-height:1}
+#memola-xchat .tdr-session:hover .tdr-session-del{display:inline-flex}
+#memola-xchat .tdr-session-del:hover{color:var(--danger);background:var(--danger-soft)}
+
+/* チャット列 */
+#memola-xchat .tdr-chat{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}
+#memola-xchat .tdr-topbar{display:flex;align-items:center;gap:var(--s-4);height:var(--topbar-h);padding:0 var(--gutter);border-bottom:1px solid var(--line);background:var(--paper);flex:0 0 auto}
+#memola-xchat .tdr-brand{display:flex;align-items:baseline;gap:var(--s-3);min-width:0;overflow:hidden}
+#memola-xchat .tdr-brand .mark{font-family:var(--font-mono);color:var(--accent-strong);font-size:var(--fs-xl);font-weight:600;line-height:1}
+#memola-xchat .tdr-brand .name{font-size:var(--fs-lg);font-weight:600;color:var(--ink);line-height:1}
+#memola-xchat .tdr-brand .sub{font-size:var(--fs-xs);color:var(--ink-3);font-weight:400;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#memola-xchat .tdr-icon-btn{flex:0 0 auto;width:30px;height:30px;display:grid;place-items:center;border:1px solid var(--line);border-radius:var(--r-2);background:var(--paper-2);color:var(--ink-3);cursor:pointer}
+#memola-xchat .tdr-icon-btn:hover{color:var(--accent-strong);border-color:var(--accent-strong);background:var(--accent-soft)}
+#memola-xchat .tdr-icon-btn svg{width:15px;height:15px}
+#memola-xchat #memola-xchat-rebuild.spin svg{animation:memola-xspin 1s linear infinite}
 @keyframes memola-xspin{to{transform:rotate(360deg)}}
+
+/* スレッド */
+#memola-xchat .tdr-thread{flex:1;min-height:0;overflow:auto;padding:var(--gutter) var(--gutter) var(--s-7)}
+#memola-xchat .tdr-turn{max-width:var(--thread-w);margin:0 auto var(--s-9)}
+#memola-xchat .tdr-q{margin-left:auto;max-width:80%;width:fit-content;background:var(--accent-soft);color:var(--ink);padding:var(--s-4) var(--s-5);border-radius:var(--r-4) var(--r-4) var(--r-1) var(--r-4);font-size:var(--fs-base);white-space:pre-wrap;word-break:break-word}
+#memola-xchat .tdr-a{display:flex;gap:var(--s-4);margin-top:var(--s-6)}
+#memola-xchat .tdr-a-avatar{flex:0 0 auto;width:28px;height:28px;border-radius:50%;background:var(--accent-soft);color:var(--accent-strong);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:11px;font-family:var(--font-mono)}
+#memola-xchat .tdr-a-body{flex:1;min-width:0}
+#memola-xchat .tdr-a-meta{display:flex;align-items:center;gap:var(--s-4);margin:0 0 var(--s-3);font-size:var(--fs-sm);color:var(--ink-3)}
+#memola-xchat .tdr-a-meta .mono,#memola-xchat .tdr-turn-time{font-family:var(--font-mono);color:var(--ink-4)}
+#memola-xchat .tdr-answer{font-size:var(--fs-base);color:var(--ink);line-height:1.85}
+#memola-xchat .tdr-answer p{margin:0 0 var(--s-4)}
+#memola-xchat .tdr-answer p:last-child{margin-bottom:0}
+#memola-xchat .tdr-answer h1,#memola-xchat .tdr-answer h2,#memola-xchat .tdr-answer h3,#memola-xchat .tdr-answer h4{margin:var(--s-6) 0 var(--s-3);font-weight:600;line-height:1.4}
+#memola-xchat .tdr-answer h1{font-size:var(--fs-xl)}#memola-xchat .tdr-answer h2{font-size:var(--fs-lg)}#memola-xchat .tdr-answer h3{font-size:var(--fs-base)}
+#memola-xchat .tdr-answer ul,#memola-xchat .tdr-answer ol{margin:0 0 var(--s-4);padding-left:1.5em}
+#memola-xchat .tdr-answer li{margin:var(--s-1) 0}
+#memola-xchat .tdr-answer blockquote{margin:0 0 var(--s-4);padding:var(--s-2) var(--s-5);border-left:3px solid var(--line-strong);color:var(--ink-3)}
+#memola-xchat .tdr-answer code{font-family:var(--font-mono);font-size:.9em;background:var(--paper-2);border:1px solid var(--line);border-radius:var(--r-1);padding:1px 5px}
+#memola-xchat .tdr-answer pre{margin:0 0 var(--s-4);padding:var(--s-4) var(--s-5);background:var(--paper-2);border:1px solid var(--line);border-radius:var(--r-3);overflow:auto}
+#memola-xchat .tdr-answer pre code{background:none;border:none;padding:0;font-size:var(--fs-sm)}
+#memola-xchat .tdr-answer a{color:var(--accent-strong);text-decoration:underline}
+#memola-xchat .tdr-answer strong{font-weight:600}
+#memola-xchat .tdr-answer .cite{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--accent-strong);background:var(--accent-soft);border-radius:var(--r-1);padding:0 4px;margin:0 1px;cursor:pointer}
+#memola-xchat .tdr-thinking{display:inline-flex;align-items:center;color:var(--ink-3);font-size:var(--fs-base)}
+#memola-xchat .tdr-thinking .tdr-dot{display:inline-block;width:4px;height:4px;margin-left:4px;border-radius:50%;background:var(--accent-strong);animation:tdr-bounce 1.2s infinite ease-in-out}
+#memola-xchat .tdr-thinking .tdr-dot:nth-of-type(2){animation-delay:.18s}
+#memola-xchat .tdr-thinking .tdr-dot:nth-of-type(3){animation-delay:.36s}
+@keyframes tdr-bounce{0%,80%,100%{transform:scale(.5);opacity:.4}40%{transform:scale(1);opacity:1}}
+#memola-xchat .tdr-err{color:var(--danger);font-size:var(--fs-sm);margin-top:var(--s-3)}
+
+/* 出典 (折りたたみヘッダ + カード) */
+#memola-xchat .tdr-sources-h{display:flex;align-items:center;gap:var(--s-3);margin:var(--s-6) 0 var(--s-3);font-size:var(--fs-sm);color:var(--ink-3);cursor:pointer;user-select:none}
+#memola-xchat .tdr-sources-h svg{width:13px;height:13px;transition:transform .15s}
+#memola-xchat .tdr-sources-h.collapsed svg{transform:rotate(-90deg)}
+#memola-xchat .tdr-sources.collapsed{display:none}
+#memola-xchat .tdr-hit{padding:var(--s-5);border:1px solid var(--line);border-radius:var(--r-3);margin-bottom:var(--s-3);cursor:pointer;background:var(--paper)}
+#memola-xchat .tdr-hit:hover{background:var(--paper-2);border-color:var(--line-strong)}
+#memola-xchat .tdr-hit-head{display:flex;align-items:center;gap:var(--s-3)}
+#memola-xchat .tdr-hit-num{flex:0 0 auto;font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--accent-strong);background:var(--accent-soft);width:20px;height:20px;border-radius:var(--r-1);display:inline-flex;align-items:center;justify-content:center}
+#memola-xchat .tdr-hit-badge{flex:0 0 auto;font-size:var(--fs-xs);padding:1px 6px;border-radius:99px;background:var(--paper-2);border:1px solid var(--line);color:var(--ink-3)}
+#memola-xchat .tdr-hit-subject{font-size:var(--fs-base);font-weight:600;color:var(--ink);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#memola-xchat .tdr-hit-score{font-family:var(--font-mono);font-size:var(--fs-xs);color:var(--accent-strong);background:var(--accent-soft);padding:2px 6px;border-radius:var(--r-1);flex:0 0 auto}
+#memola-xchat .tdr-hit-snippet{font-size:var(--fs-md);color:var(--ink-3);margin-top:var(--s-2);line-height:1.6;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+#memola-xchat .tdr-hit.is-flash{box-shadow:0 0 0 2px var(--accent-strong)}
+
+/* 空状態 */
+#memola-xchat .tdr-empty{max-width:var(--thread-w);margin:12vh auto 0;text-align:center;color:var(--ink-3)}
+#memola-xchat .tdr-empty .big{font-size:var(--fs-xl);color:var(--ink);margin-bottom:var(--s-3);font-weight:600}
+#memola-xchat .tdr-empty p{margin:var(--s-2) 0;font-size:var(--fs-md)}
+
+/* コンポーザ */
+#memola-xchat .tdr-composer{flex:0 0 auto;border-top:1px solid var(--line);background:var(--paper);padding:var(--s-5) var(--gutter) var(--s-7)}
+#memola-xchat .tdr-composer-inner{max-width:var(--thread-w);margin:0 auto}
+#memola-xchat .tdr-note-form{position:relative;line-height:0}
+#memola-xchat .tdr-note-input{width:100%;min-height:48px;max-height:40vh;padding:14px 56px 14px 16px;resize:none;font-family:inherit;font-size:var(--fs-base);line-height:1.6;color:var(--ink);background:var(--paper-2);border:1px solid var(--line);border-radius:var(--r-3);outline:none;box-sizing:border-box}
+#memola-xchat .tdr-note-input:focus{background:var(--paper);border-color:var(--line-strong)}
+#memola-xchat .tdr-note-input::placeholder{color:var(--ink-4)}
+#memola-xchat .tdr-note-submit{position:absolute;right:11px;bottom:11px;width:26px;height:26px;border:none;background:var(--accent);color:#fff;border-radius:var(--r-2);cursor:pointer;display:flex;align-items:center;justify-content:center}
+#memola-xchat .tdr-note-submit:hover{background:var(--accent-strong)}
+#memola-xchat .tdr-note-submit:disabled{opacity:.4;cursor:default}
+#memola-xchat .tdr-note-submit svg{width:14px;height:14px}
+#memola-xchat .tdr-note-hint{margin:var(--s-2) auto 0;font-size:var(--fs-xs);color:var(--ink-4);line-height:1.4}

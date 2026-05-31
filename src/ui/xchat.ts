@@ -6,6 +6,7 @@
 // 左ペインの右側の履歴一覧から再表示できる。
 
 import { ICONS } from '../icons';
+import { mdToHtml } from '../lib/blocks-html';
 import { prefXChatHistory, prefXChatOpen } from '../lib/prefs';
 import { ragInit, ragRefresh, ragSearch, type RagHit } from '../rag/search';
 import { canEmbed } from '../rag/embed';
@@ -15,7 +16,7 @@ interface XSource {
   docKey: string; appPageId: string; scope: 'org' | 'user';
   title: string; heading?: string; snippet: string; chunkIdx: number; score: number;
 }
-interface XTurn { q: string; a: string; sources: XSource[] }
+interface XTurn { q: string; a: string; sources: XSource[]; at?: number }
 interface XSession { id: string; title: string; created: number; turns: XTurn[] }
 
 const MAX_SESSIONS = 50;
@@ -145,34 +146,42 @@ function renderHistory(): void {
   host.textContent = '';
   if (sessions.length === 0) {
     const e = document.createElement('div');
-    e.className = 'memola-xchat-sess';
-    e.style.color = 'var(--ink-4,#9a9a94)';
-    e.style.cursor = 'default';
-    e.textContent = 'まだチャットはありません';
+    e.className = 'tdr-session-empty';
+    e.textContent = '履歴はまだありません';
     host.appendChild(e);
     return;
   }
   for (const s of sessions) {
     const row = document.createElement('div');
-    row.className = 'memola-xchat-sess' + (s.id === currentId ? ' on' : '');
+    row.className = 'tdr-session' + (s.id === currentId ? ' is-active' : '');
     row.dataset.sid = s.id;
-    const nm = document.createElement('div');
-    nm.className = 'nm';
-    nm.textContent = s.title || '(無題のチャット)';
-    const t = document.createElement('div');
-    t.className = 't';
-    t.textContent = new Date(s.created).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ` · ${s.turns.length}件`;
+    const ic = document.createElement('span');
+    ic.className = 'tdr-session-ic';
+    ic.innerHTML = ICONS.chat;
+    const title = document.createElement('span');
+    title.className = 'tdr-session-title';
+    title.textContent = s.title || '(無題のチャット)';
     const del = document.createElement('button');
-    del.className = 'del';
+    del.className = 'tdr-session-del';
     del.textContent = '×';
     del.title = 'このチャットを削除';
     del.dataset.del = s.id;
-    row.append(nm, t, del);
+    row.append(ic, title, del);
     host.appendChild(row);
   }
 }
 
-// ─── render: thread ───────────────────────────────────────────────────
+// ─── render: thread (外部ベクトル レイアウト) ───────────────────────────────
+const CHEVRON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+
+function fmtTime(ms: number): string {
+  const d = new Date(ms);
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  return sameDay ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
+
 function renderThread(): void {
   const host = $('memola-xchat-thread');
   if (!host) return;
@@ -180,68 +189,106 @@ function renderThread(): void {
   const sess = current();
   if (!sess || sess.turns.length === 0) {
     const e = document.createElement('div');
-    e.className = 'memola-xchat-empty';
-    e.innerHTML = '<div style="font-size:30px;margin-bottom:8px">💬</div>'
-      + 'memola 内の全ドキュメント (組織 + 自分のプライベート) を横断して質問できます。<br>'
-      + '回答には参照したソース文書が表示され、クリックでその文書へ移動できます。';
+    e.className = 'tdr-empty';
+    e.innerHTML = '<div class="big">横断チャット</div>'
+      + '<p>memola 内の全ドキュメント (組織 + 自分のプライベート) を横断して質問できます。</p>'
+      + '<p style="color:var(--ink-4)">回答の下に参照したソース文書が出典として表示され、クリックでその文書へ移動できます。</p>';
     host.appendChild(e);
     return;
   }
-  for (const turn of sess.turns) appendTurnEls(host, turn);
+  for (const turn of sess.turns) {
+    const { body } = buildTurnSkeleton(host, turn.q);
+    fillAnswer(body, turn.a, turn.sources, turn.at);
+  }
   host.scrollTop = host.scrollHeight;
 }
 
-function appendTurnEls(host: HTMLElement, turn: XTurn): { aEl: HTMLElement; srcHost: HTMLElement } {
-  const q = document.createElement('div');
-  q.className = 'memola-xchat-q';
-  q.textContent = turn.q;
+/** 質問バブル + アシスタント枠 (アバター + 本文コンテナ) を作る。本文コンテナを返す。 */
+function buildTurnSkeleton(host: HTMLElement, q: string): { turnEl: HTMLElement; body: HTMLElement } {
+  const turnEl = document.createElement('div');
+  turnEl.className = 'tdr-turn';
+  const qEl = document.createElement('div');
+  qEl.className = 'tdr-q';
+  qEl.textContent = q;
+  const avatar = document.createElement('div');
+  avatar.className = 'tdr-a-avatar';
+  avatar.textContent = 'AI';
+  const body = document.createElement('div');
+  body.className = 'tdr-a-body';
   const a = document.createElement('div');
-  a.className = 'memola-xchat-a';
-  a.textContent = turn.a;
-  host.append(q, a);
-  const srcHost = document.createElement('div');
-  srcHost.className = 'memola-xchat-srcs';
-  host.appendChild(srcHost);
-  if (turn.sources.length) renderSources(srcHost, turn.sources);
-  return { aEl: a, srcHost };
+  a.className = 'tdr-a';
+  a.append(avatar, body);
+  turnEl.append(qEl, a);
+  host.appendChild(turnEl);
+  return { turnEl, body };
 }
 
-function renderSources(host: HTMLElement, sources: XSource[]): void {
-  host.textContent = '';
-  const lbl = document.createElement('div');
-  lbl.className = 'memola-xchat-srcs-lbl';
-  lbl.textContent = '出典';
-  host.appendChild(lbl);
-  sources.forEach((s, i) => {
-    const card = document.createElement('div');
-    card.className = 'memola-xchat-src';
-    const h = document.createElement('div');
-    h.className = 'h';
-    const ref = document.createElement('span');
-    ref.className = 'ref';
-    ref.textContent = `[${i + 1}]`;
-    const nm = document.createElement('span');
-    nm.textContent = s.title;
-    const badge = document.createElement('span');
-    badge.className = 'badge';
-    badge.textContent = s.scope === 'org' ? '組織' : 'プライベート';
-    h.append(ref, nm, badge);
-    if (s.heading) {
-      const hd = document.createElement('span');
-      hd.className = 'badge';
-      hd.textContent = s.heading.slice(0, 24);
-      h.appendChild(hd);
-    }
-    const sn = document.createElement('div');
-    sn.className = 'sn';
-    sn.textContent = s.snippet;
-    card.append(h, sn);
-    if (s.appPageId) {
-      card.addEventListener('click', () => { void navigateToSource(s.appPageId); });
-    } else {
-      card.style.cursor = 'default';
-    }
-    host.appendChild(card);
+/** 本文コンテナに meta + 回答(markdown+引用) + 出典カードを描画。 */
+function fillAnswer(body: HTMLElement, answerMd: string, sources: XSource[], at?: number): void {
+  body.textContent = '';
+  const meta = document.createElement('div');
+  meta.className = 'tdr-a-meta';
+  if (at) { const t = document.createElement('span'); t.className = 'tdr-turn-time'; t.textContent = fmtTime(at); meta.appendChild(t); }
+  if (sources.length) { const s = document.createElement('span'); s.textContent = `${sources.length} 件参照`; meta.appendChild(s); }
+  const ans = document.createElement('div');
+  ans.className = 'tdr-answer';
+  ans.innerHTML = mdToHtml(answerMd).replace(/\[(\d+)\]/g, (_, n) => `<span class="cite" data-n="${n}">[${n}]</span>`);
+  body.append(meta, ans);
+  if (sources.length) {
+    const cited = new Set<number>();
+    for (const m of answerMd.matchAll(/\[(\d+)\]/g)) cited.add(Number(m[1]));
+    const list = buildSources(body, sources, cited);
+    wireCite(ans, list);
+  }
+}
+
+/** 出典セクション (折りたたみヘッダ + .tdr-hit カード) を body に追加し、list 要素を返す。 */
+function buildSources(body: HTMLElement, sources: XSource[], cited: Set<number>): HTMLElement {
+  const collapsed = cited.size > 0; // 引用があれば既定で畳む (外部ベクトル 流)
+  const hdr = document.createElement('div');
+  hdr.className = 'tdr-sources-h' + (collapsed ? ' collapsed' : '');
+  hdr.innerHTML = CHEVRON + `<span>参照した文書 ${sources.length} 件</span>`;
+  const list = document.createElement('div');
+  list.className = 'tdr-sources' + (collapsed ? ' collapsed' : '');
+  hdr.addEventListener('click', () => { hdr.classList.toggle('collapsed'); list.classList.toggle('collapsed'); });
+  sources.forEach((s, i) => list.appendChild(buildHitCard(s, i + 1)));
+  body.append(hdr, list);
+  return list;
+}
+
+function buildHitCard(s: XSource, n: number): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'tdr-hit';
+  card.dataset.n = String(n);
+  const head = document.createElement('div');
+  head.className = 'tdr-hit-head';
+  const num = document.createElement('span'); num.className = 'tdr-hit-num'; num.textContent = String(n);
+  const subj = document.createElement('span'); subj.className = 'tdr-hit-subject'; subj.textContent = s.title;
+  const badge = document.createElement('span'); badge.className = 'tdr-hit-badge'; badge.textContent = s.scope === 'org' ? '組織' : 'プライベート';
+  head.append(num, subj, badge);
+  if (s.score != null) { const sc = document.createElement('span'); sc.className = 'tdr-hit-score'; sc.textContent = s.score.toFixed(2); head.appendChild(sc); }
+  const snip = document.createElement('div'); snip.className = 'tdr-hit-snippet';
+  snip.textContent = (s.heading ? `${s.heading} — ` : '') + s.snippet;
+  card.append(head, snip);
+  if (s.appPageId) card.addEventListener('click', () => { void navigateToSource(s.appPageId); });
+  else card.style.cursor = 'default';
+  return card;
+}
+
+/** 回答中の [n] クリックで該当カードへスクロール + 展開 + フラッシュ。 */
+function wireCite(ans: HTMLElement, list: HTMLElement): void {
+  ans.querySelectorAll<HTMLElement>('.cite').forEach((c) => {
+    c.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const n = c.dataset.n; if (!n) return;
+      const card = list.querySelector<HTMLElement>(`.tdr-hit[data-n="${n}"]`);
+      if (!card) return;
+      list.classList.remove('collapsed');
+      (list.previousElementSibling as HTMLElement | null)?.classList.remove('collapsed');
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.classList.add('is-flash');
+      setTimeout(() => card.classList.remove('is-flash'), 1200);
+    });
   });
 }
 
@@ -296,7 +343,7 @@ async function send(): Promise<void> {
   if (!ta || !host) return;
   const q = ta.value.trim();
   if (!q) return;
-  if (!canEmbed()) { flashError(host, '横断チャットには埋め込み設定が必要です。設定 → AI で「Azure OpenAI 互換」または「ローカル AI」を選んでください。'); return; }
+  if (!canEmbed()) { flashError(host, '横断チャットには埋め込み設定が必要です。設定 → AI → 埋め込みプロバイダで「Voyage AI」(中継不要・Claude併用の推奨) を選んで API キーを入れてください。'); return; }
 
   ta.value = '';
   autoGrow(ta);
@@ -304,29 +351,20 @@ async function send(): Promise<void> {
   setSendDisabled(true);
   abort = new AbortController();
 
-  // empty-state を消し、質問バブル + thinking を出す
+  // empty-state を消し、質問バブル + アシスタント枠 (thinking) を出す
   if (!current() || current()!.turns.length === 0) host.textContent = '';
-  const qEl = document.createElement('div');
-  qEl.className = 'memola-xchat-q';
-  qEl.textContent = q;
-  const aEl = document.createElement('div');
-  aEl.className = 'memola-xchat-a';
+  const { body } = buildTurnSkeleton(host, q);
   const thinking = document.createElement('div');
-  thinking.className = 'memola-xchat-thinking';
-  thinking.textContent = 'インデックス準備中…';
-  host.append(qEl, thinking);
+  thinking.className = 'tdr-thinking';
+  thinking.innerHTML = 'インデックス準備中<span class="tdr-dot"></span><span class="tdr-dot"></span><span class="tdr-dot"></span>';
+  body.appendChild(thinking);
   host.scrollTop = host.scrollHeight;
 
   try {
     // 初回ビルドが終わるまで検索しない (空インデックスへの誤検索を防ぐ)。
     await ensureReady();
-    thinking.textContent = '関連文書を検索中…';
+    thinking.firstChild!.textContent = '関連文書を検索中';
     const hits = await ragSearch(q, { signal: abort.signal });
-    thinking.remove();
-    host.appendChild(aEl);
-    const srcHost = document.createElement('div');
-    srcHost.className = 'memola-xchat-srcs';
-    host.appendChild(srcHost);
 
     // 会話履歴 (これまでの turn) を messages に展開 + 今回の質問
     const sess = ensureCurrentSession(q);
@@ -334,27 +372,31 @@ async function send(): Promise<void> {
     for (const t of sess.turns) { msgs.push({ role: 'user', content: t.q }, { role: 'assistant', content: t.a }); }
     msgs.push({ role: 'user', content: q });
 
+    // ストリーム中はプレーンテキストで流し込み、確定時に markdown 描画。
+    body.textContent = '';
+    const live = document.createElement('div');
+    live.className = 'tdr-answer';
+    body.appendChild(live);
     let acc = '';
-    const onDelta = (d: string): void => { acc += d; aEl.textContent = acc; host.scrollTop = host.scrollHeight; };
+    const onDelta = (d: string): void => { acc += d; live.textContent = acc; host.scrollTop = host.scrollHeight; };
     const finalText = await answer(msgs, buildSystemPrompt(hits), onDelta, abort.signal);
     const text = (finalText || acc).trim() || '(空の応答)';
-    aEl.textContent = text;
 
     const sources: XSource[] = hits.map((h) => ({
       docKey: h.docKey, appPageId: h.appPageId, scope: h.scope,
       title: h.title, heading: h.heading, snippet: h.snippet, chunkIdx: h.chunkIdx, score: h.score,
     }));
-    renderSources(srcHost, sources);
+    const at = Date.now();
+    fillAnswer(body, text, sources, at);   // markdown + 引用 + 出典カードに置換
 
     // 永続化
-    sess.turns.push({ q, a: text, sources });
+    sess.turns.push({ q, a: text, sources, at });
     if (!sess.title) sess.title = q.slice(0, 40);
     save();
     renderHistory();
   } catch (e) {
-    thinking.remove();
-    if ((e as Error).name === 'AbortError') { /* キャンセル */ }
-    else flashError(host, 'エラー: ' + (e as Error).message);
+    if ((e as Error).name === 'AbortError') { body.textContent = ''; }
+    else { body.textContent = ''; const er = document.createElement('div'); er.className = 'tdr-err'; er.textContent = 'エラー: ' + (e as Error).message; body.appendChild(er); }
   } finally {
     busy = false;
     abort = null;
@@ -375,10 +417,13 @@ function ensureCurrentSession(firstQ: string): XSession {
 }
 
 function flashError(host: HTMLElement, msg: string): void {
+  const wrap = document.createElement('div');
+  wrap.className = 'tdr-turn';
   const e = document.createElement('div');
-  e.className = 'memola-xchat-err';
+  e.className = 'tdr-err';
   e.textContent = msg;
-  host.appendChild(e);
+  wrap.appendChild(e);
+  host.appendChild(wrap);
   host.scrollTop = host.scrollHeight;
 }
 
@@ -424,7 +469,7 @@ export function attachXChat(): void {
       renderThread();
       return;
     }
-    const row = t.closest<HTMLElement>('.memola-xchat-sess');
+    const row = t.closest<HTMLElement>('.tdr-session');
     const sid = row?.dataset.sid;
     if (sid) { currentId = sid; renderHistory(); renderThread(); focusInput(); }
   });

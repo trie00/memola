@@ -47,28 +47,28 @@ export function buildHtml(): string {
         '<div id="memola-cm-templates"></div>' +
       '</div>' +
     '</aside>' +
-    // ── 横断チャット (cross-document RAG chat) overlay ──
-    // 左ペインの右側に配置: [履歴(セッション一覧)] | [スレッド + コンポーザ]
-    '<div id="memola-xchat" aria-hidden="true">' +
-      '<aside id="memola-xchat-hist">' +
-        '<div class="memola-xchat-hist-hd">' +
-          '<span>横断チャット履歴</span>' +
-          '<button id="memola-xchat-new" title="新しいチャット">' + ICONS.plus + '</button>' +
-        '</div>' +
-        '<div id="memola-xchat-hist-list"></div>' +
+    // ── 横断チャット (cross-document RAG chat) — 外部ベクトル レイアウト ──
+    // [サイドバー(セッション一覧)] | [トップバー + スレッド + コンポーザ]
+    '<div id="memola-xchat" class="tdr-shell" aria-hidden="true">' +
+      '<aside class="tdr-sidebar" id="memola-xchat-hist">' +
+        '<button class="tdr-new-session" id="memola-xchat-new">' + ICONS.plus + '<span>新しいチャット</span></button>' +
+        '<div class="tdr-session-list" id="memola-xchat-hist-list"></div>' +
       '</aside>' +
-      '<div id="memola-xchat-main">' +
-        '<div class="memola-xchat-top">' +
-          '<span class="memola-xchat-title">' + ICONS.chat + '<b>横断チャット</b><span class="memola-xchat-sub">全文書をまたいでAIに質問</span></span>' +
-          '<span class="memola-xchat-idx" id="memola-xchat-idx"></span>' +
-          '<button id="memola-xchat-rebuild" title="インデックスを再構築 (変更/新規文書をベクトル化)">' + ICONS.refresh + '</button>' +
-          '<button id="memola-xchat-close" title="閉じる (Esc)">' + ICONS.exit + '</button>' +
+      '<div class="tdr-chat">' +
+        '<div class="tdr-topbar">' +
+          '<div class="tdr-brand"><span class="mark">𝕄</span><span class="name">横断チャット</span><span class="sub" id="memola-xchat-idx">全文書をまたいで AI に質問</span></div>' +
+          '<div style="flex:1"></div>' +
+          '<button class="tdr-icon-btn" id="memola-xchat-rebuild" title="インデックスを再構築 (変更/新規文書をベクトル化)">' + ICONS.refresh + '</button>' +
+          '<button class="tdr-icon-btn" id="memola-xchat-close" title="閉じる (Esc)">' + ICONS.exit + '</button>' +
         '</div>' +
-        '<div id="memola-xchat-thread"></div>' +
-        '<div class="memola-xchat-composer">' +
-          '<textarea id="memola-xchat-input" rows="1" placeholder="文書について質問… (例: 先月の障害対応の手順は?)"></textarea>' +
-          '<button id="memola-xchat-send" title="送信">' + ICONS.send + '</button>' +
-        '</div>' +
+        '<div class="tdr-thread" id="memola-xchat-thread"></div>' +
+        '<div class="tdr-composer"><div class="tdr-composer-inner">' +
+          '<div class="tdr-note-form">' +
+            '<textarea class="tdr-note-input" id="memola-xchat-input" rows="1" placeholder="文書について質問… (例: 先月の障害対応の手順は?)"></textarea>' +
+            '<button class="tdr-note-submit" id="memola-xchat-send" title="送信">' + ICONS.send + '</button>' +
+          '</div>' +
+          '<div class="tdr-note-hint">Enter で送信 / Shift+Enter で改行</div>' +
+        '</div></div>' +
       '</div>' +
     '</div>' +
     '<main id="memola-main">' +
