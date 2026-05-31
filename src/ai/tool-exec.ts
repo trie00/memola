@@ -18,7 +18,7 @@ import { mdToBlocks } from '../lib/blocks-md';
 import { renderTree } from '../ui/tree';
 import { confirmPageUpdate } from '../ui/diff-modal';
 import { collectDescendantIds } from '../lib/page-tree';
-import { addPage, removePages, setPageTitle } from '../lib/page-store';
+import { addPage, removePages, setPageTitle, metaById } from '../lib/page-store';
 import { g } from '../ui/dom';
 import { autoR } from '../ui/ui-helpers';
 import * as db from './db-tool-exec';
@@ -83,16 +83,26 @@ async function handleCreatePage(input: { title: string; parent_id?: string; body
     return err('parent_id_not_found');
   }
 
-  const page = await apiCreatePage(title, parentId);
+  // 手動の doNew と完全に同じ作成手順にする(AI 経路だけ独自にしない):
+  //   1. 親スコープを継承して「無題」の空ページを作る (doNew と同一呼び出し)。
+  //   2. その後にタイトル・本文を「更新」する(手動編集と同じ経路)。
+  // 以前は apiCreatePage(title, parent) に scope を渡さず常に 'user' で作り、直後に
+  // apiSavePageMd を重ねていた。これがスコープ取り違え/行取り違えの温床だった。
+  const scope = parentId ? (metaById(parentId)?.scope || 'user') : 'user';
+  const page = await apiCreatePage('無題', parentId, scope);
   addPage(page);
 
-  if (input.body) {
-    // Save markdown directly — round-tripping through mdToHtml/htmlToMd is lossy.
+  // 作成後にタイトル + 本文を変更(= 手動でページを開いて編集するのと同じ)。
+  if (input.body != null && input.body !== '') {
+    // apiSavePageMd は Title も書くので、本文ありならこれ一回でタイトルも確定。
     await apiSavePageMd(page.Id, title, input.body);
+  } else {
+    await apiSetTitle(page.Id, title);
   }
+  setPageTitle(page.Id, title);
   if (parentId) S.expanded.add(parentId);
   renderTree();
-  return ok({ id: page.Id, title: page.Title });
+  return ok({ id: page.Id, title });
 }
 
 async function handleUpdatePage(input: { id: string; title?: string; body?: string }): Promise<ToolResult> {
