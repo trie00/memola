@@ -85,7 +85,6 @@ export function buildHtml(): string {
         '<button id="memola-nav-back" class="memola-nav-btn disabled" title="戻る (Ctrl+[)" disabled>' + ICONS.chevronLeft + '</button>' +
         '<button id="memola-nav-fwd" class="memola-nav-btn disabled" title="進む (Ctrl+])" disabled>' + ICONS.chevronRight + '</button>' +
         '<div id="memola-tabstrip"></div>' +
-        '<button id="memola-tab-new" title="新しいタブ">' + ICONS.plus + '</button>' +
       '</div>' +
       // ── 2段目: パンくず(親>タイトル) / スコープ / 公開 / 各ボタン ──
       '<div id="memola-top">' +

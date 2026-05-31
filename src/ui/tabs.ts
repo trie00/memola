@@ -137,6 +137,13 @@ export function renderTabs(): void {
     el.append(ic, lbl, x);
     strip.appendChild(el);
   }
+  // 新規タブボタンは「一番右のタブの右」に置く(タブ列の末尾に内包)。
+  const add = document.createElement('button');
+  add.className = 'memola-tab-newbtn';
+  add.dataset.new = '1';
+  add.title = '新しいタブ';
+  add.innerHTML = ICONS.plus;
+  strip.appendChild(add);
 }
 
 /** 起動時: 保存済みタブを復元。無ければ fallbackPageId を1タブで開く。 */
@@ -173,10 +180,10 @@ export function attachTabs(): void {
   const strip = document.getElementById('memola-tabstrip');
   strip?.addEventListener('click', (e) => {
     const t = e.target as HTMLElement;
+    if (t.closest('[data-new]')) { newTab(); return; }   // 末尾の + ボタン
     const closeId = t.dataset.close;
     if (closeId) { e.stopPropagation(); void closeTab(closeId); return; }
     const row = t.closest<HTMLElement>('.memola-tab');
     if (row?.dataset.tabId) void activateTab(row.dataset.tabId);
   });
-  document.getElementById('memola-tab-new')?.addEventListener('click', () => newTab());
 }

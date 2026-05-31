@@ -324,6 +324,8 @@ export function mkNode(page: Page, depth: number): HTMLDivElement {
   row.draggable = true;
   row.dataset.pageId = page.Id;
   row.addEventListener('dragstart', (e) => {
+    // 修飾キー押下時はドラッグを開始しない(Cmd/Ctrl+クリックを click として通す)。
+    if (e.metaKey || e.ctrlKey) { e.preventDefault(); return; }
     if (e.dataTransfer) {
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', page.Id);
