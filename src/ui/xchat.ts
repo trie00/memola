@@ -5,7 +5,6 @@
 // 出典カード (クリックでソース文書へ遷移)。セッションは localStorage に保存し、
 // 左ペインの右側の履歴一覧から再表示できる。
 
-import { ICONS } from '../icons';
 import { mdToHtml } from '../lib/blocks-html';
 import { prefXChatHistory, prefXChatOpen } from '../lib/prefs';
 import { ragInit, ragRefresh, ragSearch, ragStats, type RagHit } from '../rag/search';
@@ -49,7 +48,8 @@ function newSession(): void {
   currentId = genId();
   // 空セッションは送信されるまで配列に積まない (履歴を汚さない)。
   renderThread();
-  renderHistory();
+  updateTitle();
+  closeMenu();
   focusInput();
 }
 
@@ -73,7 +73,7 @@ export function openXChat(): void {
   panel.classList.add('on');
   panel.setAttribute('aria-hidden', 'false');
   prefXChatOpen.set('1');
-  if (!currentId) newSession(); else { renderHistory(); renderThread(); }
+  if (!currentId) newSession(); else { renderThread(); updateTitle(); }
   focusInput();
   // バックグラウンドでインデックスを起動 + 差分取込 (writer のみ実際に再ベクトル化)。
   void primeIndex();
@@ -154,35 +154,61 @@ async function ensureReady(): Promise<void> {
 }
 
 // ─── render: history list ─────────────────────────────────────────────
+/** 作成時刻から表示グループを決める (Notion 形式: 今日/過去30日間/古い)。 */
+function groupOf(created: number): '今日' | '過去30日間' | '古い' {
+  const d = new Date(created); const now = new Date();
+  const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  if (sameDay) return '今日';
+  if (now.getTime() - created < 30 * 86400000) return '過去30日間';
+  return '古い';
+}
+
+/** 履歴ドロップダウン (タイトル横の ▾) の中身を日付グループで描画。 */
 function renderHistory(): void {
   const host = $('memola-xchat-hist-list');
   if (!host) return;
   host.textContent = '';
   if (sessions.length === 0) {
     const e = document.createElement('div');
-    e.className = 'tdr-session-empty';
+    e.className = 'tdr-hist-empty';
     e.textContent = '履歴はまだありません';
     host.appendChild(e);
     return;
   }
-  for (const s of sessions) {
-    const row = document.createElement('div');
-    row.className = 'tdr-session' + (s.id === currentId ? ' is-active' : '');
-    row.dataset.sid = s.id;
-    const ic = document.createElement('span');
-    ic.className = 'tdr-session-ic';
-    ic.innerHTML = ICONS.chat;
-    const title = document.createElement('span');
-    title.className = 'tdr-session-title';
-    title.textContent = s.title || '(無題のチャット)';
-    const del = document.createElement('button');
-    del.className = 'tdr-session-del';
-    del.textContent = '×';
-    del.title = 'このチャットを削除';
-    del.dataset.del = s.id;
-    row.append(ic, title, del);
-    host.appendChild(row);
+  for (const g of ['今日', '過去30日間', '古い'] as const) {
+    const items = sessions.filter((s) => groupOf(s.created) === g);
+    if (!items.length) continue;
+    const lbl = document.createElement('div');
+    lbl.className = 'tdr-hist-group';
+    lbl.textContent = g;
+    host.appendChild(lbl);
+    for (const s of items) {
+      const row = document.createElement('div');
+      row.className = 'tdr-hist-item' + (s.id === currentId ? ' is-active' : '');
+      row.dataset.sid = s.id;
+      const chk = document.createElement('span'); chk.className = 'chk'; chk.textContent = '✓';
+      const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = s.title || '(無題のチャット)';
+      const del = document.createElement('button'); del.className = 'del'; del.textContent = '×'; del.title = '削除'; del.dataset.del = s.id;
+      row.append(chk, nm, del);
+      host.appendChild(row);
+    }
   }
+}
+
+/** トップバーのタイトル表示を現在のセッションに合わせる。 */
+function updateTitle(): void {
+  const t = $('memola-xchat-title');
+  if (!t) return;
+  const s = current();
+  t.textContent = (s && s.turns.length) ? (s.title || '(無題のチャット)') : '新規チャット';
+}
+
+function closeMenu(): void { $('memola-xchat-histmenu')?.classList.remove('on'); }
+function toggleMenu(): void {
+  const m = $('memola-xchat-histmenu');
+  if (!m) return;
+  if (!m.classList.contains('on')) renderHistory();
+  m.classList.toggle('on');
 }
 
 // ─── render: thread (外部ベクトル レイアウト) ───────────────────────────────
@@ -407,7 +433,7 @@ async function send(): Promise<void> {
     sess.turns.push({ q, a: text, sources, at });
     if (!sess.title) sess.title = q.slice(0, 40);
     save();
-    renderHistory();
+    updateTitle();
   } catch (e) {
     if ((e as Error).name === 'AbortError') { body.textContent = ''; }
     else { body.textContent = ''; const er = document.createElement('div'); er.className = 'tdr-err'; er.textContent = 'エラー: ' + (e as Error).message; body.appendChild(er); }
@@ -470,7 +496,18 @@ export function attachXChat(): void {
     }
   });
 
-  // 履歴一覧: クリックで読込 / × で削除 (イベント委譲)。
+  // タイトル横の ▾ で履歴ドロップダウンを開閉。
+  $('memola-xchat-titlebtn')?.addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(); });
+  // ドロップダウン外クリックで閉じる。
+  document.addEventListener('click', (e) => {
+    const m = $('memola-xchat-histmenu');
+    if (!m || !m.classList.contains('on')) return;
+    const t = e.target as HTMLElement;
+    if (m.contains(t) || $('memola-xchat-titlebtn')?.contains(t)) return;
+    closeMenu();
+  });
+
+  // 履歴ドロップダウン: クリックで読込 / × で削除 (イベント委譲)。
   $('memola-xchat-hist-list')?.addEventListener('click', (e) => {
     const t = e.target as HTMLElement;
     const delId = t.dataset.del;
@@ -481,12 +518,20 @@ export function attachXChat(): void {
       save();
       renderHistory();
       renderThread();
+      updateTitle();
       return;
     }
-    const row = t.closest<HTMLElement>('.tdr-session');
+    const row = t.closest<HTMLElement>('.tdr-hist-item');
     const sid = row?.dataset.sid;
-    if (sid) { currentId = sid; renderHistory(); renderThread(); focusInput(); }
+    if (sid) { currentId = sid; renderThread(); updateTitle(); closeMenu(); focusInput(); }
   });
+
+  // ESC で閉じる: メニューが開いていればメニューだけ閉じる。
+  document.addEventListener('keydown', (ke: KeyboardEvent) => {
+    if (ke.key === 'Escape' && isXChatOpen() && $('memola-xchat-histmenu')?.classList.contains('on')) {
+      ke.stopPropagation(); closeMenu(); return;
+    }
+  }, true);
 
   // ESC で閉じる (横断チャットが開いているときのみ、他の ESC 処理に優先)。
   document.addEventListener('keydown', (ke: KeyboardEvent) => {

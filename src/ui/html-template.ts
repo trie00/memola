@@ -50,16 +50,23 @@ export function buildHtml(): string {
     // ── 横断チャット (cross-document RAG chat) — 外部ベクトル レイアウト ──
     // [サイドバー(セッション一覧)] | [トップバー + スレッド + コンポーザ]
     '<div id="memola-xchat" class="tdr-shell" aria-hidden="true">' +
-      '<aside class="tdr-sidebar" id="memola-xchat-hist">' +
-        '<button class="tdr-new-session" id="memola-xchat-new">' + ICONS.plus + '<span>新しいチャット</span></button>' +
-        '<div class="tdr-session-list" id="memola-xchat-hist-list"></div>' +
-      '</aside>' +
       '<div class="tdr-chat">' +
         '<div class="tdr-topbar">' +
-          '<div class="tdr-brand"><span class="mark">𝕄</span><span class="name">横断チャット</span><span class="sub" id="memola-xchat-idx">全文書をまたいで AI に質問</span></div>' +
+          '<span class="tdr-brand"><span class="mark">𝕄</span></span>' +
+          // クリックで履歴ドロップダウン (Notion 形式: タイトル横の ▾)
+          '<button class="tdr-titlebtn" id="memola-xchat-titlebtn" title="チャット履歴">' +
+            '<span id="memola-xchat-title">新規チャット</span>' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>' +
+          '</button>' +
+          '<span class="tdr-idx" id="memola-xchat-idx"></span>' +
           '<div style="flex:1"></div>' +
           '<button class="tdr-icon-btn tdr-btn-labeled" id="memola-xchat-rebuild" title="全文書をベクトル化してインデックスを更新する">' + ICONS.refresh + '<span>文書を読み込み</span></button>' +
           '<button class="tdr-icon-btn" id="memola-xchat-close" title="閉じる (Esc)">' + ICONS.exit + '</button>' +
+          // 履歴ドロップダウン (タイトル直下に絶対配置)
+          '<div class="tdr-histmenu" id="memola-xchat-histmenu">' +
+            '<button class="tdr-hist-new" id="memola-xchat-new">' + ICONS.plus + '<span>新規チャット</span></button>' +
+            '<div id="memola-xchat-hist-list"></div>' +
+          '</div>' +
         '</div>' +
         '<div class="tdr-thread" id="memola-xchat-thread"></div>' +
         '<div class="tdr-composer"><div class="tdr-composer-inner">' +
