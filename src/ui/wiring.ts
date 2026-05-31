@@ -10,6 +10,7 @@ import { setLoad, toast } from './ui-helpers';
 import { renderTree } from './tree';
 import { showView, doSelect } from './views';
 import { doNewDbRow, closeApp, teardown } from './actions';
+import { flushPendingSave } from './save-control';
 import { onKey } from './keymap';
 import { attachEmojiPickerOutsideClick } from './emoji-picker';
 import { attachCreateMenu } from './create-menu';
@@ -56,9 +57,36 @@ async function doNewDb(parentId: string): Promise<void> {
   finally { setLoad(false); }
 }
 
+/** Reload the page list (tree) + the currently-displayed page/DB/row from
+ *  SharePoint. Flushes any pending edits first so a re-fetch can't clobber
+ *  unsaved work. Wired to the top-bar 🔄 button. */
+async function doReload(): Promise<void> {
+  try {
+    setLoad(true, '再読み込み中...');
+    const row = S.currentRow;
+    if (S.currentType !== 'database') await flushPendingSave();
+    await apiGetPages();
+    renderTree();
+    const id = S.currentId;
+    const page = id ? S.pages.find((p) => p.Id === id) : null;
+    if (row) {
+      // Row detail page — refetch the row and re-open it.
+      const { getListItemById } = await import('../api/sp-list');
+      const item = await getListItemById(row.listTitle, row.itemId);
+      if (item) { const { openRowAsPage } = await import('./row-page'); await openRowAsPage(row.dbId, item); }
+    } else if (page && id) {
+      if (page.Type === 'database') { const { doSelectDb } = await import('./views'); await doSelectDb(id, page); }
+      else await doSelect(id);
+    }
+    toast('再読み込みしました');
+  } catch (e) { toast('再読み込み失敗: ' + (e as Error).message, 'err'); }
+  finally { setLoad(false); }
+}
+
 export function attachAll(): void {
   // Top bar
   g('x').addEventListener('click', closeApp);
+  g('reload-btn').addEventListener('click', () => void doReload());
 
   // Sidebar / nav-history / daily-notes / empty-state CTAs
   attachSidebarWiring({ openTodayDailyNote, showDailyPicker, doNewDb });

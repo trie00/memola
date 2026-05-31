@@ -73,6 +73,7 @@ export function buildHtml(): string {
         '<button id="memola-outline-btn" class="memola-tog-btn" title="目次">' + ICONS.sort + '<span>目次</span></button>' +
         '<button id="memola-props-btn" class="memola-tog-btn" title="プロパティ">' + ICONS.info + '<span>プロパティ</span></button>' +
         '<button id="memola-ai-btn" class="memola-tog-btn" title="AIチャット">' + ICONS.sparkle + '<span>AI</span></button>' +
+        '<button id="memola-reload-btn" class="memola-tog-btn" title="再読み込み（一覧＋表示中のページ）">' + ICONS.refresh + '</button>' +
         '<button id="memola-pgm-btn" title="ページメニュー">' + ICONS.more + '</button>' +
       '</div>' +
       '<div id="memola-tb">' +
