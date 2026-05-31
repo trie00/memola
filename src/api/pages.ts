@@ -637,6 +637,7 @@ export async function apiCreatePage(
     Trashed: 0,
     Body_blocks: '[]',
     Scope: scope,
+    AuthorId: S.meta.myUserId,
   });
   const id = String(created.Id);
   // Codex review PS1: register the newly-created row's source list so
@@ -644,7 +645,7 @@ export async function apiCreatePage(
   SOURCE_LIST_BY_PAGEID.set(id, list);
   S.meta.pages.push({
     id, title, parent: parentId || '',
-    type: 'page', icon: '', scope,
+    type: 'page', icon: '', scope, authorId: S.meta.myUserId,
   });
   return { Id: id, Title: title, ParentId: parentId || '', Type: 'page' };
 }
@@ -669,13 +670,14 @@ export async function apiCreateDbPageRow(
     ListTitle: listTitle,
     Body_blocks: '[]',
     Scope: scope,
+    AuthorId: S.meta.myUserId,
     ...(isTemplate ? { IsTemplate: 1 } : {}),
   });
   const id = String(created.Id);
   SOURCE_LIST_BY_PAGEID.set(id, list);
   S.meta.pages.push({
     id, title, parent: parentId || '',
-    type: 'database', list: listTitle, icon: '', scope,
+    type: 'database', list: listTitle, icon: '', scope, authorId: S.meta.myUserId,
     ...(isTemplate ? { isTemplate: true } : {}),
   });
   return { Id: id, Title: title, ParentId: parentId || '', Type: 'database' };
@@ -1024,7 +1026,7 @@ export async function apiSetScope(
   const idMap: Record<string, string> = {};
   const CARRY = ['Title', 'PageType', 'Icon', 'Pinned', 'Trashed', 'ListTitle',
     'DbRowId', 'Body_blocks', 'Published', 'PublishedUrl', 'PublishedPageId',
-    'PublishedDirty', 'OriginDailyDate', 'OriginPageId', 'IsTemplate'] as const;
+    'PublishedDirty', 'OriginDailyDate', 'OriginPageId', 'IsTemplate', 'AuthorId'] as const;
   for (const pid of ids) {
     const srcList = listForPageId(pid);
     const itemId = pageIdToItemId(pid);
@@ -1171,6 +1173,7 @@ export async function apiDuplicateAsDraft(originId: string): Promise<Page> {
     // edits and merge instead of blindly overwriting.
     OriginBaseBlocks: blocksJson || '[]',
     Scope: inheritScope,
+    AuthorId: S.meta.myUserId,
   });
   const newId = String(created.Id);
   SOURCE_LIST_BY_PAGEID.set(newId, inheritList);
@@ -1181,6 +1184,7 @@ export async function apiDuplicateAsDraft(originId: string): Promise<Page> {
     type: 'page',
     icon: '✏️',
     originPageId: originId,
+    authorId: S.meta.myUserId,
   });
   return { Id: newId, Title: draftTitle, ParentId: '', Type: 'page', IsDraft: true };
 }
@@ -1223,12 +1227,13 @@ export async function apiRegisterPageAsTemplate(pageId: string): Promise<string>
     Body_blocks: blocksJson || '[]',
     Scope: scope,
     IsTemplate: 1,
+    AuthorId: S.meta.myUserId,
   });
   const newId = String(created.Id);
   SOURCE_LIST_BY_PAGEID.set(newId, list);
   S.meta.pages.push({
     id: newId, title, parent: '', type: 'page',
-    icon: origin.icon || '', scope, isTemplate: true,
+    icon: origin.icon || '', scope, isTemplate: true, authorId: S.meta.myUserId,
   });
   invalidateBacklinkCache();
   return newId;
@@ -1255,11 +1260,12 @@ export async function apiCreatePageFromTemplate(templateId: string): Promise<Pag
     Trashed: 0,
     Body_blocks: blocksJson || '[]',
     Scope: scope,
+    AuthorId: S.meta.myUserId,
   });
   const newId = String(created.Id);
   SOURCE_LIST_BY_PAGEID.set(newId, list);
   S.meta.pages.push({
-    id: newId, title, parent: '', type: 'page', icon: tpl.icon || '', scope,
+    id: newId, title, parent: '', type: 'page', icon: tpl.icon || '', scope, authorId: S.meta.myUserId,
   });
   invalidateBacklinkCache();
   return { Id: newId, Title: title, ParentId: '', Type: 'page' };
@@ -1286,12 +1292,13 @@ export async function apiDuplicatePage(id: string): Promise<Page> {
     Trashed: 0,
     Body_blocks: blocksJson || '[]',
     Scope: scope,
+    AuthorId: S.meta.myUserId,
   });
   const newId = String(created.Id);
   SOURCE_LIST_BY_PAGEID.set(newId, list);
   S.meta.pages.push({
     id: newId, title, parent: origin.parent || '', type: 'page',
-    icon: origin.icon || '', scope,
+    icon: origin.icon || '', scope, authorId: S.meta.myUserId,
   });
   invalidateBacklinkCache();
   return { Id: newId, Title: title, ParentId: origin.parent || '', Type: 'page' };
