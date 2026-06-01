@@ -73,19 +73,57 @@ if (Test-Path -LiteralPath $EnvFile) {
     }
 }
 
+# ─── memola.env に KEY=VALUE を保存/更新するヘルパ ──────────────────────────
+# 初回プロンプトで入力した URL をデフォルトとして書き戻すために使う。
+function Set-EnvValue {
+    param([string]$Path, [string]$Key, [string]$Value)
+    try {
+        $lines = @()
+        if (Test-Path -LiteralPath $Path) {
+            $lines = @(Get-Content -LiteralPath $Path -Encoding UTF8)
+        }
+        $newLine = "$Key=$Value"
+        $found = $false
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            # 「(任意の空白)KEY=」または「#(空白)KEY=」を置換対象にする
+            if ($lines[$i] -match "^\s*#?\s*$([regex]::Escape($Key))\s*=") {
+                $lines[$i] = $newLine
+                $found = $true
+                break
+            }
+        }
+        if (-not $found) { $lines += $newLine }
+        # UTF-8 で書き戻す (Import-EnvFile / Get-Content -Encoding UTF8 が BOM を吸収)
+        Set-Content -LiteralPath $Path -Value $lines -Encoding UTF8
+        return $true
+    } catch {
+        Write-Warning "memola.env への保存失敗: $($_.Exception.Message)"
+        return $false
+    }
+}
+
 # ─── SharePoint URL 解決 ───────────────────────────────────────────────────
+# 優先順位: 引数 -SiteUrl > 環境変数/memola.env の MEMOLA_SITE_URL > 起動時プロンプト
+$promptedSiteUrl = $false
 if (-not $SiteUrl) { $SiteUrl = $env:MEMOLA_SITE_URL }
 if (-not $SiteUrl) {
     Write-Host '' -NoNewline
-    Write-Host 'SharePoint サイト URL が未設定です。' -ForegroundColor Yellow
-    Write-Host 'memola.env に下記を追記すると次回から自動になります:'
-    Write-Host '  MEMOLA_SITE_URL=https://<tenant>.sharepoint.com/sites/<site>'
+    Write-Host 'SharePoint サイト URL (初回起動時のデフォルト) が未設定です。' -ForegroundColor Yellow
+    Write-Host '入力するとこの後 memola.env の MEMOLA_SITE_URL に保存し、次回から自動で開きます。'
+    Write-Host '  例: https://<tenant>.sharepoint.com/sites/<site>'
     Write-Host ''
-    $SiteUrl = Read-Host 'SharePoint サイト URL を入力してください (空 Enter で中止)'
+    $SiteUrl = (Read-Host 'SharePoint サイト URL を入力してください (空 Enter で中止)').Trim()
+    $promptedSiteUrl = $true
 }
 if (-not $SiteUrl) {
     Write-Host '[memola-start] SP URL が未指定なので中止します' -ForegroundColor Yellow
     exit 1
+}
+# 初回プロンプトで入力された URL を memola.env に既定として保存 (次回から自動)
+if ($promptedSiteUrl) {
+    if (Set-EnvValue -Path $EnvFile -Key 'MEMOLA_SITE_URL' -Value $SiteUrl) {
+        Write-Host "[memola-start] MEMOLA_SITE_URL を memola.env に保存しました (次回から自動で開きます)" -ForegroundColor Green
+    }
 }
 
 # ─── ポート決定 + relay 起動状況確認 ────────────────────────────────────────
