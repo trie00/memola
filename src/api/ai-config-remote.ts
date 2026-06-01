@@ -57,14 +57,17 @@ export async function loadRemoteAiConfig(): Promise<boolean> {
       const json = await res.json().catch(() => null) as { config?: Record<string, unknown> } | null;
       const cfg = json?.config;
       if (!cfg || typeof cfg !== 'object') continue;
-      let applied = 0;
+      const applied: string[] = [];
       for (const [field, pref] of FIELD_MAP) {
         const v = cfg[field];
-        if (v !== undefined && v !== null && String(v) !== '') { pref.set(String(v)); applied++; }
+        if (v !== undefined && v !== null && String(v) !== '') {
+          pref.set(String(v));
+          applied.push(`${field}=${String(v)}`);
+        }
       }
-      if (applied) {
+      if (applied.length) {
         // eslint-disable-next-line no-console
-        console.info(`[memola] AI 設定を relay (${origin}) から ${applied} 件反映しました`);
+        console.info(`[memola] AI 設定を relay (${origin}) から ${applied.length} 件反映: ${applied.join(', ')}`);
         return true;
       }
     } catch { /* relay 未起動 → 次の候補へ */ }
