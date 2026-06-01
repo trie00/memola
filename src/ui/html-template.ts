@@ -15,7 +15,7 @@ export function buildHtml(): string {
       '</div>' +
       '<div class="memola-snav" id="memola-search-nav">' + ICONS.search + '<span>検索</span><span class="memola-snav-hint">Ctrl K</span></div>' +
       '<div class="memola-quick-wrap"><button class="memola-quick-add" id="memola-quick-add">' + ICONS.plus + '<span>新規</span></button>' +
-        '<button class="memola-quick-chat" id="memola-xchat-launch" title="横断チャット — 全文書をまたいでAIに質問">' + ICONS.chat + '</button></div>' +
+        '<button class="memola-quick-chat" id="memola-xchat-launch" title="横断チャット — 全文書をまたいでAIに質問">' + ICONS.chat + '<span>横断チャット</span></button></div>' +
       '<div class="memola-sb-fixed">' +
         '<div class="memola-sb-fx" id="memola-sb-daily-today" title="今日のデイリーノートを開く / 作成"><span class="memola-sb-fx-ic">📅</span><span class="memola-sb-fx-lb">今日のノート</span></div>' +
         '<div class="memola-sb-fx" id="memola-sb-daily-pick" title="任意の日のデイリーノートを開く"><span class="memola-sb-fx-ic">🗓</span><span class="memola-sb-fx-lb">日付を選んで開く</span></div>' +
