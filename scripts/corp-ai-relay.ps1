@@ -1516,9 +1516,12 @@ function Invoke-RelayRequest {
             if ($env:MEMOLA_AI_PROVIDER)           { $cfg['provider']         = "$env:MEMOLA_AI_PROVIDER" }
             if ($env:MEMOLA_AI_CORP_MODEL)         { $cfg['corpModel']        = "$env:MEMOLA_AI_CORP_MODEL" }
             if ($env:MEMOLA_AI_CORP_DEPLOY_PREFIX) { $cfg['corpDeployPrefix'] = "$env:MEMOLA_AI_CORP_DEPLOY_PREFIX" }
-            # corpBaseUrl: 明示が無ければ relay 自身を指す (ブラウザ→relay→gateway)
+            # corpBaseUrl: 明示が無ければ relay のミラーURL (localhost:Port + target の
+            # パス) を指す。target が "…/2024-10-21" のように日付セグメントを含む場合、
+            # それを baseUrl 側に含めないと上流URLから日付が欠落して 404 になる。
+            # relay は incoming 先頭が targetPath と一致すれば剥がして $Target に載せ替える。
             if ($env:MEMOLA_AI_CORP_BASEURL)       { $cfg['corpBaseUrl']      = "$env:MEMOLA_AI_CORP_BASEURL" }
-            else                                   { $cfg['corpBaseUrl']      = "http://localhost:$Port" }
+            else                                   { $cfg['corpBaseUrl']      = "http://localhost:$Port$targetPath" }
         }
         if ($env:MEMOLA_EMBED_PROVIDER)        { $cfg['embedProvider']    = "$env:MEMOLA_EMBED_PROVIDER" }
         if ($env:MEMOLA_VOYAGE_MODEL)          { $cfg['voyageModel']      = "$env:MEMOLA_VOYAGE_MODEL" }
