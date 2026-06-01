@@ -11,7 +11,7 @@
 
 import {
   prefAiProvider, prefAiCorpModel, prefAiCorpBaseUrl, prefAiCorpDeployPrefix,
-  prefAiEmbedProvider, prefAiVoyageModel, prefAiEmbedModel,
+  prefAiCorpOverrides, prefAiEmbedProvider, prefAiVoyageModel, prefAiEmbedModel,
   prefAiEmbedApiVersion, prefAiEmbedDimensions, prefRagTopK, prefRagMinScore,
 } from '../lib/prefs';
 
@@ -25,6 +25,7 @@ const FIELD_MAP: Array<[string, StrPref]> = [
   ['corpModel',        prefAiCorpModel],
   ['corpBaseUrl',      prefAiCorpBaseUrl],
   ['corpDeployPrefix', prefAiCorpDeployPrefix],
+  ['corpOverrides',    prefAiCorpOverrides],
   ['embedProvider',    prefAiEmbedProvider],
   ['voyageModel',      prefAiVoyageModel],
   ['embedModel',       prefAiEmbedModel],

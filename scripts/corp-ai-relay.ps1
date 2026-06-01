@@ -1511,11 +1511,14 @@ function Invoke-RelayRequest {
         $corpConfigured = ([bool]$env:MEMOLA_AI_PROVIDER) -or
                           ([bool]$env:MEMOLA_AI_CORP_MODEL) -or
                           ([bool]$env:MEMOLA_AI_CORP_BASEURL) -or
-                          ([bool]$env:MEMOLA_AI_CORP_DEPLOY_PREFIX)
+                          ([bool]$env:MEMOLA_AI_CORP_DEPLOY_PREFIX) -or
+                          ([bool]$env:MEMOLA_AI_CORP_OVERRIDES)
         if ($corpConfigured) {
             if ($env:MEMOLA_AI_PROVIDER)           { $cfg['provider']         = "$env:MEMOLA_AI_PROVIDER" }
             if ($env:MEMOLA_AI_CORP_MODEL)         { $cfg['corpModel']        = "$env:MEMOLA_AI_CORP_MODEL" }
             if ($env:MEMOLA_AI_CORP_DEPLOY_PREFIX) { $cfg['corpDeployPrefix'] = "$env:MEMOLA_AI_CORP_DEPLOY_PREFIX" }
+            # モデル別 overrides (api-version 固定など)。JSON 文字列をそのまま渡す。
+            if ($env:MEMOLA_AI_CORP_OVERRIDES)     { $cfg['corpOverrides']    = "$env:MEMOLA_AI_CORP_OVERRIDES" }
             # corpBaseUrl: 明示が無ければ relay 自身を指す (ブラウザ→relay→gateway)
             if ($env:MEMOLA_AI_CORP_BASEURL)       { $cfg['corpBaseUrl']      = "$env:MEMOLA_AI_CORP_BASEURL" }
             else                                   { $cfg['corpBaseUrl']      = "http://localhost:$Port" }
