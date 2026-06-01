@@ -6,6 +6,7 @@ import { toast } from './ui-helpers';
 import { getApiKey, type ApiMessage, type ContentBlock, type TextBlock, type ToolUseBlock } from '../api/anthropic';
 import { runAgent } from '../ai/run-agent';
 import { blocksToMd } from '../lib/blocks-md';
+import { fetchEmailParsed, emailBodyText } from '../lib/email-parse';
 import { getBlocks } from './editor2/editor2-bridge';
 import { escapeHtml } from '../lib/html-escape';
 import { nowJSTContext } from '../lib/date-utils';
@@ -200,9 +201,50 @@ function pageContext(): string {
   if (md.trim()) {
     lines.push('', 'body (markdown):', md);
   }
+  if (_emailCtx) { lines.push('', _emailCtx); }
   const comments = currentCommentsContext();
   if (comments) { lines.push('', comments); }
   return lines.join('\n');
+}
+
+// ── 添付メール本文の取り込み(AIコンテキスト) ──────────────────────────────
+// メールブロックは本文をページに持たず .eml/.msg ファイルに保持しているため、
+// 送信直前にファイルを取得・解析して本文を systemPrompt に同梱する。
+// 仕様: 1通あたり最大 5000 字(引用履歴・署名も範囲内で含む)。超過分は切り、
+// 何字省略したかを AI に明記する。
+const EMAIL_BODY_CAP = 5000;
+let _emailCtx = '';
+
+async function prefetchEmailContext(): Promise<void> {
+  _emailCtx = '';
+  let blocks;
+  try { blocks = getBlocks(); } catch { return; }
+  const emails = blocks.filter((b): b is Extract<typeof b, { kind: 'email' }> => b.kind === 'email');
+  if (!emails.length) return;
+  const parts: string[] = [];
+  for (const b of emails) {
+    if (!b.fileUrl) continue;
+    const parsed = await fetchEmailParsed(b.fileUrl, b.filename || '');
+    const subject = (parsed?.subject || b.subject || '(件名なし)');
+    const from = parsed ? [parsed.fromName, parsed.fromEmail].filter(Boolean).join(' ') : b.from;
+    const date = parsed?.dateISO || b.date || '';
+    const full = parsed ? emailBodyText(parsed) : '';
+    let body = full;
+    let note = '';
+    if (full.length > EMAIL_BODY_CAP) {
+      body = full.slice(0, EMAIL_BODY_CAP);
+      note = `（注: このメール本文は先頭 ${EMAIL_BODY_CAP} 字のみ。元は約 ${full.length} 字で、残り ${full.length - EMAIL_BODY_CAP} 字を省略しています）`;
+    } else if (!full) {
+      note = '（注: 本文を取得できませんでした。件名・差出人のみ）';
+    }
+    const seg = ['── 添付メール ──', `件名: ${subject}`];
+    if (from) seg.push(`差出人: ${from}`);
+    if (date) seg.push(`日時: ${date}`);
+    seg.push('本文:', body);
+    if (note) seg.push(note);
+    parts.push(seg.join('\n'));
+  }
+  _emailCtx = parts.join('\n\n');
 }
 
 /** Markdown-table snapshot of the currently-open database (columns + rows
@@ -541,6 +583,8 @@ export async function sendAiMessage(text: string): Promise<void> {
   const ctrl = new AbortController();
   _activeAbort = ctrl;
   try {
+    // 添付メールの本文を取得して systemPrompt に同梱(無ければ即返る)。
+    await prefetchEmailContext();
     // Provider routing happens inside runAgent → callClaudeRaw / corpAiChatRaw.
     // Both speak the same ClaudeResponse shape so tool execution, history,
     // and streaming all work uniformly here.

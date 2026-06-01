@@ -36,6 +36,33 @@ export function isEmailFile(file: File): boolean {
   return n.endsWith('.eml') || n.endsWith('.msg');
 }
 
+/** ライブラリ上の .eml/.msg(fileUrl)を取得し、本文込みで解析(AIコンテキスト用)。 */
+export async function fetchEmailParsed(fileUrl: string, filename: string): Promise<ParsedEml | null> {
+  try {
+    const r = await fetch(fileUrl, { credentials: 'include' });
+    if (!r.ok) return null;
+    const name = filename.toLowerCase();
+    if (name.endsWith('.eml')) return parseEml(await r.text());
+    if (name.endsWith('.msg')) return parseMsgFile(new File([await r.blob()], filename));
+    return null;
+  } catch { return null; }
+}
+
+/** ParsedEml から AI に渡す本文テキストを取り出す(text 優先、無ければ HTML をタグ除去)。 */
+export function emailBodyText(p: ParsedEml): string {
+  if (p.body && p.body.trim()) return p.body;
+  if (p.bodyHtml) {
+    return p.bodyHtml
+      .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+  return '';
+}
+
 /** .eml/.msg を解析してメタを返す。解析不能なら null。 */
 export async function parseEmailFile(file: File): Promise<EmailMeta | null> {
   const name = file.name.toLowerCase();
