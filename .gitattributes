@@ -1,0 +1,4 @@
+# Windows 用スクリプトは CRLF 固定。これが無いと Windows で改行が CRLF に化けて
+# git が「ローカル変更あり」と誤検知し pull が詰まる(Your local changes ...)。
+*.bat text eol=crlf
+*.ps1 text eol=crlf
