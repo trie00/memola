@@ -29,6 +29,15 @@ const result = esbuild.buildSync({
   format: 'iife',
   target: 'es2020',
   loader: { '.css': 'text' },
+  // @kenjiuno/msgreader が引っ張る Node 専用モジュール(iconv-lite / safer-buffer /
+  // buffer / string_decoder)をブラウザ用の空スタブに差し替える(別アプリ と同方式)。
+  // 現代の Outlook .msg はほぼ Unicode なので iconv-lite 実体は不要。
+  alias: {
+    'iconv-lite':     require('path').resolve('src/lib/_browser-shims.ts'),
+    'safer-buffer':   require('path').resolve('src/lib/_browser-shims.ts'),
+    'buffer':         require('path').resolve('src/lib/_browser-shims.ts'),
+    'string_decoder': require('path').resolve('src/lib/_browser-shims.ts'),
+  },
   write: false,
   // minify: ブックマークレットは javascript: URL 1本に丸ごと埋め込むため、
   // ブラウザの URL 長制限(約2MB)を超えると無言で実行されなくなる。縮小必須。
