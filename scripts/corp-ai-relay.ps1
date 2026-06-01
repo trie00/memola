@@ -1505,12 +1505,21 @@ function Invoke-RelayRequest {
         # このリレーは corp 専用。Claude(Anthropic 直叩き)/ローカル LLM は
         # リレーを経由しないため env では配信しない (corp + 埋め込みのみ)。
         $cfg = @{}
-        if ($env:MEMOLA_AI_PROVIDER)           { $cfg['provider']         = "$env:MEMOLA_AI_PROVIDER" }
-        if ($env:MEMOLA_AI_CORP_MODEL)         { $cfg['corpModel']        = "$env:MEMOLA_AI_CORP_MODEL" }
-        # corpBaseUrl: 明示が無ければ relay 自身を指す (ブラウザ→relay→gateway)
-        if ($env:MEMOLA_AI_CORP_BASEURL)       { $cfg['corpBaseUrl']      = "$env:MEMOLA_AI_CORP_BASEURL" }
-        else                                   { $cfg['corpBaseUrl']      = "http://localhost:$Port" }
-        if ($env:MEMOLA_AI_CORP_DEPLOY_PREFIX) { $cfg['corpDeployPrefix'] = "$env:MEMOLA_AI_CORP_DEPLOY_PREFIX" }
+        # corp 設定は「env で明示的に corp を構成したとき」だけ配信する。
+        # こうしないと、env に corp 設定が無くても corpBaseUrl を常に上書きして
+        # しまい、ブラウザで手動構成した接続先を勝手にリレーへ向けてしまう。
+        $corpConfigured = ([bool]$env:MEMOLA_AI_PROVIDER) -or
+                          ([bool]$env:MEMOLA_AI_CORP_MODEL) -or
+                          ([bool]$env:MEMOLA_AI_CORP_BASEURL) -or
+                          ([bool]$env:MEMOLA_AI_CORP_DEPLOY_PREFIX)
+        if ($corpConfigured) {
+            if ($env:MEMOLA_AI_PROVIDER)           { $cfg['provider']         = "$env:MEMOLA_AI_PROVIDER" }
+            if ($env:MEMOLA_AI_CORP_MODEL)         { $cfg['corpModel']        = "$env:MEMOLA_AI_CORP_MODEL" }
+            if ($env:MEMOLA_AI_CORP_DEPLOY_PREFIX) { $cfg['corpDeployPrefix'] = "$env:MEMOLA_AI_CORP_DEPLOY_PREFIX" }
+            # corpBaseUrl: 明示が無ければ relay 自身を指す (ブラウザ→relay→gateway)
+            if ($env:MEMOLA_AI_CORP_BASEURL)       { $cfg['corpBaseUrl']      = "$env:MEMOLA_AI_CORP_BASEURL" }
+            else                                   { $cfg['corpBaseUrl']      = "http://localhost:$Port" }
+        }
         if ($env:MEMOLA_EMBED_PROVIDER)        { $cfg['embedProvider']    = "$env:MEMOLA_EMBED_PROVIDER" }
         if ($env:MEMOLA_VOYAGE_MODEL)          { $cfg['voyageModel']      = "$env:MEMOLA_VOYAGE_MODEL" }
         if ($env:MEMOLA_EMBED_MODEL)           { $cfg['embedModel']       = "$env:MEMOLA_EMBED_MODEL" }
