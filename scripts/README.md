@@ -32,13 +32,13 @@ notepad memola.env                          :: 値を編集
 - `CORP_AI_SKIP_CERT_CHECK` … 検証用に自己署名証明書を許容（`1` で有効、本番禁止）
 
 ### 起動（ワンクリック）
-- ダブルクリック: **`corp-ai-relay.bat`**
+- ダブルクリック: **`memola-start.bat`**
   - 中身は `memola-start.ps1`。外部ベクトル / 別アプリ の launcher と同じく
     **①リレー起動 → ②`/memola/health` 待機 → ③SharePoint をブラウザで開く →
     ④ブックマークレット案内ダイアログ** を 1 アクションで実行。
   - サイト URL は `memola.env` の `MEMOLA_SITE_URL`（未設定なら起動時に入力）。
 - タスクスケジューラの「ログオン時」トリガで自動起動も可。
-- **リレーだけ**起動したい場合は `corp-ai-relay.ps1` を直接実行。
+- **リレーだけ**起動したい場合は **`corp-ai-relay.bat`**（= `corp-ai-relay.ps1`）。
 
 ### AI 設定は env に集約（外部ベクトル 流・API キーだけ各自入力）
 モデル / デプロイ / 埋め込み等の AI 設定は `memola.env` に書けば、リレーが
