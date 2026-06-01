@@ -334,11 +334,22 @@ export function buildHtml(): string {
       '<h2>⚙ 設定</h2>' +
       '<div class="memola-set-body">' +
         '<nav class="memola-set-nav">' +
-          '<button class="memola-set-tab on" data-tab="ai">🤖 AI プロバイダ</button>' +
-          '<button class="memola-set-tab" data-tab="save">💾 保存と同期</button>' +
-          '<button class="memola-set-tab" data-tab="display">🎨 表示</button>' +
-          '<button class="memola-set-tab" data-tab="help">⌨ ヘルプ</button>' +
-          '<button class="memola-set-tab" data-tab="debug">⚠ リセット</button>' +
+          '<div class="memola-set-major" data-major="personal">' +
+            '<div class="memola-set-major-h">個人設定</div>' +
+            '<div class="memola-set-major-sub">この端末のブラウザに保存（他の人には影響しません）</div>' +
+            '<button class="memola-set-tab on" data-tab="ai">🤖 AI プロバイダ</button>' +
+            '<button class="memola-set-tab" data-tab="display">🎨 表示</button>' +
+          '</div>' +
+          '<div class="memola-set-major" data-major="shared">' +
+            '<div class="memola-set-major-h">共通設定</div>' +
+            '<div class="memola-set-major-sub">保存・同期・プレゼンスの挙動</div>' +
+            '<button class="memola-set-tab" data-tab="save">💾 保存と同期</button>' +
+          '</div>' +
+          '<div class="memola-set-major" data-major="other">' +
+            '<div class="memola-set-major-h">その他</div>' +
+            '<button class="memola-set-tab" data-tab="help">⌨ ヘルプ</button>' +
+            '<button class="memola-set-tab danger" data-tab="debug">⚠ リセット</button>' +
+          '</div>' +
         '</nav>' +
         '<div class="memola-set-panes">' +
           // AI pane

@@ -2197,13 +2197,31 @@
   display: flex; gap: 16px; min-height: 0; flex: 1;
 }
 #memola-overlay .memola-set-nav {
-  flex: 0 0 160px;
+  flex: 0 0 210px;
   display: flex; flex-direction: column; gap: 2px;
-  border-right: 1px solid var(--paper-3); padding-right: 12px;
+  border-right: 1px solid var(--paper-3); padding-right: 10px;
+  overflow-y: auto;
+}
+/* 別アプリ 流: 大分類ごとに左アクセント帯 + 見出し + サブタイトル */
+#memola-overlay .memola-set-major {
+  border-left: 4px solid var(--accent, #7a8a78);
+  margin: 6px 0 12px; padding: 0 0 0 0;
+}
+#memola-overlay .memola-set-major[data-major="shared"] { border-left-color: #5b8aa6; }
+#memola-overlay .memola-set-major[data-major="other"]  { border-left-color: #b08a4f; }
+#memola-overlay .memola-set-major-h {
+  padding: 4px 10px 2px; font-size: var(--fs-sm); font-weight: 700;
+  color: var(--accent, #7a8a78); letter-spacing: .03em;
+}
+#memola-overlay .memola-set-major[data-major="shared"] .memola-set-major-h { color: #5b8aa6; }
+#memola-overlay .memola-set-major[data-major="other"]  .memola-set-major-h { color: #b08a4f; }
+#memola-overlay .memola-set-major-sub {
+  padding: 0 10px 6px; font-size: 11px; color: var(--ink-3); line-height: 1.5;
 }
 #memola-overlay .memola-set-tab {
-  text-align: left; padding: 8px 10px; border: none; background: transparent;
-  color: var(--ink-2); cursor: pointer; border-radius: var(--r-2);
+  width: 100%; text-align: left; padding: 6px 10px 6px 12px; border: none; background: transparent;
+  color: var(--ink-2); cursor: pointer;
+  border-left: 3px solid transparent;
   font: inherit; font-size: var(--fs-sm);
   transition: background .12s, color .12s;
   display: flex; align-items: center; gap: 6px; white-space: nowrap;
@@ -2211,8 +2229,10 @@
 #memola-overlay .memola-set-tab:hover { background: var(--paper-2); color: var(--ink); }
 #memola-overlay .memola-set-tab.on {
   background: var(--accent-soft, rgba(124, 149, 119, 0.18));
-  color: var(--ink); font-weight: 500;
+  border-left-color: var(--accent, #7a8a78);
+  color: var(--ink); font-weight: 600;
 }
+#memola-overlay .memola-set-tab.danger { color: var(--danger, #b8534a); }
 #memola-overlay .memola-set-panes {
   flex: 1; min-width: 0; overflow-y: auto; padding-right: 4px;
 }
