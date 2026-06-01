@@ -1574,6 +1574,7 @@ function Invoke-RelayRequest {
         if (-not $rel) { $rel = '/' }
     }
     $upstreamUrl = $Target + $rel
+    Write-Host ("  -> {0} {1}" -f $method, $upstreamUrl) -ForegroundColor DarkCyan
 
     # ── Build HttpRequestMessage ──
     $httpMethod = New-Object System.Net.Http.HttpMethod($method)
@@ -1615,7 +1616,11 @@ function Invoke-RelayRequest {
         )
         $upstream = $task.GetAwaiter().GetResult()
 
-        $response.StatusCode = [int]$upstream.StatusCode
+        $upStatus = [int]$upstream.StatusCode
+        $statusColor = if ($upStatus -ge 200 -and $upStatus -lt 300) { 'Green' } else { 'Red' }
+        Write-Host ("  <- {0} {1}" -f $upStatus, $upstream.ReasonPhrase) -ForegroundColor $statusColor
+
+        $response.StatusCode = $upStatus
         Add-CorsHeaders -Response $response
         $ct = $null
         if ($upstream.Content -and $upstream.Content.Headers.ContentType) {
