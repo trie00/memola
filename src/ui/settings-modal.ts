@@ -14,7 +14,10 @@ import { showView } from './views';
 import { getApiKey, setApiKey } from '../api/anthropic';
 import {
   prefDensity, prefTheme, prefSaveDelayMs, prefSyncPollMs, prefPresenceEnabled,
+  prefRag外部ベクトルFolder, prefRag外部ベクトルKinds,
 } from '../lib/prefs';
+
+const EXTVEC_KIND_LIST = ['mail', 'onenote', 'pptx', 'doc', 'transcript'] as const;
 import { openShortcutsModal } from './shortcuts-modal';
 
 let _attached = false;
@@ -174,6 +177,16 @@ export function attachSettingsModal(): void {
         if (setEmbedDims) setEmbedDims.value = ai.getEmbeddingDimensions()?.toString() || '';
         if (setRagTopK) setRagTopK.value = String(ai.getRagTopK());
         if (setRagMinScore) setRagMinScore.value = String(ai.getRagMinScore());
+        // 外部ベクトル 連携: フォルダ + kind トグル
+        const tf = document.getElementById('memola-set-rag-extvec-folder') as HTMLInputElement | null;
+        if (tf) tf.value = prefRag外部ベクトルFolder.get();
+        {
+          const enabled = new Set(prefRag外部ベクトルKinds.get().split(',').map((s) => s.trim()));
+          for (const k of EXTVEC_KIND_LIST) {
+            const cb = document.getElementById('memola-set-rag-extvec-' + k) as HTMLInputElement | null;
+            if (cb) cb.checked = enabled.has(k);
+          }
+        }
         setDensity.value = prefDensity.get();
         setTheme.value = prefTheme.get();
         setSaveDelay.value = prefSaveDelayMs.get();
@@ -231,6 +244,17 @@ export function attachSettingsModal(): void {
         if (setEmbedDims) ai.setEmbeddingDimensions(setEmbedDims.value);
         if (setRagTopK) ai.setRagTopK(setRagTopK.value);
         if (setRagMinScore) ai.setRagMinScore(setRagMinScore.value);
+        // 外部ベクトル 連携
+        {
+          const tf = document.getElementById('memola-set-rag-extvec-folder') as HTMLInputElement | null;
+          if (tf) prefRag外部ベクトルFolder.set(tf.value.trim());
+          const on: string[] = [];
+          for (const k of EXTVEC_KIND_LIST) {
+            const cb = document.getElementById('memola-set-rag-extvec-' + k) as HTMLInputElement | null;
+            if (cb?.checked) on.push(k);
+          }
+          prefRag外部ベクトルKinds.set(on.join(','));
+        }
         prefDensity.set(setDensity.value);
         prefTheme.set(setTheme.value);
         prefSaveDelayMs.set(setSaveDelay.value);

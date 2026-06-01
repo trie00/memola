@@ -100,6 +100,11 @@ export const prefAiEmbedApiVersion  = strPref('memola.ai.embedApiVersion', '2024
 export const prefAiEmbedDimensions  = strPref('memola.ai.embedDimensions', '');   // '' = サーバ既定
 export const prefRagTopK            = strPref('memola.rag.topK', '8');
 export const prefRagMinScore        = strPref('memola.rag.minScore', '0.2');
+// 外部ベクトル が収集したベクトルを横断検索で「横から読む」設定。
+// folder: サイト相対のフォルダ(例 'Shared Documents/外部ベクトル')。空 = 無効。
+export const prefRag外部ベクトルFolder    = strPref('memola.rag.extvecFolder', '');
+// 検索対象に含める kind(CSV)。既定は全種。
+export const prefRag外部ベクトルKinds     = strPref('memola.rag.extvecKinds', 'mail,onenote,pptx,doc,transcript');
 // 横断チャット (cross-document chat)
 export const prefXChatHistory       = strPref('memola.xchat.history');   // raw JSON sessions
 export const prefXChatOpen          = strPref('memola.xchat.open');       // '1' / ''

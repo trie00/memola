@@ -12,8 +12,24 @@ import { ragInit, ragRefresh, ragSearch, ragStats, type RagHit } from '../rag/se
 import { canEmbed } from '../rag/embed';
 
 interface XSource {
-  docKey: string; appPageId: string; scope: 'org' | 'user';
+  docKey: string; appPageId: string; scope: 'org' | 'user' | 'extvec';
   title: string; heading?: string; snippet: string; chunkIdx: number; score: number;
+  // 外部ベクトル 由来 (scope==='extvec')
+  kind?: string; from?: string; date?: string; body?: string;
+}
+
+/** 出典バッジ/ラベル。extvec は kind 別に表示。 */
+function scopeLabel(s: { scope: string; kind?: string }): string {
+  if (s.scope === 'org') return '組織';
+  if (s.scope === 'user') return 'プライベート';
+  switch (s.kind) {
+    case 'mail': return 'メール';
+    case 'onenote': return 'OneNote';
+    case 'pptx': return 'PPTX';
+    case 'transcript': return '文字起こし';
+    case 'doc': return '文書';
+    default: return '外部ベクトル';
+  }
 }
 interface XTurn { q: string; a: string; sources: XSource[]; at?: number }
 interface XSession { id: string; title: string; created: number; turns: XTurn[] }
@@ -152,10 +168,12 @@ function setIdx(text: string): void { const idx = $('memola-xchat-idx'); if (idx
 
 /** 現在のベクトル化件数を常時表示 (確認用)。prefix で前置きメッセージを足せる。 */
 function showStats(prefix = ''): void {
-  const { org, user } = ragStats();
+  const { org, user, extvec } = ragStats();
   const total = org.chunks + user.chunks;
-  if (total === 0 && !prefix) { setIdx('未ベクトル化 — 「文書を読み込み」を押してください'); return; }
-  setIdx(`${prefix}ベクトル化済: 組織 ${org.docs}文書 / 個人 ${user.docs}文書 ・計 ${total} チャンク`);
+  if (total === 0 && !extvec.docs && !prefix) { setIdx('未ベクトル化 — 「文書を読み込み」を押してください'); return; }
+  let msg = `${prefix}ベクトル化済: 組織 ${org.docs}文書 / 個人 ${user.docs}文書 ・計 ${total} チャンク`;
+  if (extvec.enabled) msg += ` ・外部ベクトル ${extvec.docs}件`;
+  setIdx(msg);
 }
 
 /** インデックスを構築 (キャッシュ適用 + SP差分DL + writer なら差分ベクトル化)。
@@ -374,7 +392,7 @@ function buildDocCard(items: Array<{ s: XSource; n: number }>): HTMLElement {
   const num = document.createElement('span'); num.className = 'tdr-hit-num';
   num.textContent = ns.length === 1 ? String(ns[0]) : ns.join(',');
   const subj = document.createElement('span'); subj.className = 'tdr-hit-subject'; subj.textContent = s.title;
-  const badge = document.createElement('span'); badge.className = 'tdr-hit-badge'; badge.textContent = s.scope === 'org' ? '組織' : 'プライベート';
+  const badge = document.createElement('span'); badge.className = 'tdr-hit-badge'; badge.textContent = scopeLabel(s);
   head.append(num, subj, badge);
   if (s.score != null) { const sc = document.createElement('span'); sc.className = 'tdr-hit-score'; sc.textContent = s.score.toFixed(2); head.appendChild(sc); }
   const snip = document.createElement('div'); snip.className = 'tdr-hit-snippet';
@@ -411,9 +429,14 @@ async function navigateToSource(appPageId: string): Promise<void> {
 
 // ─── send ─────────────────────────────────────────────────────────────
 function buildSystemPrompt(hits: RagHit[]): string {
-  const ctx = hits.map((h, i) =>
-    `[${i + 1}] 文書「${h.title}」${h.heading ? ` / ${h.heading}` : ''} (${h.scope === 'org' ? '組織' : 'プライベート'})\n${h.snippet}`
-  ).join('\n\n');
+  const ctx = hits.map((h, i) => {
+    const label = scopeLabel(h);
+    // 外部ベクトル はセグメントに本文があるので body をそのまま根拠に使う(中継不要)。
+    // 1出典あたり最大 2000 字(topK 件分入れても文脈が膨れすぎないように)。
+    const text = (h.scope === 'extvec' && h.body) ? h.body.slice(0, 2000) : h.snippet;
+    const meta = (h.from || h.date) ? `\n(${[h.from, h.date].filter(Boolean).join(' / ')})` : '';
+    return `[${i + 1}] 文書「${h.title}」${h.heading ? ` / ${h.heading}` : ''} (${label})${meta}\n${text}`;
+  }).join('\n\n');
   return [
     'あなたは社内ドキュメントアシスタントです。以下の「抜粋」だけを根拠に、日本語で簡潔かつ正確に回答してください。',
     '抜粋に答えが無い場合は推測せず「該当する記載が見つかりませんでした」と述べてください。',
@@ -485,6 +508,7 @@ async function send(): Promise<void> {
     const sources: XSource[] = hits.map((h) => ({
       docKey: h.docKey, appPageId: h.appPageId, scope: h.scope,
       title: h.title, heading: h.heading, snippet: h.snippet, chunkIdx: h.chunkIdx, score: h.score,
+      kind: h.kind, from: h.from, date: h.date, body: h.body,
     }));
     const at = Date.now();
     fillAnswer(body, text, sources, at);   // markdown + 引用 + 出典カードに置換

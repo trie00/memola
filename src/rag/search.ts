@@ -7,31 +7,48 @@ import { embedOne, canEmbed } from './embed';
 import { orgIndex, userIndex } from './manager';
 import { classifyQuery, type RouterHistoryMsg } from './query-router';
 import type { DbHit } from './store';
+import { load外部ベクトルIndex, extvecSearch, extvecStats, EXTVEC_KINDS, type 外部ベクトルKind } from './extvec-scope';
+import { prefRag外部ベクトルKinds } from '../lib/prefs';
 
 export interface RagHit {
-  /** 安定文書キー `${listTitle}:${itemId}`。 */
+  /** 安定文書キー `${listTitle}:${itemId}` (extvec は `extvec:<messageId>`)。 */
   docKey: string;
-  /** このユーザのアプリ内 pageId (遷移用)。解決不能なら ''。 */
+  /** このユーザのアプリ内 pageId (遷移用)。解決不能 / extvec なら ''。 */
   appPageId: string;
-  scope: 'org' | 'user';
+  scope: 'org' | 'user' | 'extvec';
   title: string;
   heading?: string;
   /** 該当チャンクのスニペット。 */
   snippet: string;
   chunkIdx: number;
   score: number;
+  // ── 外部ベクトル 由来 (scope==='extvec') の出典メタ ──
+  kind?: 外部ベクトルKind;
+  from?: string;
+  date?: string;
+  imid?: string;
+  /** 外部ベクトル はセグメントに本文を持つので、回答生成にはこちらを使う(snippet は表示用)。 */
+  body?: string;
+}
+
+/** 横断検索で含める 外部ベクトル の kind(設定 CSV)。 */
+function enabled外部ベクトルKinds(): Set<外部ベクトルKind> {
+  const raw = prefRag外部ベクトルKinds.get().split(',').map((s) => s.trim()).filter(Boolean);
+  const set = new Set<外部ベクトルKind>(raw.filter((k): k is 外部ベクトルKind => (EXTVEC_KINDS as string[]).includes(k)));
+  return set;
 }
 
 const KEYWORD_WEIGHT = 0.25; // ハイブリッド検索の文字bigram 重み
 
 /** 両スコープのインデックスを起動 (キャッシュ適用 + org の SP 差分DL)。 */
 export async function ragInit(): Promise<void> {
-  await Promise.all([orgIndex().init(), userIndex().init()]);
+  await Promise.all([orgIndex().init(), userIndex().init(), load外部ベクトルIndex().catch(() => 0)]);
 }
 
 /** 現在ベクトル化済みの件数 (文書数 / チャンク数) をスコープ別に返す。 */
-export function ragStats(): { org: { docs: number; chunks: number }; user: { docs: number; chunks: number } } {
-  return { org: orgIndex().stats(), user: userIndex().stats() };
+export function ragStats(): { org: { docs: number; chunks: number }; user: { docs: number; chunks: number }; extvec: { docs: number; enabled: boolean } } {
+  const t = extvecStats();
+  return { org: orgIndex().stats(), user: userIndex().stats(), extvec: { docs: t.total, enabled: t.enabled } };
 }
 
 export interface RagRefreshResult {
@@ -88,22 +105,44 @@ export async function ragSearch(
     ...orgIndex().search(qvec, topK * 2, searchText, KEYWORD_WEIGHT, plan.keywords),
     ...userIndex().search(qvec, topK * 2, searchText, KEYWORD_WEIGHT, plan.keywords),
   ];
-  raw.sort((a, b) => b.score - a.score);
 
-  const hits: RagHit[] = [];
-  for (const h of raw) {
-    if (h.score < minScore) continue;
-    hits.push({
-      docKey: h.record.docKey,
-      appPageId: appIdForCommentKey(h.record.docKey),
-      scope: h.record.scope,
-      title: h.record.title,
-      heading: h.record.heading,
-      snippet: h.record.text.slice(0, 280),
-      chunkIdx: h.record.chunkIdx,
-      score: h.score,
-    });
-    if (hits.length >= topK) break;
+  // memola(org/user) の候補を RagHit 化。
+  const candidates: RagHit[] = raw.map((h) => ({
+    docKey: h.record.docKey,
+    appPageId: appIdForCommentKey(h.record.docKey),
+    scope: h.record.scope,
+    title: h.record.title,
+    heading: h.record.heading,
+    snippet: h.record.text.slice(0, 280),
+    chunkIdx: h.record.chunkIdx,
+    score: h.score,
+  }));
+
+  // 外部ベクトル スコープ(横から読む)。kind トグルで対象を絞る。本文はセグメント内に
+  // あるので body をそのまま回答生成に使える(中継サーバ不要)。
+  const kinds = enabled外部ベクトルKinds();
+  if (kinds.size) {
+    for (const th of extvecSearch(qvec, topK * 2, kinds, searchText, KEYWORD_WEIGHT)) {
+      const d = th.doc;
+      const title = d.subject || d.pptxFile || d.slideTitle || d.docPath || '(無題)';
+      candidates.push({
+        docKey: 'extvec:' + d.messageId,
+        appPageId: '',
+        scope: 'extvec',
+        title,
+        heading: d.kind === 'pptx' && d.slideNo ? `スライド ${d.slideNo}` : undefined,
+        snippet: (d.body || '').slice(0, 280),
+        chunkIdx: 0,
+        score: th.score,
+        kind: d.kind,
+        from: d.from,
+        date: d.date,
+        imid: d.internetMessageId,
+        body: d.body,
+      });
+    }
   }
-  return hits;
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates.filter((h) => h.score >= minScore).slice(0, topK);
 }
