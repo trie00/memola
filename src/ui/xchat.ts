@@ -126,9 +126,11 @@ export function showSearchTab(sessionId: string): void {
   const panel = $('memola-xchat');
   if (!panel) return;
   currentId = sessionId;
-  positionPanel();
+  // 先に .on を付けて #memola-top / #memola-tb を隠してから位置採寸する
+  // (content-row が上に詰まるので、その後の getBoundingClientRect が正しい)。
   panel.classList.add('on');
   panel.setAttribute('aria-hidden', 'false');
+  positionPanel();
   renderThread();
   updateTitle();
   focusInput();

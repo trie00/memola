@@ -3965,6 +3965,10 @@
   box-shadow:-2px 0 22px rgba(0,0,0,.10);opacity:0;transition:opacity .16s ease;
 }
 #memola-xchat.on{display:flex;opacity:1}
+/* 横断チャットタブ表示中は、ページ編集用のパンくず行(タイトル/プライベート/保存済/
+   目次/プロパティ/AI)と書式ツールバー(H1/H2…)を隠す。タブ列(#memola-tabbar)は残す。 */
+#memola-xchat.on ~ #memola-main #memola-top,
+#memola-xchat.on ~ #memola-main #memola-tb{display:none !important}
 
 /* サイドバー (セッション一覧) */
 #memola-xchat .tdr-sidebar{flex:0 0 248px;display:flex;flex-direction:column;min-height:0;background:var(--paper-2);border-right:1px solid var(--line);overflow:hidden}
@@ -4100,6 +4104,7 @@
 #memola-overlay .memola-tab{display:flex;align-items:center;gap:6px;max-width:200px;min-width:96px;padding:0 4px 0 10px;border-radius:7px 7px 0 0;cursor:pointer;color:var(--ink-3);font-size:var(--fs-sm);border:1px solid transparent;border-bottom:none;height:30px}
 #memola-overlay .memola-tab:hover{background:var(--paper-3)}
 #memola-overlay .memola-tab.on{background:var(--paper);color:var(--ink);border-color:var(--paper-3)}
+#memola-overlay .memola-tab.dragging{opacity:.45}
 #memola-overlay .memola-tab-ic{flex:0 0 auto;font-size:13px;display:inline-flex;align-items:center}
 #memola-overlay .memola-tab-ic svg{width:13px;height:13px}
 #memola-overlay .memola-tab-lbl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

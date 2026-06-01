@@ -22,6 +22,16 @@ function genTabId(): string { return 't' + Date.now().toString(36) + (_seq++).to
 
 function activeTab(): Tab | undefined { return S.tabs.find((t) => t.tabId === S.activeTabId); }
 
+// タブのアクティブ化履歴(末尾＝最後にアクティブにしたタブ)。閉じたとき「直前に
+// 開いていたタブ」に戻すために使う(左隣ではない)。
+let tabOrder: string[] = [];
+function recordActivation(tabId: string | null): void {
+  if (!tabId) return;
+  const i = tabOrder.indexOf(tabId);
+  if (i >= 0) tabOrder.splice(i, 1);
+  tabOrder.push(tabId);
+}
+
 /** タブのタイトルを最新化(ページ名の変更/削除に追従)。 */
 function tabTitle(t: Tab): string {
   if (t.kind === 'search') return t.title || '横断チャット';
@@ -47,6 +57,7 @@ export function openInActiveTab(pageId: string, title: string): void {
     tab = { tabId: genTabId(), kind: 'page', pageId, title };
     S.tabs.push(tab);
     S.activeTabId = tab.tabId;
+    recordActivation(tab.tabId);
   } else {
     tab.kind = 'page';
     tab.pageId = pageId;
@@ -62,6 +73,7 @@ export async function openPageInNewTab(pageId: string): Promise<void> {
   const tab: Tab = { tabId: genTabId(), kind: 'page', pageId: undefined, title: '' };
   S.tabs.push(tab);
   S.activeTabId = tab.tabId;
+  recordActivation(tab.tabId);
   const { doSelect } = await import('./views');
   await doSelect(pageId); // 新アクティブタブを openInActiveTab で埋める
 }
@@ -71,6 +83,7 @@ export function newTab(): void {
   const tab: Tab = { tabId: genTabId(), kind: 'page', pageId: undefined, title: '新規タブ' };
   S.tabs.push(tab);
   S.activeTabId = tab.tabId;
+  recordActivation(tab.tabId);
   renderTabs();
   persist();
   void import('./views').then((m) => m.showView('empty'));
@@ -81,6 +94,7 @@ export async function activateTab(tabId: string): Promise<void> {
   const tab = S.tabs.find((t) => t.tabId === tabId);
   if (!tab) return;
   S.activeTabId = tabId;
+  recordActivation(tabId);
   renderTabs();
   persist();
   const x = await import('./xchat');
@@ -105,6 +119,7 @@ export async function newSearchTab(): Promise<void> {
   const tab: Tab = { tabId: genTabId(), kind: 'search', searchId: sid, title: '横断チャット' };
   S.tabs.push(tab);
   S.activeTabId = tab.tabId;
+  recordActivation(tab.tabId);
   renderTabs();
   persist();
   x.showSearchTab(sid);
@@ -127,17 +142,24 @@ export function updateActiveSearchTitle(title: string): void {
   if (t && t.kind === 'search') { t.title = title || '横断チャット'; renderTabs(); persist(); }
 }
 
-/** タブを閉じる。アクティブを閉じたら隣を選ぶ。最後の1枚を閉じたら空タブ。 */
+/** タブを閉じる。アクティブを閉じたら「直前に開いていたタブ」へ戻る(左隣ではない)。
+ *  最後の1枚を閉じたら空タブ。 */
 export async function closeTab(tabId: string): Promise<void> {
   const idx = S.tabs.findIndex((t) => t.tabId === tabId);
   if (idx < 0) return;
   const wasActive = S.tabs[idx].tabId === S.activeTabId;
   S.tabs.splice(idx, 1);
+  const oi = tabOrder.indexOf(tabId);
+  if (oi >= 0) tabOrder.splice(oi, 1);
   if (!wasActive) { renderTabs(); persist(); return; }
-  // アクティブを閉じた → 隣(右優先、無ければ左)を選ぶ
-  const next = S.tabs[idx] || S.tabs[idx - 1] || null;
-  S.activeTabId = next ? next.tabId : null;
-  if (next) { await activateTab(next.tabId); }
+  // アクティブを閉じた → アクティブ化履歴を新しい順にたどり、まだ存在するタブへ。
+  let next: string | null = null;
+  for (let i = tabOrder.length - 1; i >= 0; i--) {
+    if (S.tabs.some((t) => t.tabId === tabOrder[i])) { next = tabOrder[i]; break; }
+  }
+  if (!next && S.tabs.length) next = S.tabs[S.tabs.length - 1].tabId; // 履歴に無ければ末尾
+  S.activeTabId = next;
+  if (next) { await activateTab(next); }
   else { newTab(); }
 }
 
@@ -150,6 +172,7 @@ export function renderTabs(): void {
     const el = document.createElement('div');
     el.className = 'memola-tab' + (t.tabId === S.activeTabId ? ' on' : '');
     el.dataset.tabId = t.tabId;
+    el.draggable = true;   // ドラッグでタブ並べ替え
     el.title = tabTitle(t);
     const ic = document.createElement('span');
     ic.className = 'memola-tab-ic';
@@ -191,6 +214,9 @@ export async function restoreTabs(fallbackPageId: string | null): Promise<void> 
       : { tabId: t.tabId || genTabId(), kind: 'page', pageId: t.pageId, title: t.title || '' });
     const activeOk = S.tabs.some((t) => t.tabId === saved?.active);
     S.activeTabId = activeOk ? saved!.active : S.tabs[0].tabId;
+    // アクティブ化履歴を復元(順序＝タブ列、アクティブを最後に)。閉じたときの戻り先用。
+    tabOrder = S.tabs.map((t) => t.tabId);
+    recordActivation(S.activeTabId);
     renderTabs();
     const active = activeTab();
     if (active) await activateTab(active.tabId);
@@ -217,5 +243,46 @@ export function attachTabs(): void {
     if (closeId) { e.stopPropagation(); void closeTab(closeId); return; }
     const row = t.closest<HTMLElement>('.memola-tab');
     if (row?.dataset.tabId) void activateTab(row.dataset.tabId);
+  });
+
+  // ── ドラッグでタブ並べ替え ──
+  let dragId: string | null = null;
+  strip?.addEventListener('dragstart', (e) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>('.memola-tab');
+    if (!row?.dataset.tabId) return;
+    dragId = row.dataset.tabId;
+    e.dataTransfer?.setData('text/plain', dragId);
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+    row.classList.add('dragging');
+  });
+  strip?.addEventListener('dragover', (e) => {
+    if (!dragId) return;
+    e.preventDefault();   // ドロップ許可
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+  });
+  strip?.addEventListener('drop', (e) => {
+    if (!dragId) return;
+    e.preventDefault();
+    const fromIdx = S.tabs.findIndex((t) => t.tabId === dragId);
+    if (fromIdx < 0) { dragId = null; return; }
+    const overRow = (e.target as HTMLElement).closest<HTMLElement>('.memola-tab');
+    let toIdx: number;
+    if (overRow?.dataset.tabId && overRow.dataset.tabId !== dragId) {
+      toIdx = S.tabs.findIndex((t) => t.tabId === overRow.dataset.tabId);
+      const r = overRow.getBoundingClientRect();
+      if (e.clientX > r.left + r.width / 2) toIdx++;   // 右半分なら後ろへ
+    } else {
+      toIdx = S.tabs.length;   // 何も上に無ければ末尾(+ボタンの直前)
+    }
+    const [moved] = S.tabs.splice(fromIdx, 1);
+    if (fromIdx < toIdx) toIdx--;   // 自分を抜いた分のズレ補正
+    S.tabs.splice(Math.max(0, Math.min(toIdx, S.tabs.length)), 0, moved);
+    dragId = null;
+    renderTabs();
+    persist();
+  });
+  strip?.addEventListener('dragend', () => {
+    dragId = null;
+    strip.querySelectorAll('.memola-tab.dragging').forEach((el) => el.classList.remove('dragging'));
   });
 }
