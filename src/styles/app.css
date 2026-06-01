@@ -4134,6 +4134,10 @@
 /* ── タブUI (トップバー1段目) ─────────────────────────────── */
 #memola-overlay #memola-tabbar{display:flex;align-items:center;gap:4px;height:36px;padding:0 8px;border-bottom:1px solid var(--paper-3);background:var(--paper-2);flex:0 0 auto}
 #memola-overlay #memola-tabstrip{flex:1;display:flex;align-items:flex-end;gap:2px;overflow-x:auto;min-width:0;height:100%}
+/* タブ列右端のアクション(再読み込み/設定) */
+#memola-overlay .memola-tabbar-act{flex:0 0 auto;display:grid;place-items:center;width:28px;height:28px;border:0;background:transparent;color:var(--ink-3);border-radius:6px;cursor:pointer}
+#memola-overlay .memola-tabbar-act:hover{background:var(--paper-3);color:var(--ink)}
+#memola-overlay .memola-tabbar-act svg{width:16px;height:16px}
 #memola-overlay #memola-tabstrip::-webkit-scrollbar{height:0}
 #memola-overlay .memola-tab{display:flex;align-items:center;gap:6px;max-width:200px;min-width:96px;padding:0 4px 0 10px;border-radius:7px 7px 0 0;cursor:pointer;color:var(--ink-3);font-size:var(--fs-sm);border:1px solid transparent;border-bottom:none;height:30px}
 #memola-overlay .memola-tab:hover{background:var(--paper-3)}

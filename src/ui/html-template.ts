@@ -35,7 +35,6 @@ export function buildHtml(): string {
         '<div id="memola-tree-org"></div>' +
       '</div>' +
       '<div id="memola-sb-ft">' +
-        '<button class="memola-nb" id="memola-settings-btn" title="設定">⚙<span>設定</span></button>' +
         '<button class="memola-nb" id="memola-x" title="アプリを閉じる (Esc)">' + ICONS.exit + '<span>閉じる</span></button>' +
       '</div>' +
       '<div id="memola-create-menu">' +
@@ -85,6 +84,9 @@ export function buildHtml(): string {
         '<button id="memola-nav-back" class="memola-nav-btn disabled" title="戻る (Ctrl+[)" disabled>' + ICONS.chevronLeft + '</button>' +
         '<button id="memola-nav-fwd" class="memola-nav-btn disabled" title="進む (Ctrl+])" disabled>' + ICONS.chevronRight + '</button>' +
         '<div id="memola-tabstrip"></div>' +
+        // タブ列の右端: 再読み込み(丸矢印) + 設定(歯車)
+        '<button id="memola-reload-btn" class="memola-tabbar-act" title="再読み込み（一覧＋表示中のページ）">' + ICONS.refresh + '</button>' +
+        '<button id="memola-settings-btn" class="memola-tabbar-act" title="設定">' + ICONS.gear + '</button>' +
       '</div>' +
       // ── 2段目: パンくず(親>タイトル) / スコープ / 公開 / 各ボタン ──
       '<div id="memola-top">' +
@@ -110,7 +112,6 @@ export function buildHtml(): string {
         '<button id="memola-outline-btn" class="memola-tog-btn" title="目次">' + ICONS.sort + '<span>目次</span></button>' +
         '<button id="memola-props-btn" class="memola-tog-btn" title="プロパティ">' + ICONS.info + '<span>プロパティ</span></button>' +
         '<button id="memola-ai-btn" class="memola-tog-btn" title="AIチャット">' + ICONS.sparkle + '<span>AI</span></button>' +
-        '<button id="memola-reload-btn" class="memola-tog-btn" title="再読み込み（一覧＋表示中のページ）">' + ICONS.refresh + '</button>' +
         '<button id="memola-pgm-btn" title="ページメニュー">' + ICONS.more + '</button>' +
       '</div>' +
       '<div id="memola-tb">' +
