@@ -21,8 +21,8 @@
 #
 # 使い方
 # ------
-#   PS> Copy-Item corp-ai-relay.env.example corp-ai-relay.env
-#   PS> notepad corp-ai-relay.env       # 値を編集
+#   PS> Copy-Item memola.env.example memola.env
+#   PS> notepad memola.env       # 値を編集
 #   PS> .\corp-ai-relay.ps1
 #
 #   # または引数で個別に上書き:
@@ -31,7 +31,7 @@
 # 設定の優先順位:
 #   1. コマンドライン引数 (-Target / -Proxy / -Port)
 #   2. プロセス環境変数 (CORP_AI_TARGET 等)
-#   3. corp-ai-relay.env ファイル (同じフォルダ)
+#   3. memola.env ファイル (同じフォルダ)
 #   4. デフォルト値 (port = 18080)
 #
 # 埋め込み呼び出し例 (Memola runtime / PoC からはこの localhost を叩く):
@@ -50,7 +50,7 @@ param(
     [switch]$NoProxy,
     # 社内ゲートウェイが自己署名証明書の場合 (要セキュリティ承認)
     [switch]$SkipCertCheck,
-    # 環境設定ファイルのパス (既定: スクリプトと同じフォルダの corp-ai-relay.env)
+    # 環境設定ファイルのパス (既定: スクリプトと同じフォルダの memola.env)
     [string]$EnvFile,
     # 開発者モードでローカル配信するバンドルの dist フォルダ (既定: ../dist)
     [string]$BundleDir
@@ -64,7 +64,7 @@ $script:BundleDir = if ($BundleDir) { $BundleDir }
     else { Join-Path $PSScriptRoot '..\dist' }
 
 # ─── Load .env file ─────────────────────────────────────────────────────────
-# 同じフォルダの `corp-ai-relay.env` を読み、まだ設定されていない
+# 同じフォルダの `memola.env` を読み、まだ設定されていない
 # `$env:CORP_AI_*` だけセットする。引数 / 既存 env を優先 (上書きしない)。
 # `.env` 書式は KEY=VALUE。`#` 始まりと空行は無視。前後クォートは剥がす。
 
@@ -101,7 +101,7 @@ function Import-EnvFile {
 }
 
 if (-not $EnvFile) {
-    $EnvFile = Join-Path $PSScriptRoot 'corp-ai-relay.env'
+    $EnvFile = Join-Path $PSScriptRoot 'memola.env'
 }
 $loaded = Import-EnvFile -Path $EnvFile
 if ($loaded) {
@@ -122,7 +122,7 @@ if (-not $SkipCertCheck -and $env:CORP_AI_SKIP_CERT_CHECK -eq '1') {
 
 if (-not $Target) {
     Write-Host 'エラー: AI gateway URL (-Target / CORP_AI_TARGET) が未指定です。' -ForegroundColor Red
-    Write-Host '  Memola relay は AI 中継専用です。corp-ai-relay.env に CORP_AI_TARGET を設定してください。'
+    Write-Host '  Memola relay は AI 中継専用です。memola.env に CORP_AI_TARGET を設定してください。'
     exit 1
 }
 
@@ -203,6 +203,7 @@ Write-Host "  POST $baseUrlShort/memola/pptx-extract     (PPTX を slide 配列�
 Write-Host "  POST $baseUrlShort/memola/pptx-open        (PowerPoint で fileUrl + slideNo へジャンプ: body={fileUrl,slideNo})"
 Write-Host "  GET  $baseUrlShort/memola/onenote/current   (OneNote で現在表示中のページ ID を返す)"
 Write-Host "  GET  $baseUrlShort/memola/onenote/links     (指定ページ ID 群の OneNote リンクを返す: ?ids=)"
+Write-Host "  GET  $baseUrlShort/memola/ai-config        (AI 設定を env から配信: ブラウザが起動時に取得)"
 Write-Host "  GET  $baseUrlShort/memola/memola.bundle.js (開発: ローカル dist のバンドル配信)"
 Write-Host "  GET  $baseUrlShort/memola/version.txt      (開発: ローカル dist のバージョン配信)"
 Write-Host "  $baseUrlShort/memola/bundle-dir            (開発: 配信フォルダの確認 GET / 変更 POST)"
@@ -1496,6 +1497,31 @@ function Invoke-RelayRequest {
     # ── ローカル機能: PPTX マニュアル取り込み (Vision LLM 連携用) ──
     if ($path -eq '/memola/pptx-extract') { Invoke-PptxExtract -Context $Context; return }
     if ($path -eq '/memola/pptx-open')    { Invoke-PptxOpen    -Context $Context; return }
+
+    # ── AI 設定配信: env の MEMOLA_AI_* / MEMOLA_EMBED_* / MEMOLA_RAG_* を JSON で返す ──
+    # ブラウザが起動時に取得し、ローカル設定へ反映する (外部ベクトル 流: 設定は env 集約)。
+    # API キー類は意図的に含めない (各自ブラウザで入力)。
+    if ($path -eq '/memola/ai-config' -and $method -eq 'GET') {
+        $cfg = @{}
+        if ($env:MEMOLA_AI_PROVIDER)           { $cfg['provider']         = "$env:MEMOLA_AI_PROVIDER" }
+        if ($env:MEMOLA_AI_CLAUDE_MODEL)       { $cfg['claudeModel']      = "$env:MEMOLA_AI_CLAUDE_MODEL" }
+        if ($env:MEMOLA_AI_CORP_MODEL)         { $cfg['corpModel']        = "$env:MEMOLA_AI_CORP_MODEL" }
+        # corpBaseUrl: 明示が無ければ relay 自身を指す (ブラウザ→relay→gateway)
+        if ($env:MEMOLA_AI_CORP_BASEURL)       { $cfg['corpBaseUrl']      = "$env:MEMOLA_AI_CORP_BASEURL" }
+        else                                   { $cfg['corpBaseUrl']      = "http://localhost:$Port" }
+        if ($env:MEMOLA_AI_CORP_DEPLOY_PREFIX) { $cfg['corpDeployPrefix'] = "$env:MEMOLA_AI_CORP_DEPLOY_PREFIX" }
+        if ($env:MEMOLA_AI_LOCAL_BASEURL)      { $cfg['localBaseUrl']     = "$env:MEMOLA_AI_LOCAL_BASEURL" }
+        if ($env:MEMOLA_AI_LOCAL_MODEL)        { $cfg['localModel']       = "$env:MEMOLA_AI_LOCAL_MODEL" }
+        if ($env:MEMOLA_EMBED_PROVIDER)        { $cfg['embedProvider']    = "$env:MEMOLA_EMBED_PROVIDER" }
+        if ($env:MEMOLA_VOYAGE_MODEL)          { $cfg['voyageModel']      = "$env:MEMOLA_VOYAGE_MODEL" }
+        if ($env:MEMOLA_EMBED_MODEL)           { $cfg['embedModel']       = "$env:MEMOLA_EMBED_MODEL" }
+        if ($env:MEMOLA_EMBED_APIVERSION)      { $cfg['embedApiVersion']  = "$env:MEMOLA_EMBED_APIVERSION" }
+        if ($env:MEMOLA_EMBED_DIMENSIONS)      { $cfg['embedDimensions']  = "$env:MEMOLA_EMBED_DIMENSIONS" }
+        if ($env:MEMOLA_RAG_TOPK)              { $cfg['ragTopK']          = "$env:MEMOLA_RAG_TOPK" }
+        if ($env:MEMOLA_RAG_MINSCORE)          { $cfg['ragMinScore']      = "$env:MEMOLA_RAG_MINSCORE" }
+        Send-Json -Response $response -Status 200 -Body @{ ok = $true; config = $cfg }
+        return
+    }
 
     # ── 開発者モード: ローカル dist のバンドル配信 (loader が読む) ──
     if ($path -eq '/memola/memola.bundle.js') {

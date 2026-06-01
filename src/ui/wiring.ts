@@ -233,6 +233,12 @@ export async function init(): Promise<void> {
     // current-workspace name if it's been deleted from the list, etc.
     const { ensureWorkspaceSelected } = await import('./workspaces');
     await ensureWorkspaceSelected();
+    // env 集約された AI 設定を relay から取得して反映 (relay 未起動なら no-op)。
+    // API キーは触らない。SP アクセスより先に済ませ、以降の AI/RAG が新設定で動く。
+    try {
+      const { loadRemoteAiConfig } = await import('../api/ai-config-remote');
+      await loadRemoteAiConfig();
+    } catch { /* 設定配信は任意機能 — 失敗してもアプリ起動は続行 */ }
     // memola-pages list is auto-created by apiGetPages on first call
     await apiGetPages();
     renderTree();

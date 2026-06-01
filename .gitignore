@@ -5,5 +5,5 @@ dist
 ai/
 dev/main.js
 
-# corp-AI relay local config (secrets)
-scripts/corp-ai-relay.env
+# Memola relay local config (secrets)
+scripts/memola.env
