@@ -1502,16 +1502,15 @@ function Invoke-RelayRequest {
     # ブラウザが起動時に取得し、ローカル設定へ反映する (外部ベクトル 流: 設定は env 集約)。
     # API キー類は意図的に含めない (各自ブラウザで入力)。
     if ($path -eq '/memola/ai-config' -and $method -eq 'GET') {
+        # このリレーは corp 専用。Claude(Anthropic 直叩き)/ローカル LLM は
+        # リレーを経由しないため env では配信しない (corp + 埋め込みのみ)。
         $cfg = @{}
         if ($env:MEMOLA_AI_PROVIDER)           { $cfg['provider']         = "$env:MEMOLA_AI_PROVIDER" }
-        if ($env:MEMOLA_AI_CLAUDE_MODEL)       { $cfg['claudeModel']      = "$env:MEMOLA_AI_CLAUDE_MODEL" }
         if ($env:MEMOLA_AI_CORP_MODEL)         { $cfg['corpModel']        = "$env:MEMOLA_AI_CORP_MODEL" }
         # corpBaseUrl: 明示が無ければ relay 自身を指す (ブラウザ→relay→gateway)
         if ($env:MEMOLA_AI_CORP_BASEURL)       { $cfg['corpBaseUrl']      = "$env:MEMOLA_AI_CORP_BASEURL" }
         else                                   { $cfg['corpBaseUrl']      = "http://localhost:$Port" }
         if ($env:MEMOLA_AI_CORP_DEPLOY_PREFIX) { $cfg['corpDeployPrefix'] = "$env:MEMOLA_AI_CORP_DEPLOY_PREFIX" }
-        if ($env:MEMOLA_AI_LOCAL_BASEURL)      { $cfg['localBaseUrl']     = "$env:MEMOLA_AI_LOCAL_BASEURL" }
-        if ($env:MEMOLA_AI_LOCAL_MODEL)        { $cfg['localModel']       = "$env:MEMOLA_AI_LOCAL_MODEL" }
         if ($env:MEMOLA_EMBED_PROVIDER)        { $cfg['embedProvider']    = "$env:MEMOLA_EMBED_PROVIDER" }
         if ($env:MEMOLA_VOYAGE_MODEL)          { $cfg['voyageModel']      = "$env:MEMOLA_VOYAGE_MODEL" }
         if ($env:MEMOLA_EMBED_MODEL)           { $cfg['embedModel']       = "$env:MEMOLA_EMBED_MODEL" }

@@ -10,8 +10,7 @@
 //   - API キー (claude/corp/local/voyage) は一切触らない。
 
 import {
-  prefAiProvider, prefAiClaudeModel, prefAiCorpModel, prefAiCorpBaseUrl,
-  prefAiCorpDeployPrefix, prefAiLocalBaseUrl, prefAiLocalModel,
+  prefAiProvider, prefAiCorpModel, prefAiCorpBaseUrl, prefAiCorpDeployPrefix,
   prefAiEmbedProvider, prefAiVoyageModel, prefAiEmbedModel,
   prefAiEmbedApiVersion, prefAiEmbedDimensions, prefRagTopK, prefRagMinScore,
 } from '../lib/prefs';
@@ -19,14 +18,13 @@ import {
 interface StrPref { get(): string; set(v: string): void }
 
 // config フィールド名 → 反映先 pref。API キー系は意図的に含めない。
+// このリレーは corp 専用。Claude(Anthropic 直叩き)/ローカル LLM はリレーを
+// 経由しないため env では扱わず、ここでも対象外 (ブラウザ設定のまま)。
 const FIELD_MAP: Array<[string, StrPref]> = [
   ['provider',         prefAiProvider],
-  ['claudeModel',      prefAiClaudeModel],
   ['corpModel',        prefAiCorpModel],
   ['corpBaseUrl',      prefAiCorpBaseUrl],
   ['corpDeployPrefix', prefAiCorpDeployPrefix],
-  ['localBaseUrl',     prefAiLocalBaseUrl],
-  ['localModel',       prefAiLocalModel],
   ['embedProvider',    prefAiEmbedProvider],
   ['voyageModel',      prefAiVoyageModel],
   ['embedModel',       prefAiEmbedModel],
