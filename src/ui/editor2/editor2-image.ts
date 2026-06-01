@@ -63,13 +63,14 @@ async function ensureAttachmentsFolder(): Promise<void> {
   await ensureFolder(FOLDER + '/' + ATTACH_FOLDER);
 }
 
-/** Upload one File to SP, returning the absolute URL the browser
- *  can use to fetch it back. */
-async function uploadImage(file: File): Promise<string> {
+/** Upload one File to SP's attachments folder, returning the absolute URL the
+ *  browser can fetch it back from. `prefix` + original extension names it.
+ *  Reused by image paste/drop and by the email (.eml/.msg) drop handler. */
+export async function uploadAttachment(file: File, prefix = 'att', defaultExt = '.bin'): Promise<string> {
   await ensureAttachmentsFolder();
   const d = await getDigest();
-  const ext = (file.name.match(/\.[^./]+$/)?.[0] || '.png').toLowerCase();
-  const filename = 'img-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + ext;
+  const ext = (file.name.match(/\.[^./]+$/)?.[0] || defaultExt).toLowerCase();
+  const filename = prefix + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + ext;
   const target = FOLDER + '/' + ATTACH_FOLDER;
   const url =
     SITE +
@@ -81,9 +82,14 @@ async function uploadImage(file: File): Promise<string> {
     credentials: 'include',
     body: await file.arrayBuffer(),
   });
-  if (!r.ok) throw new Error('画像アップロード失敗: ' + r.status);
+  if (!r.ok) throw new Error('アップロード失敗: ' + r.status);
   const tenant = SITE.replace(SITE_REL, '');
   return tenant + target + '/' + filename;
+}
+
+/** Upload one image File to SP, returning the absolute URL. */
+async function uploadImage(file: File): Promise<string> {
+  return uploadAttachment(file, 'img', '.png');
 }
 
 /** Wire the editor for image paste + drop. Returns a destroy fn.

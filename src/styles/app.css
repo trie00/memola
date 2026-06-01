@@ -2081,6 +2081,31 @@
 }
 #memola-overlay #memola-ed .memola-img-wrap:hover .memola-img-resize { opacity: 1; }
 
+/* ── メール参照チップ(.eml/.msg ドロップ) ── */
+#memola-overlay .memola-email-chip {
+  display: flex; align-items: center; gap: 10px;
+  margin: var(--s-3) 0; padding: 8px 12px; line-height: 1.4;
+  border: 1px solid var(--border, #e3e3e0); border-radius: 8px;
+  background: var(--paper-2, #faf9f7); max-width: 560px;
+}
+#memola-overlay .memola-email-ic { flex: 0 0 auto; font-size: 18px; }
+#memola-overlay .memola-email-body { flex: 1 1 auto; min-width: 0; }
+#memola-overlay .memola-email-subj {
+  font-weight: 600; color: var(--ink, #2a2a26);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#memola-overlay .memola-email-meta {
+  font-size: 12px; color: var(--ink-3, #7a766c);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#memola-overlay .memola-email-src {
+  flex: 0 0 auto; border: 1px solid var(--border, #d8d6cf); border-radius: 6px;
+  background: #fff; color: var(--ink, #2a2a26); cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600; padding: 4px 10px;
+}
+#memola-overlay .memola-email-src:hover:not(:disabled) { background: var(--accent, #7a8a78); color: #fff; border-color: var(--accent, #7a8a78); }
+#memola-overlay .memola-email-src:disabled { opacity: .5; cursor: default; }
+
 /* ── Mobile / narrow viewport ────────────────────────── */
 @media (max-width: 768px) {
   #memola-overlay #memola-sb { width: 200px; position: absolute; height: 100%; z-index: 100; box-shadow: var(--sh-flyout); }

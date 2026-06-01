@@ -17,6 +17,7 @@ import { bodiesContentEqual } from '../../lib/block-stamp';
 import { attachSlashMenu } from './editor2-slash';
 import { attachWikiTrigger } from './editor2-wiki';
 import { attachImageHandlers } from './editor2-image';
+import { attachEmailHandlers } from './editor2-email';
 import { attachBlockDrag } from './editor2-drag';
 import { attachTableHandlers } from './editor2-table';
 import {
@@ -30,6 +31,7 @@ let _wikiTrigger: { destroy(): void } | null = null;
 let _pasteCleanup: (() => void) | null = null;
 let _ftbCleanup: (() => void) | null = null;
 let _imageCleanup: (() => void) | null = null;
+let _emailCleanup: (() => void) | null = null;
 let _dragCleanup: (() => void) | null = null;
 let _tableCleanup: (() => void) | null = null;
 let _pageLinkCleanup: (() => void) | null = null;
@@ -70,6 +72,7 @@ export function mountEditor2(rootEl: HTMLElement): Editor {
   // Image handler runs in capture phase so it intercepts paste BEFORE
   // the markdown-paste fallback below — that's why we attach it first.
   _imageCleanup = attachImageHandlers(_editor, rootEl);
+  _emailCleanup = attachEmailHandlers(_editor, rootEl);
   _pasteCleanup = attachPasteHandler(_editor, rootEl);
   _ftbCleanup = attachFloatingToolbar(rootEl);
   _dragCleanup = attachBlockDrag(_editor, rootEl);
@@ -251,6 +254,7 @@ export function destroyEditor2(): void {
   if (_slashMenu) { _slashMenu.destroy(); _slashMenu = null; }
   if (_wikiTrigger) { _wikiTrigger.destroy(); _wikiTrigger = null; }
   if (_imageCleanup) { _imageCleanup(); _imageCleanup = null; }
+  if (_emailCleanup) { _emailCleanup(); _emailCleanup = null; }
   if (_pasteCleanup) { _pasteCleanup(); _pasteCleanup = null; }
   if (_ftbCleanup) { _ftbCleanup(); _ftbCleanup = null; }
   if (_dragCleanup) { _dragCleanup(); _dragCleanup = null; }

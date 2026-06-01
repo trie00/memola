@@ -1133,6 +1133,10 @@ export function image(src: string, alt = ''): Block {
   return { id: newBlockId(), kind: 'image', src, alt };
 }
 
+export function email(meta: { imid: string; subject: string; from: string; date: string; fileUrl: string; filename: string }): Block {
+  return { id: newBlockId(), kind: 'email', ...meta };
+}
+
 // ── Turn-into (block-handle menu) ────────────────────────
 
 /** Block kinds the block-handle menu can convert a block into. */

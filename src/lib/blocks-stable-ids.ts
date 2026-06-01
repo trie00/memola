@@ -84,6 +84,8 @@ function blockFp(b: Block): string {
       return 'ai:' + b.prompt;
     case 'image':
       return 'image:' + b.src;
+    case 'email':
+      return 'email:' + b.imid;
   }
 }
 

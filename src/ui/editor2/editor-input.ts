@@ -621,8 +621,8 @@ function removeFromChildren(
 function backspaceDeleteImage(state: EditorState, blockId: string): EditorState | null {
   const idx = state.blocks.findIndex((b) => b.id === blockId);
   if (idx < 0) return null;
-  // Case A — the current block is the image.
-  if (state.blocks[idx].kind === 'image') {
+  // Case A — the current block is the image (or email chip — same atomic handling).
+  if (state.blocks[idx].kind === 'image' || state.blocks[idx].kind === 'email') {
     const blocks = state.blocks.slice();
     blocks.splice(idx, 1);
     if (blocks.length === 0) {
@@ -633,8 +633,8 @@ function backspaceDeleteImage(state: EditorState, blockId: string): EditorState 
     const offset = 'inline' in target ? inlineLength(target.inline) : 0;
     return { ...state, blocks, selection: { kind: 'caret', blockId: target.id, offset } };
   }
-  // Case B — the previous block is an image.
-  if (idx > 0 && state.blocks[idx - 1].kind === 'image') {
+  // Case B — the previous block is an image / email chip.
+  if (idx > 0 && (state.blocks[idx - 1].kind === 'image' || state.blocks[idx - 1].kind === 'email')) {
     const blocks = state.blocks.slice();
     blocks.splice(idx - 1, 1);
     return { ...state, blocks, selection: { kind: 'caret', blockId, offset: 0 } };

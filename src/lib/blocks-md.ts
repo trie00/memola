@@ -446,6 +446,7 @@ function blockToMd(b: Block): string {
     case 'table':
     case 'linkdb':
     case 'ai':
+    case 'email':
       // These atomic islands have no clean markdown representation,
       // but they DO have to round-trip through `blocksToMd` →
       // `mdToBlocks` (= the line-based merge UI converts via markdown,
@@ -479,7 +480,7 @@ function parseBlockSentinel(line: string): Block | null {
     const json = decodeURIComponent(escape(atob(m[1])));
     const block = JSON.parse(json) as Block;
     if (!block || typeof block !== 'object' || !('kind' in block) || !('id' in block)) return null;
-    if (block.kind !== 'table' && block.kind !== 'linkdb' && block.kind !== 'ai') return null;
+    if (block.kind !== 'table' && block.kind !== 'linkdb' && block.kind !== 'ai' && block.kind !== 'email') return null;
     return block;
   } catch { return null; }
 }

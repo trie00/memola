@@ -312,6 +312,36 @@ function paintBlockContent(el: HTMLElement, b: Block): void {
       el.appendChild(wrap);
       break;
     }
+    case 'email': {
+      // メール参照チップ。本文はライブラリのファイルに、ページにはメタのみ。
+      el.contentEditable = 'false';
+      const chip = document.createElement('div');
+      chip.className = 'memola-email-chip';
+      chip.contentEditable = 'false';
+      const ic = document.createElement('span');
+      ic.className = 'memola-email-ic';
+      ic.textContent = '📧';
+      const body = document.createElement('div');
+      body.className = 'memola-email-body';
+      const subj = document.createElement('div');
+      subj.className = 'memola-email-subj';
+      subj.textContent = b.subject || '(件名なし)';
+      const meta = document.createElement('div');
+      meta.className = 'memola-email-meta';
+      meta.textContent = [b.from, b.date].filter(Boolean).join(' ・ ');
+      body.append(subj);
+      if (meta.textContent) body.append(meta);
+      const src = document.createElement('button');
+      src.className = 'memola-email-src';
+      src.type = 'button';
+      src.textContent = 'ソースを表示';
+      src.title = 'Outlook でこのメールを開く (InternetMessageId 検索)';
+      src.dataset.emailSrc = b.imid;
+      if (!b.imid) { src.disabled = true; src.title = 'Message-Id が取得できなかったため開けません'; }
+      chip.append(ic, body, src);
+      el.appendChild(chip);
+      break;
+    }
   }
 }
 

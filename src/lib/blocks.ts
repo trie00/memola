@@ -165,6 +165,22 @@ export interface ImageBlock extends BlockBase {
   width?: number;
 }
 
+/** メール参照ブロック。ドロップした .eml/.msg を「添付」のように貼り、本文は
+ *  ライブラリのファイルに保持してページ本文には軽量メタだけを持つ。「ソースを
+ *  表示」はリレー経由で Outlook を InternetMessageId で開く。 */
+export interface EmailBlock extends BlockBase {
+  kind: 'email';
+  /** Internet Message-Id(山括弧なし)。Outlook で開く際の検索キー。 */
+  imid: string;
+  subject: string;
+  from: string;
+  date: string;
+  /** アップロードした .eml/.msg の絶対 URL(再取得・将来の本文抽出用)。 */
+  fileUrl: string;
+  /** 元のファイル名。 */
+  filename: string;
+}
+
 export type Block =
   | ParagraphBlock
   | HeadingBlock
@@ -177,7 +193,8 @@ export type Block =
   | TableBlock
   | LinkedDbBlock
   | AiBlock
-  | ImageBlock;
+  | ImageBlock
+  | EmailBlock;
 
 // ── Helpers ────────────────────────────────────────────────
 

@@ -352,6 +352,11 @@ function blockToHtml(b: Block): string {
     }
     case 'image':
       return '<img src="' + escapeAttr(b.src) + '" alt="' + escapeAttr(b.alt) + '" class="memola-img">';
+    case 'email':
+      return '<div class="memola-email-chip" data-imid="' + escapeAttr(b.imid) + '">📧 '
+        + escapeAttr(b.subject || '(件名なし)')
+        + (b.from ? ' — <span class="memola-email-from">' + escapeAttr(b.from) + '</span>' : '')
+        + '</div>';
     case 'table':
     case 'linkdb':
     case 'ai':
