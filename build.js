@@ -72,13 +72,18 @@ fs.writeFileSync('dist/memola.loader.js', loader);
 const loaderHref = 'javascript:' + encodeURIComponent(loader);
 
 // ③ install.html = ローダ型インストールページ(極小・推奨。次回起動で自動更新)
+//    配布物は dist/ に一括。リポジトリ直下にも置いて従来どおり開けるようにする。
 const tpl = fs.readFileSync('src/template.html', 'utf8');
-fs.writeFileSync('install.html', tpl.replaceAll('{{BOOKMARKLET_URL}}', loaderHref));
+const loaderHtml = tpl.replaceAll('{{BOOKMARKLET_URL}}', loaderHref);
+fs.writeFileSync('install.html', loaderHtml);
+fs.writeFileSync('dist/install.html', loaderHtml);
 
 // ④ install-full.html = 旧来のバンドル丸ごと埋込(オフライン/フォールバック用)
 const wrapped = 'function(){' + bundled + '}()';
 const fullUrl = 'javascript:void(' + encodeURIComponent(wrapped) + ');';
-fs.writeFileSync('install-full.html', tpl.replaceAll('{{BOOKMARKLET_URL}}', fullUrl));
+const fullHtml = tpl.replaceAll('{{BOOKMARKLET_URL}}', fullUrl);
+fs.writeFileSync('install-full.html', fullHtml);
+fs.writeFileSync('dist/install-full.html', fullHtml);
 
 // ⑤ relay 自己更新用: scripts/ の管理対象ファイルと relay-version.txt を dist へ。
 //    corp-ai-relay.ps1 の $MEMOLA_RELAY_VERSION を抽出して manifest を作る。
@@ -96,6 +101,32 @@ try {
 } catch (e) {
   console.warn('[relay] relay-version.txt 出力スキップ: ' + e.message);
 }
+
+// ⑥ 配布手順 README を dist に同梱(これ一式を SP に置けば運用できる)。
+fs.writeFileSync('dist/DEPLOY.txt',
+`Memola 配布パッケージ (dist/)  build ${BUILD_ID}
+============================================================
+このフォルダの中身が「配布に必要な全ファイル」です。
+
+■ SharePoint「ドキュメント/memola/」に置くもの (自動更新の配信元):
+  - memola.bundle.js     … アプリ本体 (ローダが取得)
+  - version.txt          … 本体バージョン (更新検知のキー)
+  - relay-version.txt    … リレー自己更新の manifest
+  - corp-ai-relay.ps1 / corp-ai-relay.bat
+  - memola-start.ps1 / memola-start.bat   … リレー自己更新の配布元
+  - install.html         … 利用者がブックマーク登録するページ(ローダ)
+
+■ 各PCに置くもの (リレー):
+  - corp-ai-relay.ps1 / .bat / memola-start.ps1 / .bat
+  - memola.env.example をコピーして memola.env を作成し接続先を設定
+  ※ 以降のリレー更新は memola アプリの 設定→開発者「リレー更新を確認」で自動。
+
+■ オフライン用 (任意):
+  - install-full.html    … 本体を丸ごと埋め込んだ単体版(SP配置不要だが自動更新なし)
+
+更新を出すとき: node build.js → dist を上記のとおり再配置(本体は SP の
+memola.bundle.js + version.txt を差し替えるだけで全員が次回起動時に最新化)。
+`);
 
 const kb = (s) => (fs.statSync(s).size / 1024).toFixed(1);
 console.log('Built (loader方式):');

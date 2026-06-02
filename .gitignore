@@ -1,5 +1,4 @@
 node_modules
-dist
 .DS_Store
 .claude/
 ai/
@@ -7,3 +6,6 @@ dev/main.js
 
 # Memola relay local config (secrets)
 scripts/memola.env
+
+# offline fallback (大きいので配布物としては任意・非コミット)
+dist/install-full.html

@@ -1,0 +1,1 @@
+{"version":"1.0.0","files":["corp-ai-relay.ps1","corp-ai-relay.bat","memola-start.ps1","memola-start.bat"]}
