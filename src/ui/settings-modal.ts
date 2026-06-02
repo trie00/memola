@@ -209,8 +209,13 @@ export function attachSettingsModal(): void {
       setMd.classList.add('on');
     });
   });
+  // 背景クリックで閉じる。ただしリサイズ(モーダル内で mousedown → 背景で mouseup)
+  // では閉じないよう、mousedown が「背景そのもの」で始まった時だけ閉じる。
+  let _downOnBackdrop = false;
+  setMd.addEventListener('mousedown', (e) => { _downOnBackdrop = (e.target === setMd); });
   setMd.addEventListener('click', (e) => {
-    if (e.target === setMd) setMd.classList.remove('on');
+    if (e.target === setMd && _downOnBackdrop) setMd.classList.remove('on');
+    _downOnBackdrop = false;
   });
   document.getElementById('memola-set-cancel')?.addEventListener('click', () =>
     setMd.classList.remove('on'));
