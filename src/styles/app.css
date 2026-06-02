@@ -2184,17 +2184,20 @@
   line-height: 1.5;
 }
 
-/* ── Settings modal: tabbed sidebar layout ─────────────── */
+/* ── Settings modal: 固定サイズ + ユーザーが端ドラッグでリサイズ (別アプリ 同様) ──
+   項目ごとに大きさが変わらないよう width/height を固定。中身は内部スクロール。
+   resize:both で右下からドラッグしてサイズ変更可能。 */
 #memola-overlay .memola-set-mb {
-  max-width: 760px !important; width: 100% !important;
+  width: 860px !important; height: 620px !important;
+  max-width: 94vw; max-height: 90vh;
+  min-width: 560px; min-height: 380px;
   display: flex; flex-direction: column;
-  /* The body grows to fit the tallest pane but caps at 70vh so the
-     modal never spills off-screen on small viewports. */
-  max-height: 80vh;
+  resize: both; overflow: hidden;
 }
-#memola-overlay .memola-set-mb h2 { margin-bottom: 14px; }
+#memola-overlay .memola-set-mb h2 { margin-bottom: 14px; flex: 0 0 auto; }
+#memola-overlay .memola-set-mb .memola-ma { flex: 0 0 auto; }
 #memola-overlay .memola-set-body {
-  display: flex; gap: 16px; min-height: 0; flex: 1;
+  display: flex; gap: 16px; min-height: 0; flex: 1 1 auto; overflow: hidden;
 }
 #memola-overlay .memola-set-nav {
   flex: 0 0 210px;
