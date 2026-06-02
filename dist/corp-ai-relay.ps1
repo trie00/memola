@@ -571,9 +571,15 @@ function Invoke-OutlookOpen {
 
     try {
         $ns = $ol.GetNamespace('MAPI')
-        # PR_INTERNET_MESSAGE_ID (0x1035001F) を DASL で等値フィルタ。値内の ' は '' へ。
-        $idEsc = $id -replace "'", "''"
-        $dasl  = '@SQL="http://schemas.microsoft.com/mapi/proptag/0x1035001F" = ''' + $idEsc + ''''
+        # PR_INTERNET_MESSAGE_ID (0x1035001F) を DASL で等値フィルタ。
+        # Outlook は山括弧付き `<...>` で保持するが、送信側が剥がして渡す場合もある
+        # ため、山括弧あり/なし両方を OR で検索する。値内の ' は '' へエスケープ。
+        $bare = $id.Trim()
+        if ($bare.StartsWith('<') -and $bare.EndsWith('>')) { $bare = $bare.Substring(1, $bare.Length - 2) }
+        $cands = @("<$bare>", $bare) | Select-Object -Unique
+        $prop = 'http://schemas.microsoft.com/mapi/proptag/0x1035001F'
+        $clauses = $cands | ForEach-Object { '"' + $prop + '" = ''' + ($_ -replace "'", "''") + '''' }
+        $dasl = '@SQL=(' + ($clauses -join ' OR ') + ')'
 
         $queue = New-Object System.Collections.Queue
         foreach ($store in $ns.Folders) { $queue.Enqueue($store) }

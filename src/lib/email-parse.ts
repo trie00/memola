@@ -23,7 +23,10 @@ function toMeta(p: ParsedEml): EmailMeta {
   const from = [p.fromName, p.fromEmail && p.fromEmail !== p.fromName ? '<' + p.fromEmail + '>' : '']
     .filter(Boolean).join(' ').trim() || p.fromEmail || '';
   return {
-    imid: (p.internetMessageId || '').replace(/^</, '').replace(/>$/, '').trim(),
+    // Outlook は PR_INTERNET_MESSAGE_ID を山括弧付き <...> で保持するため、
+    // ヘッダの Message-ID をそのまま(山括弧付きで)保持する。リレー側でも
+    // 山括弧あり/なし両方を検索するので取りこぼさない。
+    imid: (p.internetMessageId || '').trim(),
     subject: p.subject || '',
     from,
     date: p.dateISO || '',
