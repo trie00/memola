@@ -141,6 +141,8 @@ export function attachSettingsModal(): void {
         .forEach((t) => t.classList.toggle('on', t === tab));
       document.querySelectorAll<HTMLElement>('.memola-set-pane')
         .forEach((p) => p.classList.toggle('on', p.dataset.pane === target));
+      // 開発者ペインを開いたら relay に配信フォルダを照会して表示。
+      if (target === 'dev') void queryRelayBundleDir();
     });
   });
 
@@ -271,6 +273,14 @@ export function attachSettingsModal(): void {
           const dl = document.getElementById('memola-set-dev-localbase') as HTMLInputElement | null;
           if (ds) { if (ds.value === 'local') prefDevBundleSource.set('local'); else prefDevBundleSource.clear(); }
           if (dl) prefDevLocalBase.set(dl.value.trim());
+          // relay 配信フォルダの変更(値があれば relay へ POST)
+          const rd = document.getElementById('memola-set-dev-relaydir') as HTMLInputElement | null;
+          if (rd && rd.value.trim()) {
+            void import('../lib/relay-update').then((m) => m.setRelayBundleDir(rd.value.trim()).then((r) => {
+              const st = document.getElementById('memola-set-dev-relaydir-status');
+              if (st) st.textContent = r ? `現在: ${r.dir} ${r.hasBundle ? '✅ memola.bundle.js あり' : '⚠ memola.bundle.js が無い'}` : '⚠ relay 未起動 / 設定失敗';
+            }));
+          }
         }
         prefDensity.set(setDensity.value);
         prefTheme.set(setTheme.value);
@@ -309,6 +319,18 @@ export function attachSettingsModal(): void {
     ov.dataset.density = prefDensity.get();
     ov.dataset.theme = prefTheme.get();
   }
+}
+
+/** 開発者ペイン: relay の配信フォルダを照会して入力欄＋状態に反映。 */
+async function queryRelayBundleDir(): Promise<void> {
+  const inp = document.getElementById('memola-set-dev-relaydir') as HTMLInputElement | null;
+  const st = document.getElementById('memola-set-dev-relaydir-status');
+  if (st) st.textContent = 'relay に照会中…';
+  const { getRelayBundleDir } = await import('../lib/relay-update');
+  const r = await getRelayBundleDir();
+  if (!r) { if (st) st.textContent = '⚠ relay 未起動 / 応答なし(memola-start.bat で起動してください)'; return; }
+  if (inp && !inp.value) inp.value = r.dir;
+  if (st) st.textContent = `現在: ${r.dir}  ${r.hasBundle ? '✅ memola.bundle.js あり' : '⚠ memola.bundle.js が見つかりません'}`;
 }
 
 /** リレー(ps1/bat)の自己更新: 確認 → 差分あれば適用 → 再起動待ち。 */

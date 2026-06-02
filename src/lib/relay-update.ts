@@ -31,6 +31,31 @@ function spFolderUrl(): string {
   return SITE.replace(/\/+$/, '') + '/Shared Documents/memola';
 }
 
+export interface RelayBundleDir { dir: string; exists: boolean; hasBundle: boolean }
+
+/** リレーが現在配信しているローカルフォルダを照会(開発: ローカル参照の配信元)。 */
+export async function getRelayBundleDir(): Promise<RelayBundleDir | null> {
+  try {
+    const r = await fetch(relayOrigin() + '/memola/bundle-dir', { signal: AbortSignal.timeout(4000) });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return { dir: String(j.dir || ''), exists: !!j.exists, hasBundle: !!j.hasBundle };
+  } catch { return null; }
+}
+
+/** リレーの配信フォルダを変更(実行中のみ有効。恒久指定は memola.env の MEMOLA_BUNDLE_DIR)。 */
+export async function setRelayBundleDir(dir: string): Promise<RelayBundleDir | null> {
+  try {
+    const r = await fetch(relayOrigin() + '/memola/bundle-dir', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dir }), signal: AbortSignal.timeout(4000),
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return { dir: String(j.dir || ''), exists: !!j.exists, hasBundle: !!j.hasBundle };
+  } catch { return null; }
+}
+
 async function pingRelay(): Promise<boolean> {
   try {
     const r = await fetch(relayOrigin() + '/memola/health', { signal: AbortSignal.timeout(3000) });
