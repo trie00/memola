@@ -348,6 +348,7 @@ export function buildHtml(): string {
           '<div class="memola-set-major" data-major="other">' +
             '<div class="memola-set-major-h">その他</div>' +
             '<button class="memola-set-tab" data-tab="help">⌨ ヘルプ</button>' +
+            '<button class="memola-set-tab" data-tab="dev">🛠 開発者</button>' +
             '<button class="memola-set-tab danger" data-tab="debug">⚠ リセット</button>' +
           '</div>' +
         '</nav>' +
@@ -538,6 +539,26 @@ export function buildHtml(): string {
             '<div class="memola-set-row"><label></label>' +
               '<div class="memola-set-hint">' +
               '不具合を報告する時にこの ID を一緒に伝えてください。古いブックマークレットを使い続けていないかの確認にもなります。' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          // Developer pane — bundle source (loader 自動更新の取得元切替)
+          '<div class="memola-set-pane" data-pane="dev">' +
+            '<div class="memola-set-row"><label>バンドル取得元</label>' +
+              '<select id="memola-set-dev-source">' +
+                '<option value="sharepoint">SharePoint (本番・自動更新)</option>' +
+                '<option value="local">ローカルリレー (開発)</option>' +
+              '</select>' +
+            '</div>' +
+            '<div class="memola-set-row" data-dev="local"><label>ローカルベース URL</label>' +
+              '<input id="memola-set-dev-localbase" type="text" placeholder="http://127.0.0.1:18080/memola">' +
+            '</div>' +
+            '<div class="memola-set-row"><label></label>' +
+              '<div class="memola-set-hint">' +
+              'ブックマークレットは<b>極小ローダ</b>になり、起動時に本体(<code>memola.bundle.js</code>)を取得します。' +
+              '<br><b>SharePoint</b>: サイトの <code>ドキュメント/memola/</code> に置いた <code>memola.bundle.js</code>＋<code>version.txt</code> を毎回確認し、更新があれば自動で最新化(再インストール不要)。' +
+              '<br><b>ローカルリレー</b>: <code>node build.js</code> 後にリレーが <code>dist/</code> を配信。コード変更→ビルド→リロードで即反映(開発用)。' +
+              '<br>※ 変更は<b>次回起動/リロード</b>で反映されます。' +
               '</div>' +
             '</div>' +
           '</div>' +

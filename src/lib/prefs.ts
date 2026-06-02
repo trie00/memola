@@ -100,6 +100,12 @@ export const prefAiEmbedApiVersion  = strPref('memola.ai.embedApiVersion', '2024
 export const prefAiEmbedDimensions  = strPref('memola.ai.embedDimensions', '');   // '' = サーバ既定
 export const prefRagTopK            = strPref('memola.rag.topK', '8');
 export const prefRagMinScore        = strPref('memola.rag.minScore', '0.2');
+// 開発者モード: バンドル(本体JS)の取得元。ローダ(build.js 生成)が起動時に
+// この localStorage キーを直接読む。キー名はローダと完全一致させること。
+//   'local' = ローカルリレー(dist 配信)から読む / それ以外 = SharePoint(本番)
+export const prefDevBundleSource = strPref('memola.dev.bundle-source', '');
+export const prefDevLocalBase    = strPref('memola.dev.local-base', 'http://127.0.0.1:18080/memola');
+
 // 外部ベクトル が収集したベクトルを横断検索で「横から読む」設定。
 // folder: サイト相対のフォルダ(例 'Shared Documents/外部ベクトル')。空 = 無効。
 export const prefRag外部ベクトルFolder    = strPref('memola.rag.extvecFolder', '');

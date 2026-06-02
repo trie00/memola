@@ -14,7 +14,7 @@ import { showView } from './views';
 import { getApiKey, setApiKey } from '../api/anthropic';
 import {
   prefDensity, prefTheme, prefSaveDelayMs, prefSyncPollMs, prefPresenceEnabled,
-  prefRag外部ベクトルFolder, prefRag外部ベクトルKinds,
+  prefRag外部ベクトルFolder, prefRag外部ベクトルKinds, prefDevBundleSource, prefDevLocalBase,
 } from '../lib/prefs';
 
 const EXTVEC_KIND_LIST = ['mail', 'onenote', 'pptx', 'doc', 'transcript'] as const;
@@ -192,6 +192,13 @@ export function attachSettingsModal(): void {
         setSaveDelay.value = prefSaveDelayMs.get();
         setSyncPoll.value = prefSyncPollMs.get();
         setPresence.value = prefPresenceEnabled.get();
+        // 開発者: バンドル取得元
+        {
+          const ds = document.getElementById('memola-set-dev-source') as HTMLSelectElement | null;
+          const dl = document.getElementById('memola-set-dev-localbase') as HTMLInputElement | null;
+          if (ds) ds.value = prefDevBundleSource.get() === 'local' ? 'local' : 'sharepoint';
+          if (dl) dl.value = prefDevLocalBase.get();
+        }
       } catch { /* ignore */ }
       syncProviderRows();
       setMd.classList.add('on');
@@ -254,6 +261,13 @@ export function attachSettingsModal(): void {
             if (cb?.checked) on.push(k);
           }
           prefRag外部ベクトルKinds.set(on.join(','));
+        }
+        // 開発者: バンドル取得元(localStorage キーはローダが直接読む)
+        {
+          const ds = document.getElementById('memola-set-dev-source') as HTMLSelectElement | null;
+          const dl = document.getElementById('memola-set-dev-localbase') as HTMLInputElement | null;
+          if (ds) { if (ds.value === 'local') prefDevBundleSource.set('local'); else prefDevBundleSource.clear(); }
+          if (dl) prefDevLocalBase.set(dl.value.trim());
         }
         prefDensity.set(setDensity.value);
         prefTheme.set(setTheme.value);
