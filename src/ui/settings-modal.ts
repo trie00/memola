@@ -59,6 +59,9 @@ export function attachSettingsModal(): void {
   // ⌨ Shortcut-list button (no-op when missing)
   document.getElementById('memola-set-shortcuts')?.addEventListener('click', () => openShortcutsModal());
 
+  // 🛠 リレー自己更新 (開発者ペイン)
+  document.getElementById('memola-set-relay-update')?.addEventListener('click', () => { void runRelayUpdate(); });
+
   // Reset buttons (mine / others / all)
   document.getElementById('memola-set-reset-mine')?.addEventListener('click', () =>
     runReset('mine', '自分のプライベートのみ削除'));
@@ -306,6 +309,24 @@ export function attachSettingsModal(): void {
     ov.dataset.density = prefDensity.get();
     ov.dataset.theme = prefTheme.get();
   }
+}
+
+/** リレー(ps1/bat)の自己更新: 確認 → 差分あれば適用 → 再起動待ち。 */
+async function runRelayUpdate(): Promise<void> {
+  const msg = document.getElementById('memola-set-relay-update-msg');
+  const set = (t: string): void => { if (msg) msg.textContent = t; };
+  const { checkRelayUpdate, applyRelayUpdate } = await import('../lib/relay-update');
+  set('確認中…');
+  const chk = await checkRelayUpdate();
+  if (!chk.available) { set('更新なし: ' + chk.detail); return; }
+  const a = chk.available;
+  if (!confirm(`リレーを更新します。\n  ${a.localVersion} → ${a.remoteVersion}\n対象: ${a.files.join(', ')}\nリレーは一度停止して再起動します。よろしいですか?`)) {
+    set('キャンセルしました (' + chk.detail + ')'); return;
+  }
+  set('更新を適用中… (リレー再起動を待っています。最大25秒)');
+  const r = await applyRelayUpdate(a.files);
+  if (r.ok) { set(`✅ 更新完了。リレー v${r.newVersion ?? '?'} で再起動しました。`); toast('リレーを更新しました', 'ok'); }
+  else { set('❌ ' + (r.error || '更新失敗')); toast('リレー更新に失敗: ' + (r.error || ''), 'err'); }
 }
 
 /** Triple-checked reset path: pre-flight count → double confirm →

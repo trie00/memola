@@ -130,6 +130,15 @@ if (-not $NoProxy -and -not $Proxy) {
     Write-Host '警告: プロキシが未指定です。直接接続を試みます (社内環境では失敗する可能性が高いです)。' -ForegroundColor Yellow
 }
 
+# ─── relay 自己更新 (self-update) ────────────────────────────────────────────
+# relay スクリプト群のバージョン。SP の relay-version.txt と比較して更新検知。
+# build.js が corp-ai-relay.ps1 のこの値を読んで relay-version.txt を生成する。
+$MEMOLA_RELAY_VERSION = '1.0.0'
+# self-update で置換される管理対象ファイル(スクリプト外への書込防止の白リスト)。
+$MEMOLA_RELAY_MANAGED_FILES = @(
+    'corp-ai-relay.ps1', 'corp-ai-relay.bat', 'memola-start.ps1', 'memola-start.bat'
+)
+
 # ─── HttpClient setup ───────────────────────────────────────────────────────
 
 Add-Type -AssemblyName System.Net.Http | Out-Null
@@ -203,6 +212,8 @@ Write-Host "  POST $baseUrlShort/memola/pptx-extract     (PPTX を slide 配列�
 Write-Host "  POST $baseUrlShort/memola/pptx-open        (PowerPoint で fileUrl + slideNo へジャンプ: body={fileUrl,slideNo})"
 Write-Host "  GET  $baseUrlShort/memola/onenote/current   (OneNote で現在表示中のページ ID を返す)"
 Write-Host "  GET  $baseUrlShort/memola/onenote/links     (指定ページ ID 群の OneNote リンクを返す: ?ids=)"
+Write-Host "  GET  $baseUrlShort/memola/relay/version    (relay スクリプト群のバージョン)"
+Write-Host "  POST $baseUrlShort/memola/relay/self-update (ps1/bat 自己更新)"
 Write-Host "  GET  $baseUrlShort/memola/ai-config        (AI 設定を env から配信: ブラウザが起動時に取得)"
 Write-Host "  GET  $baseUrlShort/memola/memola.bundle.js (開発: ローカル dist のバンドル配信)"
 Write-Host "  GET  $baseUrlShort/memola/version.txt      (開発: ローカル dist のバージョン配信)"
@@ -275,6 +286,86 @@ function Send-Json {
         $Response.OutputStream.Write($bytes, 0, $bytes.Length)
     } catch { }
     finally { try { $Response.OutputStream.Close() } catch { } }
+}
+
+# ─── relay self-update ───────────────────────────────────────────────────────
+# ブラウザ(memola)が SP の relay-version.txt と /memola/relay/version を比較し、
+# 差分があればファイル内容を base64 で POST してくる。ここで *.new に stage →
+# memola-updater.bat を spawn → relay 自身は exit (= updater が swap+再起動)。
+function Invoke-RelaySelfUpdate {
+    param([System.Net.HttpListenerContext]$Context)
+    $request = $Context.Request
+    $response = $Context.Response
+    $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+    $bodyText = $reader.ReadToEnd(); $reader.Close()
+    $payload = $null
+    try { if ($bodyText) { $payload = $bodyText | ConvertFrom-Json } }
+    catch { Send-Json -Response $response -Status 400 -Body @{ ok = $false; error = @{ code = 'bad_json'; detail = $_.Exception.Message } }; return }
+    if (-not $payload -or -not $payload.files) {
+        Send-Json -Response $response -Status 400 -Body @{ ok = $false; error = @{ code = 'no_files'; detail = 'files 配列が必要です' } }; return
+    }
+    $allowedNames = $MEMOLA_RELAY_MANAGED_FILES | ForEach-Object { $_.ToLower() }
+    $scriptDir = $PSScriptRoot
+    $staged = @()
+    foreach ($file in $payload.files) {
+        $name = [string]$file.name; $b64 = [string]$file.contentBase64
+        if (-not $name -or -not $b64) { Send-Json -Response $response -Status 400 -Body @{ ok = $false; error = @{ code = 'invalid_file'; detail = "name/contentBase64 が空: $name" } }; return }
+        if ($name.ToLower() -notin $allowedNames) { Send-Json -Response $response -Status 400 -Body @{ ok = $false; error = @{ code = 'not_allowed'; detail = "管理対象外: $name" } }; return }
+        if ($name -match '[\\/:]') { Send-Json -Response $response -Status 400 -Body @{ ok = $false; error = @{ code = 'invalid_name'; detail = "パス区切り含む: $name" } }; return }
+        try { $bytes = [Convert]::FromBase64String($b64) }
+        catch { Send-Json -Response $response -Status 400 -Body @{ ok = $false; error = @{ code = 'invalid_base64'; detail = "base64 失敗: $name" } }; return }
+        if ($bytes.Length -lt 50) { Send-Json -Response $response -Status 400 -Body @{ ok = $false; error = @{ code = 'too_small'; detail = "$name 小さすぎ" } }; return }
+        if ($bytes.Length -gt 5MB) { Send-Json -Response $response -Status 400 -Body @{ ok = $false; error = @{ code = 'too_large'; detail = "$name 大きすぎ" } }; return }
+        if ($bytes[0] -lt 9) { Send-Json -Response $response -Status 400 -Body @{ ok = $false; error = @{ code = 'binary_detected'; detail = "$name の先頭がバイナリ" } }; return }
+        $newPath = Join-Path $scriptDir ($name + '.new')
+        try { [System.IO.File]::WriteAllBytes($newPath, $bytes); $staged += @{ name = $name; size = $bytes.Length } }
+        catch { Send-Json -Response $response -Status 500 -Body @{ ok = $false; error = @{ code = 'write_failed'; detail = "$name 書込失敗: $($_.Exception.Message)" } }; return }
+    }
+    Write-Host "[self-update] staged $($staged.Count) files" -ForegroundColor Cyan
+    $updaterBat = Join-Path $scriptDir 'memola-updater.bat'
+    $managedListBat = ($MEMOLA_RELAY_MANAGED_FILES -join ' ')
+    $port = $Port
+    $batContent = @"
+@echo off
+REM memola-updater.bat (自動生成 - corp-ai-relay.ps1 self-update が出力)
+setlocal
+set RELAY_PID=%1
+set SCRIPT_DIR=%~dp0
+set MANAGED=$managedListBat
+echo [updater] relay PID %RELAY_PID% の終了を待機中...
+set /a TRIES=0
+:wait
+if "%RELAY_PID%"=="" goto :killport
+tasklist /FI "PID eq %RELAY_PID%" 2>nul | find "%RELAY_PID%" >nul
+if errorlevel 1 goto :killport
+set /a TRIES+=1
+if %TRIES% GEQ 8 ( taskkill /F /PID %RELAY_PID% >nul 2>&1 & goto :killport )
+timeout /t 1 /nobreak >nul
+goto :wait
+:killport
+powershell -NoProfile -Command "& { try { (Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue).OwningProcess | Sort-Object -Unique | ForEach-Object { Stop-Process -Id ``$_ -Force -ErrorAction SilentlyContinue } } catch { } }" >nul 2>&1
+echo [updater] ファイル置換中...
+for %%F in (%MANAGED%) do (
+    if exist "%SCRIPT_DIR%%%F.new" (
+        if exist "%SCRIPT_DIR%%%F" copy /Y "%SCRIPT_DIR%%%F" "%SCRIPT_DIR%%%F.bak" >nul
+        move /Y "%SCRIPT_DIR%%%F.new" "%SCRIPT_DIR%%%F" >nul
+        echo   updated: %%F
+    )
+)
+echo [updater] relay を再起動中...
+start "" /D "%SCRIPT_DIR%" "%SCRIPT_DIR%corp-ai-relay.bat"
+timeout /t 1 /nobreak >nul
+exit /b 0
+"@
+    try { [System.IO.File]::WriteAllText($updaterBat, $batContent, [System.Text.UTF8Encoding]::new($false)) }
+    catch { Send-Json -Response $response -Status 500 -Body @{ ok = $false; error = @{ code = 'updater_write_failed'; detail = $_.Exception.Message } }; return }
+    try {
+        Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', "`"$updaterBat`"", $PID) -WorkingDirectory $scriptDir -WindowStyle Hidden | Out-Null
+    } catch { Send-Json -Response $response -Status 500 -Body @{ ok = $false; error = @{ code = 'updater_spawn_failed'; detail = $_.Exception.Message } }; return }
+    Send-Json -Response $response -Status 200 -Body @{ ok = $true; started = $true; staged = $staged.Count; relayVersion = $MEMOLA_RELAY_VERSION; message = '更新を開始しました。relay は再起動します。' }
+    Write-Host '[self-update] updater を spawn。relay は 1 秒後に exit します...' -ForegroundColor Yellow
+    Start-Sleep -Seconds 1
+    [Environment]::Exit(0)
 }
 
 # 静的ファイル配信 (開発者モードのローカルバンドル用)。
@@ -1497,6 +1588,16 @@ function Invoke-RelayRequest {
     # ── ローカル機能: PPTX マニュアル取り込み (Vision LLM 連携用) ──
     if ($path -eq '/memola/pptx-extract') { Invoke-PptxExtract -Context $Context; return }
     if ($path -eq '/memola/pptx-open')    { Invoke-PptxOpen    -Context $Context; return }
+
+    # ── relay 自己更新: バージョン照会 / 自己更新 ──
+    if ($path -eq '/memola/relay/version' -and $method -eq 'GET') {
+        Send-Json -Response $response -Status 200 -Body @{ ok = $true; version = $MEMOLA_RELAY_VERSION; managedFiles = @($MEMOLA_RELAY_MANAGED_FILES) }
+        return
+    }
+    if ($path -eq '/memola/relay/self-update' -and $method -eq 'POST') {
+        Invoke-RelaySelfUpdate -Context $Context
+        return
+    }
 
     # ── AI 設定配信: env の MEMOLA_AI_* / MEMOLA_EMBED_* / MEMOLA_RAG_* を JSON で返す ──
     # ブラウザが起動時に取得し、ローカル設定へ反映する (外部ベクトル 流: 設定は env 集約)。

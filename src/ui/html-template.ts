@@ -553,6 +553,10 @@ export function buildHtml(): string {
             '<div class="memola-set-row" data-dev="local"><label>ローカルベース URL</label>' +
               '<input id="memola-set-dev-localbase" type="text" placeholder="http://127.0.0.1:18080/memola">' +
             '</div>' +
+            '<div class="memola-set-row"><label>リレーの更新</label>' +
+              '<button class="memola-btn s" id="memola-set-relay-update">リレー更新を確認</button>' +
+              '<div class="memola-set-hint" id="memola-set-relay-update-msg">SP の relay-version.txt と起動中リレーのバージョンを比較し、差分があればスクリプト(ps1/bat)を自動更新して再起動します。</div>' +
+            '</div>' +
             '<div class="memola-set-row"><label></label>' +
               '<div class="memola-set-hint">' +
               'ブックマークレットは<b>極小ローダ</b>になり、起動時に本体(<code>memola.bundle.js</code>)を取得します。' +

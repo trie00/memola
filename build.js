@@ -80,6 +80,23 @@ const wrapped = 'function(){' + bundled + '}()';
 const fullUrl = 'javascript:void(' + encodeURIComponent(wrapped) + ');';
 fs.writeFileSync('install-full.html', tpl.replaceAll('{{BOOKMARKLET_URL}}', fullUrl));
 
+// ⑤ relay 自己更新用: scripts/ の管理対象ファイルと relay-version.txt を dist へ。
+//    corp-ai-relay.ps1 の $MEMOLA_RELAY_VERSION を抽出して manifest を作る。
+try {
+  const relayPs1 = fs.readFileSync('scripts/corp-ai-relay.ps1', 'utf8');
+  const verM = relayPs1.match(/\$MEMOLA_RELAY_VERSION\s*=\s*'([^']+)'/);
+  const relayVersion = verM ? verM[1] : '0.0.0';
+  const managed = ['corp-ai-relay.ps1', 'corp-ai-relay.bat', 'memola-start.ps1', 'memola-start.bat'];
+  for (const f of managed) {
+    if (fs.existsSync('scripts/' + f)) fs.copyFileSync('scripts/' + f, 'dist/' + f);
+  }
+  if (fs.existsSync('scripts/memola.env.example')) fs.copyFileSync('scripts/memola.env.example', 'dist/memola.env.example');
+  fs.writeFileSync('dist/relay-version.txt', JSON.stringify({ version: relayVersion, files: managed }) + '\n');
+  console.log('  dist/relay-version.txt v' + relayVersion + ' (' + managed.length + ' files) ← SP/リレーに配置');
+} catch (e) {
+  console.warn('[relay] relay-version.txt 出力スキップ: ' + e.message);
+}
+
 const kb = (s) => (fs.statSync(s).size / 1024).toFixed(1);
 console.log('Built (loader方式):');
 console.log('  install.html        ' + kb('install.html') + ' KB  ← ローダ型(配布・推奨)');
