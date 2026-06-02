@@ -254,6 +254,8 @@ export async function init(): Promise<void> {
     // タブを復元(無ければ fallback を1タブで開く)。
     const { restoreTabs } = await import('./tabs');
     await restoreTabs(fallback);
+    // バンドル更新のライブ検知(version.txt 定期確認 → 新版バナー)。
+    void import('../lib/update-watcher').then((m) => m.startUpdateWatcher());
   } catch (e) {
     g('em').innerHTML = '<div style="font-size:48px">⚠️</div><h2>エラー</h2><p>' + (e as Error).message + '</p>';
     g('em').style.display = 'flex';
