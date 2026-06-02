@@ -68,22 +68,26 @@ const loader =
   `function inject(base,ver){if(isLocal){evalLoad(base,ver);return;}var o=d.getElementById('memola-script');if(o)o.remove();var s=d.createElement('script');s.id='memola-script';s.src=base+'/memola.bundle.js?v='+encodeURIComponent(ver);s.onerror=function(){fail(base,'script load error');if(fb){var x=fb;fb='';go(x);}};d.body.appendChild(s);}` +
   `function go(base){fetch(base+'/version.txt?t='+Date.now(),{credentials:'same-origin'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.text();}).then(function(t){inject(base,(t||'').trim()||String(Date.now()));}).catch(function(e){fail(base,e&&e.message||'fetch error');if(isLocal)return;if(fb){var x=fb;fb='';go(x);}else{inject(base,String(Date.now()));}});}` +
   `go(primary);})();`;
+// 命名規則は 別アプリ と統一:
+//   <product>.loader.js     … ローダ JS (= ブックマークレットの中身)
+//   bookmarklet.txt         … ローダの javascript: URL (コピー用)
+//   install-loader.html     … ローダ型インストールページ (推奨・SP配置)
+//   install.html            … 丸ごと埋込インストールページ (オフライン用・大きい)
 fs.writeFileSync('dist/memola.loader.js', loader);
 const loaderHref = 'javascript:' + encodeURIComponent(loader);
+fs.writeFileSync('dist/bookmarklet.txt', loaderHref);
 
-// ③ install.html = ローダ型インストールページ(極小・推奨。次回起動で自動更新)
-//    配布物は dist/ に一括。リポジトリ直下にも置いて従来どおり開けるようにする。
 const tpl = fs.readFileSync('src/template.html', 'utf8');
+// ③ install-loader.html = ローダ型(推奨)。リポジトリ直下にも置いて開けるように。
 const loaderHtml = tpl.replaceAll('{{BOOKMARKLET_URL}}', loaderHref);
-fs.writeFileSync('install.html', loaderHtml);
-fs.writeFileSync('dist/install.html', loaderHtml);
+fs.writeFileSync('install-loader.html', loaderHtml);
+fs.writeFileSync('dist/install-loader.html', loaderHtml);
 
-// ④ install-full.html = 旧来のバンドル丸ごと埋込(オフライン/フォールバック用)
+// ④ install.html = 丸ごと埋込(オフライン)。大きいので dist のみ(gitignore)。
 const wrapped = 'function(){' + bundled + '}()';
 const fullUrl = 'javascript:void(' + encodeURIComponent(wrapped) + ');';
 const fullHtml = tpl.replaceAll('{{BOOKMARKLET_URL}}', fullUrl);
-fs.writeFileSync('install-full.html', fullHtml);
-fs.writeFileSync('dist/install-full.html', fullHtml);
+fs.writeFileSync('dist/install.html', fullHtml);
 
 // ⑤ relay 自己更新用: scripts/ の管理対象ファイルと relay-version.txt を dist へ。
 //    corp-ai-relay.ps1 の $MEMOLA_RELAY_VERSION を抽出して manifest を作る。
@@ -114,7 +118,7 @@ fs.writeFileSync('dist/DEPLOY.txt',
   - relay-version.txt    … リレー自己更新の manifest
   - corp-ai-relay.ps1 / corp-ai-relay.bat
   - memola-start.ps1 / memola-start.bat   … リレー自己更新の配布元
-  - install.html         … 利用者がブックマーク登録するページ(ローダ)
+  - install-loader.html  … 利用者がブックマーク登録するページ(ローダ・推奨)
 
 ■ 各PCに置くもの (リレー):
   - corp-ai-relay.ps1 / .bat / memola-start.ps1 / .bat
@@ -122,7 +126,7 @@ fs.writeFileSync('dist/DEPLOY.txt',
   ※ 以降のリレー更新は memola アプリの 設定→開発者「リレー更新を確認」で自動。
 
 ■ オフライン用 (任意):
-  - install-full.html    … 本体を丸ごと埋め込んだ単体版(SP配置不要だが自動更新なし)
+  - install.html         … 本体を丸ごと埋め込んだ単体版(SP配置不要だが自動更新なし)
 
 更新を出すとき: node build.js → dist を上記のとおり再配置(本体は SP の
 memola.bundle.js + version.txt を差し替えるだけで全員が次回起動時に最新化)。
@@ -130,8 +134,8 @@ memola.bundle.js + version.txt を差し替えるだけで全員が次回起動�
 
 const kb = (s) => (fs.statSync(s).size / 1024).toFixed(1);
 console.log('Built (loader方式):');
-console.log('  install.html        ' + kb('install.html') + ' KB  ← ローダ型(配布・推奨)');
-console.log('  install-full.html   ' + kb('install-full.html') + ' KB  ← 丸ごと埋込(オフライン)');
+console.log('  install-loader.html ' + kb('install-loader.html') + ' KB  ← ローダ型(配布・推奨)');
+console.log('  dist/install.html   ' + kb('dist/install.html') + ' KB  ← 丸ごと埋込(オフライン)');
 console.log('  dist/memola.bundle.js ' + kb('dist/memola.bundle.js') + ' KB  ← SP/リレーに配置');
 console.log('  dist/version.txt    "' + BUILD_ID + '"  ← SP/リレーに配置');
 console.log('  dist/memola.loader.js (= bookmarklet 中身)');

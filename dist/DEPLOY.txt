@@ -1,4 +1,4 @@
-Memola 配布パッケージ (dist/)  build 260602-1002-9eec9d
+Memola 配布パッケージ (dist/)  build 260602-1004-9eec9d
 ============================================================
 このフォルダの中身が「配布に必要な全ファイル」です。
 
@@ -8,7 +8,7 @@ Memola 配布パッケージ (dist/)  build 260602-1002-9eec9d
   - relay-version.txt    … リレー自己更新の manifest
   - corp-ai-relay.ps1 / corp-ai-relay.bat
   - memola-start.ps1 / memola-start.bat   … リレー自己更新の配布元
-  - install.html         … 利用者がブックマーク登録するページ(ローダ)
+  - install-loader.html  … 利用者がブックマーク登録するページ(ローダ・推奨)
 
 ■ 各PCに置くもの (リレー):
   - corp-ai-relay.ps1 / .bat / memola-start.ps1 / .bat
@@ -16,7 +16,7 @@ Memola 配布パッケージ (dist/)  build 260602-1002-9eec9d
   ※ 以降のリレー更新は memola アプリの 設定→開発者「リレー更新を確認」で自動。
 
 ■ オフライン用 (任意):
-  - install-full.html    … 本体を丸ごと埋め込んだ単体版(SP配置不要だが自動更新なし)
+  - install.html         … 本体を丸ごと埋め込んだ単体版(SP配置不要だが自動更新なし)
 
 更新を出すとき: node build.js → dist を上記のとおり再配置(本体は SP の
 memola.bundle.js + version.txt を差し替えるだけで全員が次回起動時に最新化)。
