@@ -6,6 +6,3 @@ dev/main.js
 
 # Memola relay local config (secrets)
 scripts/memola.env
-
-# offline fallback (丸ごと埋込・大きいので非コミット)。ローダ版は install-loader.html
-dist/install.html
