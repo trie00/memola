@@ -272,6 +272,14 @@ export function renderDbTable(): void {
   thead.appendChild(thSpacer);
 
   getSortedFilteredItems().forEach((item) => { tbody.appendChild(mkDbRow(item, fields)); });
+
+  // 横スクロール: table-layout:fixed + width:max-content だと spacer 列の存在で
+  // テーブルがコンテナ幅に潰れ、はみ出した列が見えない。実数px(列幅合計)を
+  // 明示し、CSS の min-width:100% と併用 → 広い時は溢れて wrap 内を横スクロール、
+  // 狭い時は 100% に伸びて spacer が余白を吸収。
+  const CB_W = 24, DEL_W = 32, ADD_W = 36, DEF_COL_W = 160;
+  const fieldsW = fields.reduce((s, f) => s + (S.dbColumnWidths[f.InternalName] || DEF_COL_W), 0);
+  dt.style.width = (CB_W + DEL_W + ADD_W + fieldsW) + 'px';
 }
 
 /** Build the small "↗" link button that opens a DB row as a full page.
