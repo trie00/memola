@@ -66,6 +66,26 @@ function jsonPref<T>(key: string, fallback: T) {
 export interface DbColorMap { rows?: Record<string, string>; cols?: Record<string, string> }
 export const prefDbViewColors = jsonPref<Record<string, DbColorMap>>('memola.dbViewColors', {});
 
+// ── DB ビュー(リスト単位で複数保持) ──────────────────────────────────
+// 既定はテーブル1つ。ユーザーが「＋」で追加でき、名前/タイプ変更・削除可。
+// フィルター/ソート/手動行色/条件付き行色はビューごとに独立保存。
+export type DbViewType = 'table' | 'board' | 'list' | 'gallery' | 'calendar' | 'gantt';
+export type DbFilterOp = 'contains' | 'equals' | 'not_empty' | 'empty';
+export interface DbFilterCond { field: string; op: DbFilterOp; value: string }
+/** 条件付き行色: 条件に合致した行に color を適用。 */
+export interface DbColorRule { id: string; field: string; op: DbFilterOp; value: string; color: string }
+export interface DbViewDef {
+  id: string;
+  name: string;
+  type: DbViewType;
+  filters: DbFilterCond[];
+  sort: { field: string | null; asc: boolean };
+  colors: DbColorMap;        // 手動の行色(既定ビューでは未使用)
+  rules: DbColorRule[];      // 条件付き行色(既定ビューでは未使用)
+}
+export interface DbViewsState { activeId: string; views: DbViewDef[] }
+export const prefDbViews = jsonPref<Record<string, DbViewsState>>('memola.dbViews', {});
+
 // ── AI ────────────────────────────────────────────────────────────────
 // (The body of these prefs is wrapped by api/ai-settings.ts which adds
 //  per-pref validation. UI code should prefer api/ai-settings exports.)

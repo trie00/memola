@@ -424,12 +424,14 @@ export async function doSelectDb(id: string, page: Page): Promise<void> {
     }
     S.dbItems  = active;
     S.dbList   = meta.list;
-    S.dbFilters = [];
     S.dbSelected.clear();
     setSelectionAnchor(null);
-    S.dbSort   = { field: null, asc: true };
-    void import('./filter-ui').then((m) => m.renderFilterChips());
-    renderDbTable();
+    // ビュー(リスト単位で複数)を初期化 → active ビューの filters/sort/type を反映。
+    const bar = await import('./db-views-bar');
+    const { getActiveViewId } = await import('./db-views-model');
+    S.dbViewId = getActiveViewId(meta.list);
+    bar.renderViewBar();
+    bar.applyActiveView();
     syncTemplateBanner('db');
     // Self-heal: if any rows were trashed in memola-pages but missed the
     // DB-row write (= process kill mid-soft-delete), the Trashed flag is

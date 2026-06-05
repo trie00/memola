@@ -107,6 +107,8 @@ export interface AppState {
   /** Notion-style multi-field AND filters */
   dbFilters: { field: string; op: 'contains' | 'equals' | 'not_empty' | 'empty'; value: string }[];
   dbView: 'table' | 'board';
+  /** Active DB view id (key into prefDbViews[dbList].views). '' = default. */
+  dbViewId: string;
   dbColumnWidths: Record<string, number>;
   /** When viewing a DB row as a full page, holds list/item identity. */
   currentRow: { listTitle: string; itemId: number; dbId: string } | null;
@@ -172,6 +174,7 @@ export const S: AppState = {
   dbSort: { field: null, asc: true },
   dbFilters: [],
   dbView: 'table',
+  dbViewId: '',
   dbColumnWidths: {},
   currentRow: null,
   dbSelected: new Set<number>(),

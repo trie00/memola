@@ -181,14 +181,8 @@ export function buildHtml(): string {
             '</div>' +
             '<div id="memola-dv-ttl" contenteditable="true" spellcheck="false"></div>' +
           '</div>' +
-          '<div id="memola-db-views">' +
-            '<button class="memola-db-vbtn on" id="memola-dbv-table">' + ICONS.table + '<span>テーブル</span></button>' +
-            '<button class="memola-db-vbtn" id="memola-dbv-board">' + ICONS.board + '<span>ボード</span></button>' +
-            '<button class="memola-db-vbtn" id="memola-dbv-list">' + ICONS.ul + '<span>リスト</span></button>' +
-            '<button class="memola-db-vbtn" id="memola-dbv-gallery">' + ICONS.codeBlock + '<span>ギャラリー</span></button>' +
-            '<button class="memola-db-vbtn" id="memola-dbv-calendar">' + ICONS.info + '<span>カレンダー</span></button>' +
-            '<button class="memola-db-vbtn" id="memola-dbv-gantt">' + ICONS.sort + '<span>ガント</span></button>' +
-          '</div>' +
+          // ビューバーは db-views-bar.ts が動的描画(既定はテーブル1つ + ＋追加)。
+          '<div id="memola-db-views"></div>' +
           '<div id="memola-db-tb">' +
             // ＋フィルター/ソート/グループは廃止 → 列ヘッダのクリックメニューに集約。
             '<button class="memola-db-new-btn" id="memola-db-new-row">＋ 新規</button>' +

@@ -47,9 +47,14 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
   };
   const sep = (): HTMLElement => { const s = document.createElement('div'); s.className = 'memola-colmenu-sep'; return s; };
 
+  const sortBy = (asc: boolean): void => {
+    S.dbSort.field = field.InternalName; S.dbSort.asc = asc;
+    void import('./db-views-model').then((m) => m.patchView(S.dbList, S.dbViewId, { sort: { field: S.dbSort.field, asc: S.dbSort.asc } }));
+    void reRender();
+  };
   menu.append(
-    item('↑ 昇順で並べ替え', () => { S.dbSort.field = field.InternalName; S.dbSort.asc = true; void reRender(); }),
-    item('↓ 降順で並べ替え', () => { S.dbSort.field = field.InternalName; S.dbSort.asc = false; void reRender(); }),
+    item('↑ 昇順で並べ替え', () => sortBy(true)),
+    item('↓ 降順で並べ替え', () => sortBy(false)),
     item('フィルター', () => { void import('./filter-ui').then((m) => m.addFilterForField(field.InternalName)); }),
   );
 

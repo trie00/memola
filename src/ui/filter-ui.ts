@@ -5,9 +5,15 @@
 
 import { S, type ListField } from '../state';
 import { renderDbTable } from './views';
+import { patchView } from './db-views-model';
 
 function getEl<T extends HTMLElement = HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null;
+}
+
+/** 変更後のフィルターを active ビューに保存。 */
+function persistFilters(): void {
+  if (S.dbList) patchView(S.dbList, S.dbViewId, { filters: S.dbFilters.map((f) => ({ ...f })) });
 }
 
 export function renderFilterChips(): void {
@@ -33,6 +39,7 @@ export function renderFilterChips(): void {
     xbtn.textContent = '×';
     xbtn.addEventListener('click', () => {
       S.dbFilters.splice(idx, 1);
+      persistFilters();
       renderFilterChips();
       renderDbTable();
     });
@@ -63,6 +70,7 @@ function makeValueEditor(
     sel.addEventListener('change', () => {
       S.dbFilters[idx].op = 'equals';
       S.dbFilters[idx].value = sel.value;
+      persistFilters();
       renderDbTable();
     });
     return sel;
@@ -80,6 +88,7 @@ function makeValueEditor(
     sel.addEventListener('change', () => {
       S.dbFilters[idx].op = 'equals';
       S.dbFilters[idx].value = sel.value;
+      persistFilters();
       renderDbTable();
     });
     return sel;
@@ -93,6 +102,7 @@ function makeValueEditor(
   inp.addEventListener('input', () => {
     S.dbFilters[idx].op = 'contains';
     S.dbFilters[idx].value = inp.value;
+    persistFilters();
     renderDbTable();
   });
   inp.addEventListener('keydown', (e) => {
@@ -106,6 +116,7 @@ function makeValueEditor(
 export function addFilterForField(internalName: string): void {
   if (!S.dbFilters.some((f) => f.field === internalName)) {
     S.dbFilters.push({ field: internalName, op: 'contains', value: '' });
+    persistFilters();
   }
   renderFilterChips();
   renderDbTable();
