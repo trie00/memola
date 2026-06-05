@@ -6,7 +6,10 @@
 // filtering or sorting never disturbs the colours. Deleted rows/cols leave
 // harmless stale entries; `gcDbColors` prunes them on table load.
 
-import { prefDbViewColors, type DbColorMap } from '../lib/prefs';
+import { prefDbViewColors, type DbColorMap, type DbColorRule, type DbFilterOp } from '../lib/prefs';
+
+/** 色は「リスト × ビュー」単位で保持する(ビューごとに独立)。 */
+function ck(listTitle: string, viewId: string): string { return listTitle + '::' + (viewId || '__default__'); }
 
 /** Light presets + clear. */
 export const DB_COLOR_PRESETS: Array<{ label: string; value: string }> = [
@@ -21,28 +24,54 @@ export const DB_COLOR_PRESETS: Array<{ label: string; value: string }> = [
   { label: 'ピンク', value: '#f4dfeb' },
 ];
 
-export function getDbColors(listTitle: string): DbColorMap {
-  return prefDbViewColors.get()[listTitle] || {};
+export function getDbColors(listTitle: string, viewId: string): DbColorMap {
+  return prefDbViewColors.get()[ck(listTitle, viewId)] || {};
 }
 
-function update(listTitle: string, fn: (m: DbColorMap) => void): void {
+function update(listTitle: string, viewId: string, fn: (m: DbColorMap) => void): void {
   const all = prefDbViewColors.get();
-  const m: DbColorMap = { rows: { ...(all[listTitle]?.rows || {}) }, cols: { ...(all[listTitle]?.cols || {}) } };
+  const k = ck(listTitle, viewId);
+  const m: DbColorMap = { rows: { ...(all[k]?.rows || {}) }, cols: { ...(all[k]?.cols || {}) } };
   fn(m);
-  all[listTitle] = m;
+  all[k] = m;
   prefDbViewColors.set(all);
 }
 
-export function setRowColor(listTitle: string, rowId: number, color: string): void {
-  update(listTitle, (m) => {
+export function setRowColor(listTitle: string, viewId: string, rowId: number, color: string): void {
+  update(listTitle, viewId, (m) => {
     if (color) m.rows![String(rowId)] = color; else delete m.rows![String(rowId)];
   });
 }
 
-export function setColColor(listTitle: string, internalName: string, color: string): void {
-  update(listTitle, (m) => {
+export function setColColor(listTitle: string, viewId: string, internalName: string, color: string): void {
+  update(listTitle, viewId, (m) => {
     if (color) m.cols![internalName] = color; else delete m.cols![internalName];
   });
+}
+
+/** 条件付き行色: 1件のルールが行に合致するか。 */
+export function matchRule(item: Record<string, unknown>, field: string, op: DbFilterOp, value: string): boolean {
+  const raw = item[field];
+  const s = raw == null ? '' : String(raw);
+  switch (op) {
+    case 'equals':
+      if (value === 'true' || value === 'false') return (s === 'true') === (value === 'true');
+      return s === value;
+    case 'not_empty': return !!s;
+    case 'empty':     return !s;
+    case 'contains':
+    default:          return !!value && s.toLowerCase().includes(value.toLowerCase());
+  }
+}
+
+/** ルール群を順に評価し、最初に合致したルールの色を返す('' = 無し)。 */
+export function rowRuleColor(rules: DbColorRule[] | undefined, item: Record<string, unknown>): string {
+  if (!rules) return '';
+  for (const r of rules) {
+    if (!r.color) continue;
+    if (matchRule(item, r.field, r.op, r.value)) return r.color;
+  }
+  return '';
 }
 
 /** Resolve the background for one cell: column colour wins over row colour
@@ -53,9 +82,9 @@ export function cellOverlay(m: DbColorMap, rowId: number, internalName: string):
 
 /** Drop stale row entries (rows no longer present). Columns are left alone
  *  (cheap, and column lists are tiny). */
-export function gcDbColors(listTitle: string, liveRowIds: number[]): void {
+export function gcDbColors(listTitle: string, viewId: string, liveRowIds: number[]): void {
   const all = prefDbViewColors.get();
-  const m = all[listTitle];
+  const m = all[ck(listTitle, viewId)];
   if (!m?.rows) return;
   const live = new Set(liveRowIds.map(String));
   let changed = false;

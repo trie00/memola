@@ -18,14 +18,17 @@ import {
 import { recordCellChange, recordRowOrderChange, recordColOrderChange, deleteRowWithUndo } from './db-history';
 import { renderBulkBar } from './db-bulk';
 import {
-  getDbColors, gcDbColors, cellOverlay,
+  getDbColors, gcDbColors, cellOverlay, rowRuleColor,
 } from './db-view-colors';
+import { getView } from './db-views-model';
 import { getTagColor } from './tag-colors';
+import type { DbColorRule } from '../lib/prefs';
 import type { DbColorMap } from '../lib/prefs';
 
 /** View-level colour overlay for the current render pass. Set at the top of
  *  renderDbTable so mkDbRow / header can read it without re-parsing prefs. */
 let _renderColors: DbColorMap = {};
+let _renderRules: DbColorRule[] = [];
 
 export function getDbFields(): ListField[] {
   // 2=text, 3=multiline, 4=date, 6=choice, 8=bool, 9=number
@@ -123,8 +126,10 @@ export function renderDbTable(): void {
   thead.innerHTML = ''; tbody.innerHTML = '';
   const fields = getDbFields();
   // View-level colour overlay (option A): read once per render, prune stale rows.
-  _renderColors = getDbColors(S.dbList);
-  gcDbColors(S.dbList, S.dbItems.map((it) => it.Id));
+  // 色は「リスト×ビュー」単位。既定ビューは色機能なし(空マップ・ルールなし)。
+  _renderColors = getDbColors(S.dbList, S.dbViewId);
+  gcDbColors(S.dbList, S.dbViewId, S.dbItems.map((it) => it.Id));
+  _renderRules = getView(S.dbList, S.dbViewId).rules || [];
 
   // Reflect "any-selected" mode on the table so CSS can switch to always-show
   const dt = g('dt');
@@ -312,7 +317,9 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
   // Leading checkbox cell — visibility controlled via CSS (hover or any-selected)
   const cbTd = document.createElement('td');
   cbTd.className = 'memola-td-cb';
-  const _rowBg = _renderColors.rows?.[String(item.Id)];
+  // 行色 = 手動の行色 > 条件付きルール色。
+  const _ruleBg = rowRuleColor(_renderRules, item as Record<string, unknown>);
+  const _rowBg = _renderColors.rows?.[String(item.Id)] || _ruleBg;
   if (_rowBg) cbTd.style.background = _rowBg;     // colour the whole row, incl. the cb cell
   const cb = document.createElement('input');
   cb.type = 'checkbox';
@@ -363,7 +370,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
   fields.forEach((f) => {
     const td = document.createElement('td');
     // View-level highlight overlay (column colour wins over row colour).
-    const _ovBg = cellOverlay(_renderColors, item.Id, f.InternalName);
+    const _ovBg = cellOverlay(_renderColors, item.Id, f.InternalName) || _ruleBg;
     if (_ovBg) td.style.background = _ovBg;
 
     if (f.FieldTypeKind === 4) {

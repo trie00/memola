@@ -118,6 +118,12 @@ function openViewMenu(viewId: string, anchor: HTMLElement, _e: MouseEvent): void
   pop.appendChild(menuItem('名前を変更', ICONS.gear, () => startRename(viewId, anchor)));
 
   if (!isDef) {
+    pop.appendChild(menuItem('色分けルール…', ICONS.board, () => {
+      void import('./db-view-rules-ui').then((m) => m.openRulesEditor(viewId, anchor));
+    }));
+  }
+
+  if (!isDef) {
     const hdr = document.createElement('div');
     hdr.className = 'memola-colmenu-item';
     hdr.style.cssText = 'font-weight:600;color:var(--ink-3);cursor:default;font-size:var(--fs-xs)';

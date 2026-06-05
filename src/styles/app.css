@@ -3334,6 +3334,18 @@
 }
 #memola-overlay .memola-colmenu-item .memola-mi-ic { display: inline-flex; align-items: center; }
 #memola-overlay .memola-colmenu-item .memola-mi-ic svg { width: 15px; height: 15px; opacity: .75; }
+/* 色分けルールエディタ */
+#memola-overlay .memola-rules-pop { min-width: 400px; }
+#memola-overlay .memola-rule-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; }
+#memola-overlay .memola-rule-f, #memola-overlay .memola-rule-op {
+  border: 1px solid var(--paper-3); border-radius: 5px; padding: 3px 4px; font: inherit;
+  font-size: var(--fs-sm); background: var(--paper); color: var(--ink); outline: none; max-width: 110px;
+}
+#memola-overlay .memola-rule-val {
+  flex: 1; min-width: 0; border: 1px solid var(--paper-3); border-radius: 5px; padding: 3px 6px;
+  font: inherit; font-size: var(--fs-sm); background: var(--paper); color: var(--ink); outline: none;
+}
+#memola-overlay .memola-rule-val:focus { border-color: var(--accent); }
 
 #memola-db-tb {
   display: flex; gap: 8px; padding: 10px 0;

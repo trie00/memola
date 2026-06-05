@@ -8,6 +8,7 @@ import { setLoad, toast } from './ui-helpers';
 import { renderDbTable } from './views';
 import { deleteRowWithUndo, addRowWithUndo } from './db-history';
 import { setRowColor, openColorPalette } from './db-view-colors';
+import { canColorRows } from './db-views-model';
 
 let _bar: HTMLElement | null = null;
 
@@ -42,13 +43,16 @@ function onClick(e: Event): void {
   if (act === 'del') void doDelete();
   else if (act === 'dup') void doDuplicate();
   else if (act === 'color') {
-    // View-level highlight of the selected rows (doesn't touch the data).
-    const ids = Array.from(S.dbSelected);
-    if (ids.length === 0) return;
-    const r = (t.getBoundingClientRect());
-    openColorPalette(r.left, r.bottom + 4, (color) => {
-      for (const id of ids) setRowColor(S.dbList, id, color);
-      renderDbTable();
+    // 行の色は「明示的に作成したビュー」のみ(既定テーブルでは不可)。
+    void import('./db-views-model').then(({ canColorRows }) => {
+      if (!canColorRows(S.dbViewId)) { toast('行の色は追加したビューでのみ変更できます'); return; }
+      const ids = Array.from(S.dbSelected);
+      if (ids.length === 0) return;
+      const r = (t.getBoundingClientRect());
+      openColorPalette(r.left, r.bottom + 4, (color) => {
+        for (const id of ids) setRowColor(S.dbList, S.dbViewId, id, color);
+        renderDbTable();
+      });
     });
   }
 }
@@ -174,6 +178,9 @@ export function renderBulkBar(): void {
   const n = S.dbSelected.size;
   const count = bar.querySelector<HTMLElement>('.memola-db-bulkbar-count');
   if (count) count.textContent = n + ' 件選択';
+  // 行の色ボタンは「追加したビュー」でのみ表示(既定テーブルでは隠す)。
+  const colorBtn = bar.querySelector<HTMLElement>('[data-act="color"]');
+  if (colorBtn) colorBtn.style.display = canColorRows(S.dbViewId) ? '' : 'none';
   const visible = n > 0 && S.currentType === 'database';
   bar.classList.toggle('on', visible);
   if (visible) {
