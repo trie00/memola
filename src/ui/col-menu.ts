@@ -72,6 +72,7 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
         finally { setLoad(false); }
       })();
     }));
+    menu.append(item('🎨 タグの色を変更', () => openTagColorMenu(field, x, y)));
   }
 
   menu.append(sep(), item('🗑 列を削除', () => {
@@ -94,6 +95,65 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
   if (r.right > window.innerWidth - 8) menu.style.left = Math.max(8, window.innerWidth - r.width - 8) + 'px';
   if (r.bottom > window.innerHeight - 8) menu.style.top = Math.max(8, y - r.height) + 'px';
 
+  _outside = (e: MouseEvent): void => { if (_menu && !_menu.contains(e.target as Node)) closeColumnMenu(); };
+  setTimeout(() => { if (_outside) document.addEventListener('mousedown', _outside, true); }, 0);
+  _menu = menu;
+}
+
+/** 選択肢ごとのタグ色変更メニュー。各選択肢の行をクリック → カラーパレットで色指定。 */
+function openTagColorMenu(field: ListField, x: number, y: number): void {
+  closeColumnMenu();
+  const overlay = document.getElementById('memola-overlay');
+  if (!overlay) return;
+  const menu = document.createElement('div');
+  menu.className = 'memola-colmenu';
+  menu.style.left = Math.round(x) + 'px';
+  menu.style.top = Math.round(y) + 'px';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'memola-colmenu-item';
+  hdr.style.cssText = 'font-weight:600;color:var(--ink-3);cursor:default';
+  hdr.textContent = 'タグの色を変更';
+  menu.appendChild(hdr);
+  menu.appendChild(Object.assign(document.createElement('div'), { className: 'memola-colmenu-sep' }));
+
+  void (async () => {
+    const [{ getTagColor, setTagColor }, { openColorPalette }] = await Promise.all([
+      import('./tag-colors'), import('./db-view-colors'),
+    ]);
+    for (const opt of (field.Choices || [])) {
+      const row = document.createElement('div');
+      row.className = 'memola-colmenu-item';
+      row.style.cssText = 'display:flex;align-items:center;gap:8px';
+      const sw = document.createElement('span');
+      const cur = getTagColor(S.dbList, field.InternalName, opt);
+      sw.style.cssText = 'width:14px;height:14px;border-radius:4px;flex:0 0 auto;border:1px solid rgba(0,0,0,.15);background:' + (cur || '#e8e4d8');
+      const lbl = document.createElement('span'); lbl.textContent = opt; lbl.style.flex = '1';
+      row.append(sw, lbl);
+      row.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const r = row.getBoundingClientRect();
+        openColorPalette(r.right + 4, r.top, (color) => {
+          setTagColor(S.dbList, field.InternalName, opt, color);
+          void reRender();
+          // 反映後、スウォッチを更新
+          sw.style.background = color || '#e8e4d8';
+        });
+      });
+      menu.appendChild(row);
+    }
+    if (!(field.Choices || []).length) {
+      const empty = document.createElement('div');
+      empty.className = 'memola-colmenu-item'; empty.style.color = 'var(--ink-3)'; empty.style.cursor = 'default';
+      empty.textContent = '選択肢がありません';
+      menu.appendChild(empty);
+    }
+  })();
+
+  overlay.appendChild(menu);
+  const r = menu.getBoundingClientRect();
+  if (r.right > window.innerWidth - 8) menu.style.left = Math.max(8, window.innerWidth - r.width - 8) + 'px';
+  if (r.bottom > window.innerHeight - 8) menu.style.top = Math.max(8, window.innerHeight - r.height - 8) + 'px';
   _outside = (e: MouseEvent): void => { if (_menu && !_menu.contains(e.target as Node)) closeColumnMenu(); };
   setTimeout(() => { if (_outside) document.addEventListener('mousedown', _outside, true); }, 0);
   _menu = menu;

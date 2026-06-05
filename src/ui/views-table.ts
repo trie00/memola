@@ -20,6 +20,7 @@ import { renderBulkBar } from './db-bulk';
 import {
   getDbColors, gcDbColors, cellOverlay,
 } from './db-view-colors';
+import { getTagColor } from './tag-colors';
 import type { DbColorMap } from '../lib/prefs';
 
 /** View-level colour overlay for the current render pass. Set at the top of
@@ -488,6 +489,9 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
           const chip = document.createElement('span');
           chip.className = 'memola-select-chip memola-sc-' + idx;
           chip.textContent = val;
+          // 列メニューで設定したタグ色があれば上書き(未設定はプリセット sc-N)。
+          const ov = getTagColor(S.dbList, f.InternalName, val);
+          if (ov) { chip.style.background = ov; chip.style.color = '#2a2a26'; }
           chip.style.cursor = 'pointer';
           chip.addEventListener('click', () => {
             wrapper.innerHTML = '';

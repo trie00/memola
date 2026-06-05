@@ -106,6 +106,10 @@ export const prefRagMinScore        = strPref('memola.rag.minScore', '0.2');
 export const prefDevBundleSource = strPref('memola.dev.bundle-source', '');
 export const prefDevLocalBase    = strPref('memola.dev.local-base', 'http://127.0.0.1:18080/memola');
 
+// 選択肢(Choice)列のタグ色の上書き。{listTitle: {fieldInternal: {optionValue: color}}}。
+// 未設定の選択肢はプリセット(memola-sc-N)のまま。
+export const prefDbTagColors = jsonPref<Record<string, Record<string, Record<string, string>>>>('memola.dbTagColors', {});
+
 // 外部ベクトル が収集したベクトルを横断検索で「横から読む」設定。
 // folder: サイト相対のフォルダ(例 'Shared Documents/外部ベクトル')。空 = 無効。
 export const prefRag外部ベクトルFolder    = strPref('memola.rag.extvecFolder', '');
