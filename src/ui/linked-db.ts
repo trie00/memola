@@ -263,9 +263,10 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
         const dbPage = S.pages.find((p) => p.Id === dbId);
         if (!dbPage) { toast('DB ページが見つかりません', 'err'); return; }
         await v.doSelectDb(dbId, dbPage);
-        const r = await import('./row-page');
         const live = S.dbItems.find((x) => x.Id === rowId) || it;
-        await r.openRowAsPage(dbId, live);
+        // DB は1タブ、行は新しいタブで開く。
+        const t = await import('./tabs');
+        await t.openRowPageInNewTab(dbId, live);
       } catch (err) {
         toast('行を開けませんでした: ' + (err as Error).message, 'err');
       }

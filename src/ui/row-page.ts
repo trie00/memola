@@ -68,8 +68,10 @@ export async function openRowAsPage(dbId: string, item: ListItem): Promise<void>
   if (addIcon) addIcon.style.display = '';
 
   // Breadcrumb: DB title → row title (with click to return)
+  // デイリーノートは親 DB のタイトル(汎用名で別DBと紛らわしい)ではなく
+  // 「📅 デイリーノート」と明示する。
   const dbPage = S.pages.find((p) => p.Id === dbId);
-  const dbTitle = dbPage?.Title || '無題DB';
+  const dbTitle = isDailyList(listTitle) ? '📅 デイリーノート' : (dbPage?.Title || '無題DB');
   renderBcCustom([
     { label: dbTitle, onClick: () => { void backToDb(dbId); } },
     { label: (item.Title as string) || '無題' },

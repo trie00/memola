@@ -296,7 +296,8 @@ export function mkOpenRowBtn(item: ListItem): HTMLButtonElement {
   btn.textContent = '↗';
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    void import('./row-page').then((m) => m.openRowAsPage(S.currentId || '', item));
+    // DB は1タブのまま、項目(行)は新しいタブで開く。
+    void import('./tabs').then((m) => m.openRowPageInNewTab(S.currentId || '', item));
   });
   return btn;
 }

@@ -92,6 +92,19 @@ export function openRowInActiveTab(dbId: string, rowId: number, title: string): 
   persist();
 }
 
+/** DB の項目(行)を新しいタブで開く。DB 自体のタブは残す(= DBは1タブ、各項目は別タブ)。 */
+export async function openRowPageInNewTab(dbId: string, item: { Id: number; Title?: unknown }): Promise<void> {
+  const tab: Tab = { tabId: genTabId(), kind: 'row', rowDbId: dbId, rowId: item.Id, title: (item.Title as string) || '無題' };
+  S.tabs.push(tab);
+  S.activeTabId = tab.tabId;
+  recordActivation(tab.tabId);
+  renderTabs();
+  persist();
+  // 既に DB は開いていて S.dbItems がある前提。行本文を読み込む。
+  const { openRowAsPage } = await import('./row-page');
+  await openRowAsPage(dbId, item as never);
+}
+
 /** ページを新規タブで開く(Ctrl/⌘+クリック・中クリック用)。 */
 export async function openPageInNewTab(pageId: string): Promise<void> {
   const tab: Tab = { tabId: genTabId(), kind: 'page', pageId: undefined, title: '' };
