@@ -102,6 +102,9 @@ async function navigate(targetIdx: number): Promise<void> {
   }
   _idx = targetIdx;
   _skipPush = true;
+  // 戻る/進むは新しいタブを作らず、現在のタブで差し替える。
+  const tabsMod = await import('./tabs');
+  tabsMod.setTabNavInPlace(true);
   try {
     if (entry.view === 'library') {
       const lib = await import('./library');
@@ -120,6 +123,7 @@ async function navigate(targetIdx: number): Promise<void> {
     }
   } finally {
     _skipPush = false;
+    tabsMod.setTabNavInPlace(false);
   }
   refreshButtons();
 }

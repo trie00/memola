@@ -49,60 +49,70 @@ function persist(): void {
   prefTabs.set(map);
 }
 
-/** doSelect から呼ばれ、アクティブタブの中身をこのページに差し替える。
- *  アクティブタブが無ければ新規に作る。 */
+// 戻る/進む(nav-history)中は「新しいタブを作らず現在のタブで差し替える」。
+// それ以外(リンク/サイドバー/バックリンク等の参照)は「未オープンなら新タブ」。
+let _navInPlace = false;
+export function setTabNavInPlace(b: boolean): void { _navInPlace = b; }
+
+function makePageTabFields(tab: Tab, pageId: string, title: string): void {
+  tab.kind = 'page'; tab.pageId = pageId; tab.title = title;
+  tab.searchId = undefined; tab.rowDbId = undefined; tab.rowId = undefined;
+}
+
+/** doSelect から呼ばれる。基本ルール:
+ *   - 戻る/進む(_navInPlace)は現在タブで差し替え
+ *   - 既に同じページが今のタブ → タイトル更新のみ
+ *   - 空タブ(新規タブ / Ctrl+クリック直後) → そこに入れる
+ *   - 既に別タブで開いている → そのタブへ切替(複製しない)
+ *   - どれでもない(現在タブに無いページ参照) → 新しいタブで開く */
 export function openInActiveTab(pageId: string, title: string): void {
-  let tab = activeTab();
-  if (!tab || tab.kind === 'search') {
-    // タブ無し / アクティブが検索タブ → 検索タブを潰さず新しいページタブで開く。
-    tab = { tabId: genTabId(), kind: 'page', pageId, title };
-    S.tabs.push(tab);
-    S.activeTabId = tab.tabId;
-    recordActivation(tab.tabId);
-  } else {
-    tab.kind = 'page';
-    tab.pageId = pageId;
-    tab.searchId = undefined;
-    tab.rowDbId = undefined;
-    tab.rowId = undefined;
-    tab.title = title;
+  const active = activeTab();
+  // 戻る/進む: その場で差し替え
+  if (_navInPlace && active) {
+    makePageTabFields(active, pageId, title);
+    renderTabs(); persist(); return;
   }
-  renderTabs();
-  persist();
+  // 同じページが今のタブ
+  if (active && active.kind === 'page' && active.pageId === pageId) {
+    active.title = title; renderTabs(); persist(); return;
+  }
+  // 空タブ(新規タブ等)に入れる
+  if (active && active.kind === 'page' && !active.pageId) {
+    makePageTabFields(active, pageId, title); renderTabs(); persist(); return;
+  }
+  // 既に別タブで開いている → そのタブへ
+  const existing = S.tabs.find((t) => t.kind === 'page' && t.pageId === pageId);
+  if (existing) {
+    S.activeTabId = existing.tabId; recordActivation(existing.tabId);
+    existing.title = title; renderTabs(); persist(); return;
+  }
+  // 未オープン → 新しいタブ
+  const tab: Tab = { tabId: genTabId(), kind: 'page', pageId, title };
+  S.tabs.push(tab); S.activeTabId = tab.tabId; recordActivation(tab.tabId);
+  renderTabs(); persist();
 }
 
-/** openRowAsPage から呼ばれ、アクティブタブの中身を DB 行(デイリーノート含む)に
- *  差し替える。アクティブが検索/無しなら新規タブ。 */
+/** openRowAsPage から呼ばれる。openInActiveTab と同じルール(行版):
+ *   戻る/進む=その場 / 同じ行=現状維持 / 空タブ=そこに / 既存行タブ=切替 / 未オープン=新タブ。 */
 export function openRowInActiveTab(dbId: string, rowId: number, title: string): void {
-  let tab = activeTab();
-  if (!tab || tab.kind === 'search') {
-    tab = { tabId: genTabId(), kind: 'row', rowDbId: dbId, rowId, title };
-    S.tabs.push(tab);
-    S.activeTabId = tab.tabId;
-    recordActivation(tab.tabId);
-  } else {
-    tab.kind = 'row';
-    tab.rowDbId = dbId;
-    tab.rowId = rowId;
-    tab.pageId = undefined;
-    tab.searchId = undefined;
-    tab.title = title;
+  const setRow = (t: Tab): void => {
+    t.kind = 'row'; t.rowDbId = dbId; t.rowId = rowId; t.title = title;
+    t.pageId = undefined; t.searchId = undefined;
+  };
+  const active = activeTab();
+  if (_navInPlace && active) { setRow(active); renderTabs(); persist(); return; }
+  if (active && active.kind === 'row' && active.rowId === rowId && active.rowDbId === dbId) {
+    active.title = title; renderTabs(); persist(); return;
   }
-  renderTabs();
-  persist();
-}
-
-/** DB の項目(行)を新しいタブで開く。DB 自体のタブは残す(= DBは1タブ、各項目は別タブ)。 */
-export async function openRowPageInNewTab(dbId: string, item: { Id: number; Title?: unknown }): Promise<void> {
-  const tab: Tab = { tabId: genTabId(), kind: 'row', rowDbId: dbId, rowId: item.Id, title: (item.Title as string) || '無題' };
-  S.tabs.push(tab);
-  S.activeTabId = tab.tabId;
-  recordActivation(tab.tabId);
-  renderTabs();
-  persist();
-  // 既に DB は開いていて S.dbItems がある前提。行本文を読み込む。
-  const { openRowAsPage } = await import('./row-page');
-  await openRowAsPage(dbId, item as never);
+  if (active && active.kind === 'page' && !active.pageId) { setRow(active); renderTabs(); persist(); return; }
+  const existing = S.tabs.find((t) => t.kind === 'row' && t.rowId === rowId && t.rowDbId === dbId);
+  if (existing) {
+    S.activeTabId = existing.tabId; recordActivation(existing.tabId);
+    existing.title = title; renderTabs(); persist(); return;
+  }
+  const tab: Tab = { tabId: genTabId(), kind: 'row', rowDbId: dbId, rowId, title };
+  S.tabs.push(tab); S.activeTabId = tab.tabId; recordActivation(tab.tabId);
+  renderTabs(); persist();
 }
 
 /** ページを新規タブで開く(Ctrl/⌘+クリック・中クリック用)。 */
@@ -140,21 +150,26 @@ export async function activateTab(tabId: string): Promise<void> {
     return;
   }
   // 行タブ(DB行/デイリーノート): 親DBを開いて行を再オープン(nav-history と同方式)。
+  // 読み込み中は in-place 扱い(余計なタブを作らせない)。
   if (tab.kind === 'row') {
     x.hideSearchTab();
     if (tab.rowDbId && tab.rowId != null) {
-      const { doSelect } = await import('./views');
-      await doSelect(tab.rowDbId);
-      const row = S.dbItems.find((it) => it.Id === tab.rowId);
-      if (row) { const rp = await import('./row-page'); await rp.openRowAsPage(tab.rowDbId, row); }
+      _navInPlace = true;
+      try {
+        const { doSelect } = await import('./views');
+        await doSelect(tab.rowDbId);
+        const row = S.dbItems.find((it) => it.Id === tab.rowId);
+        if (row) { const rp = await import('./row-page'); await rp.openRowAsPage(tab.rowDbId, row); }
+      } finally { _navInPlace = false; }
     }
     return;
   }
   // ページタブ: 検索パネルを隠してからページを表示。
   x.hideSearchTab();
   if (tab.pageId) {
-    const { doSelect } = await import('./views');
-    await doSelect(tab.pageId);
+    _navInPlace = true;
+    try { const { doSelect } = await import('./views'); await doSelect(tab.pageId); }
+    finally { _navInPlace = false; }
   } else {
     void import('./views').then((m) => m.showView('empty'));
   }
