@@ -29,7 +29,13 @@ const MIN_INTERVAL_MS = 3000;
 let _lastRefreshTs = 0;
 let _inFlight = false;
 
-async function refresh(): Promise<void> {
+/** ページ一覧の署名。前後で同じなら再描画しない(= アイドル時の無駄な
+ *  renderTree によるちらつきを止める)。アイドル中は内容が変わらないので一致する。 */
+function pagesTreeSig(): string {
+  try { return JSON.stringify(S.meta.pages); } catch { return String(S.meta.pages.length); }
+}
+
+async function refresh(opts: { periodic?: boolean } = {}): Promise<void> {
   if (_inFlight) return;
   if (Date.now() - _lastRefreshTs < MIN_INTERVAL_MS) return;
   if (saver.isBusy()) return;
@@ -56,17 +62,23 @@ async function refresh(): Promise<void> {
     // surfaced via the cross-tab banner in `sync-watch.ts`; the 30 s
     // polling still picks up other-user edits as a slower fallback.
     try {
+      const before = pagesTreeSig();
       await apiGetPages();
-      const { renderTree } = await import('./tree');
-      renderTree();
+      // 変化があった時だけ再描画(無変化での無駄な再描画＝ちらつきを防ぐ)。
+      if (pagesTreeSig() !== before) {
+        const { renderTree } = await import('./tree');
+        renderTree();
+      }
     } catch { /* tolerate */ }
     // DB views still need re-render because S.dbItems is a snapshot of
     // the list view at open time; without this, deletions / additions
     // in other tabs leave the UI showing ghost rows. The page editor
     // path doesn't have that problem (its body is the Saver baseline,
     // updated on every save).
+    // ただし周期実行では DB を毎回再描画するとテーブルがちらつくのでスキップし、
+    // タブ復帰(visibilitychange)時のみ再取得・再描画する。
     if (!S.currentId) return;
-    if (S.currentType === 'database' && !S.currentRow) {
+    if (!opts.periodic && S.currentType === 'database' && !S.currentRow) {
       const dbPage = S.pages.find((p) => p.Id === S.currentId);
       if (dbPage) {
         const v = await import('./views');
@@ -126,7 +138,7 @@ function scheduleNextTreeSync(): void {
   _periodicTimer = setTimeout(() => {
     void (async () => {
       if (document.hidden) return;
-      await refresh();                       // tree (skips when dirty/structural)
+      await refresh({ periodic: true });     // tree のみ(無変化なら再描画しない / DB再描画はしない)
       // Comments + mention inbox sync run on the SAME cadence but are NOT
       // gated by the body-dirty/structural guards (editing the body must not
       // freeze others' comments/mentions from appearing).
