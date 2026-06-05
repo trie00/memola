@@ -190,9 +190,7 @@ export function buildHtml(): string {
             '<button class="memola-db-vbtn" id="memola-dbv-gantt">' + ICONS.sort + '<span>ガント</span></button>' +
           '</div>' +
           '<div id="memola-db-tb">' +
-            '<button class="memola-db-chip" id="memola-db-filter-btn"><span>＋ フィルター</span></button>' +
-            '<button class="memola-db-chip" id="memola-db-sort-btn">' + ICONS.sort + '<span>ソート</span></button>' +
-            '<button class="memola-db-chip" id="memola-db-group-btn"><span>⊟</span><span>グループ</span></button>' +
+            // ＋フィルター/ソート/グループは廃止 → 列ヘッダのクリックメニューに集約。
             '<button class="memola-db-new-btn" id="memola-db-new-row">＋ 新規</button>' +
             '<div class="memola-db-tb-spacer"></div>' +
             '<button class="memola-db-chip subtle" id="memola-db-csv-export">' + ICONS.download + '<span>CSV</span></button>' +

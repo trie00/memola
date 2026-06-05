@@ -528,6 +528,30 @@ export async function addListField(
   return j.d;
 }
 
+/** 選択肢(Choice)列の選択肢一覧を更新(MERGE)。選択項目の追加/削除/リネームに使う。 */
+export async function updateListFieldChoices(
+  listTitle: string,
+  fieldInternalName: string,
+  choices: string[],
+): Promise<void> {
+  const d = await getDigest();
+  delete _etCache[listTitle];
+  const url = spListUrl(listTitle, "/fields/getbyinternalnameortitle('" + fieldInternalName + "')");
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { ...ODATA_POST_HEADERS, 'X-RequestDigest': d, 'X-HTTP-Method': 'MERGE', 'If-Match': '*' },
+    credentials: 'include',
+    body: JSON.stringify({
+      __metadata: { type: 'SP.FieldChoice' },
+      Choices: { __metadata: { type: 'Collection(Edm.String)' }, results: choices },
+    }),
+  });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => '');
+    throw new Error('選択肢の更新失敗: ' + r.status + (txt ? ' — ' + extractSpErrorDetail(txt) : ''));
+  }
+}
+
 /** Hard-delete a column from an SP list. Used to dedupe columns that
  *  past code paths added more than once (the SP REST `/fields` POST does
  *  not enforce display-name uniqueness — duplicates get auto-numbered

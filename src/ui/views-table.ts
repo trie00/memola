@@ -18,7 +18,7 @@ import {
 import { recordCellChange, recordRowOrderChange, recordColOrderChange, deleteRowWithUndo } from './db-history';
 import { renderBulkBar } from './db-bulk';
 import {
-  getDbColors, gcDbColors, cellOverlay, setColColor, openColorPalette,
+  getDbColors, gcDbColors, cellOverlay,
 } from './db-view-colors';
 import type { DbColorMap } from '../lib/prefs';
 
@@ -160,35 +160,16 @@ export function renderDbTable(): void {
     headerSpan.className = 'memola-th-label';
     headerSpan.innerHTML = f.Title + (isSorted ? '<span class="sort-arrow">' + (S.dbSort.asc ? '▲' : '▼') + '</span>' : '');
     th.appendChild(headerSpan);
-    // Column colour (view-level overlay) — hover-revealed 🎨 in the header.
-    const colorBtn = document.createElement('button');
-    colorBtn.className = 'memola-th-color';
-    colorBtn.title = '列の色';
-    colorBtn.textContent = '🎨';
-    colorBtn.draggable = false;
-    colorBtn.addEventListener('mousedown', (e) => { e.preventDefault(); e.stopPropagation(); });
-    colorBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const r = colorBtn.getBoundingClientRect();
-      openColorPalette(r.left, r.bottom + 4, (color) => {
-        setColColor(S.dbList, f.InternalName, color);
-        renderDbTable();
-      });
-    });
-    th.appendChild(colorBtn);
     th.dataset.field = f.InternalName;
     th.dataset.colIdx = String(idx);
     th.draggable = true;            // ← columns are drag-reorderable
     const savedW = S.dbColumnWidths[f.InternalName];
     if (savedW) th.style.width = savedW + 'px';
-    headerSpan.addEventListener('click', () => {
-      if (S.dbSort.field === f.InternalName) {
-        S.dbSort.asc = !S.dbSort.asc;
-      } else {
-        S.dbSort.field = f.InternalName;
-        S.dbSort.asc = true;
-      }
-      renderDbTable();
+    // 列ヘッダのクリック → Notion 風の列操作メニュー(並べ替え/フィルター/選択肢追加/削除)。
+    headerSpan.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const r = headerSpan.getBoundingClientRect();
+      void import('./col-menu').then((m) => m.openColumnMenu(f, r.left, r.bottom + 4));
     });
     // ── Column drag-reorder ─────────────────────────────
     th.addEventListener('dragstart', (e) => {

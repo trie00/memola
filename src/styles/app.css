@@ -4171,6 +4171,12 @@
 #memola-overlay #memola-update-bar span{flex:1;min-width:0}
 #memola-overlay #memola-update-bar button{flex:0 0 auto;border:0;border-radius:6px;cursor:pointer;font:inherit;font-size:var(--fs-sm);font-weight:600;padding:4px 10px;background:#fff;color:var(--accent-strong,#5e6f5c)}
 #memola-overlay #memola-update-bar #memola-update-dismiss{background:transparent;color:#fff;padding:2px 6px;font-size:16px}
+/* DB 列ヘッダのクリックメニュー(Notion 風) */
+#memola-overlay .memola-colmenu{position:fixed;z-index:2147483646;min-width:200px;background:var(--paper,#fff);border:1px solid var(--paper-3,#e8e4d8);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.16);padding:4px;font-size:var(--fs-sm)}
+#memola-overlay .memola-colmenu-item{padding:7px 10px;border-radius:6px;cursor:pointer;color:var(--ink,#2a2a26);white-space:nowrap}
+#memola-overlay .memola-colmenu-item:hover{background:var(--paper-2,#f3f1ea)}
+#memola-overlay .memola-colmenu-item.danger{color:var(--danger,#b8534a)}
+#memola-overlay .memola-colmenu-sep{height:1px;background:var(--paper-3,#e8e4d8);margin:4px 0}
 #memola-overlay #memola-tabstrip::-webkit-scrollbar{height:0}
 #memola-overlay .memola-tab{display:flex;align-items:center;gap:6px;max-width:200px;min-width:96px;padding:0 4px 0 10px;border-radius:7px 7px 0 0;cursor:pointer;color:var(--ink-3);font-size:var(--fs-sm);border:1px solid transparent;border-bottom:none;height:30px}
 #memola-overlay .memola-tab:hover{background:var(--paper-3)}

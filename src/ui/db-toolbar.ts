@@ -3,7 +3,6 @@
 // group placeholder, and the filter-popover trigger.
 
 import { g } from './dom';
-import { toast } from './ui-helpers';
 import { renderKanban } from './views';
 import { exportCsv, importCsv } from './csv-io';
 import { doNewDbRow } from './actions';
@@ -32,9 +31,6 @@ export function attachDbToolbar(): void {
   g('db-csv-export').addEventListener('click', exportCsv);
   g('db-csv-import').addEventListener('click', importCsv);
   document.getElementById('memola-db-new-row')?.addEventListener('click', doNewDbRow);
-  document.getElementById('memola-db-group-btn')?.addEventListener('click', () => {
-    toast('グループ機能は今後実装予定');
-  });
   g('dbv-table').addEventListener('click', () => setDbView('table'));
   g('dbv-board').addEventListener('click', () => setDbView('board'));
   g('dbv-list').addEventListener('click', () => setDbView('list'));
@@ -42,10 +38,6 @@ export function attachDbToolbar(): void {
   g('dbv-calendar').addEventListener('click', () => setDbView('calendar'));
   g('dbv-gantt').addEventListener('click', () => setDbView('gantt'));
 
-  // Filter-field popover (the inline picker)
-  g('db-filter-btn').addEventListener('click', (e) => {
-    e.stopPropagation();
-    void import('./filter-ui').then((m) => m.showFilterPopover());
-  });
+  // フィルターは列ヘッダのメニューから開く(ツールバーの＋フィルターは廃止)。
   void import('./filter-ui').then((m) => m.attachFilterPopoverOutsideClick());
 }
