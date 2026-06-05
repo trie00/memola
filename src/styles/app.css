@@ -3276,7 +3276,7 @@
 #memola-dv { flex: 1; display: none; flex-direction: column; overflow-y: auto; }
 #memola-dv-inner {
   width: 100%; max-width: 1200px; margin: 0 auto;
-  display: flex; flex-direction: column; flex: 1; min-height: 0;
+  display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0;
   padding: 48px 40px 0;
 }
 #memola-dv-hd, #memola-db-views, #memola-db-tb, #memola-filter-bar {
@@ -3422,7 +3422,9 @@
 }
 
 /* ── DB Table (Notion風: 縦罫線なし・横は控えめ・タイトル列は太字) ── */
-#memola-dt-wrap { flex: 1; overflow: auto; padding: 0; }
+/* min-width:0 が無いと flex 既定の min-width:auto で中の広いテーブルに押し広げられ、
+   横スクロールにならず画面外にはみ出す。0 にして wrap 内で横スクロールさせる。 */
+#memola-dt-wrap { flex: 1; overflow: auto; padding: 0; min-width: 0; }
 #memola-dt {
   /* 列が多くて入りきらない時は縮めず、内容幅(列幅の合計)まで広げて
      #memola-dt-wrap の横スクロールで見せる。少ない時は 100% に伸ばす。 */
