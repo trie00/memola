@@ -50,29 +50,12 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
   menu.append(
     item('↑ 昇順で並べ替え', () => { S.dbSort.field = field.InternalName; S.dbSort.asc = true; void reRender(); }),
     item('↓ 降順で並べ替え', () => { S.dbSort.field = field.InternalName; S.dbSort.asc = false; void reRender(); }),
-    item('フィルター', () => { void import('./filter-ui').then((m) => m.showFilterPopover()); }),
+    item('フィルター', () => { void import('./filter-ui').then((m) => m.addFilterForField(field.InternalName)); }),
   );
 
-  // Choice 列: 選択肢を追加
+  // Choice 列: 選択肢の編集(追加/改名/削除/色)を1つのエディタに集約。
   if (field.FieldTypeKind === 6) {
-    menu.append(item('＋ 選択項目を追加', () => {
-      const v = (prompt('追加する選択肢を入力') || '').trim();
-      if (!v) return;
-      const choices = [...(field.Choices || [])];
-      if (choices.includes(v)) { toast('同じ選択肢が既にあります'); return; }
-      choices.push(v);
-      void (async () => {
-        try {
-          setLoad(true, '選択肢を追加中...');
-          const { updateListFieldChoices } = await import('../api/sp-list');
-          await updateListFieldChoices(S.dbList, field.InternalName, choices);
-          await reloadDb();
-          toast('選択肢を追加しました', 'ok');
-        } catch (e) { toast('選択肢の追加に失敗: ' + (e as Error).message, 'err'); }
-        finally { setLoad(false); }
-      })();
-    }));
-    menu.append(item('🎨 タグの色を変更', () => openTagColorMenu(field, x, y)));
+    menu.append(item('選択肢を編集', () => openOptionsEditor(field, x, y)));
   }
 
   menu.append(sep(), item('🗑 列を削除', () => {
@@ -100,54 +83,118 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
   _menu = menu;
 }
 
-/** 選択肢ごとのタグ色変更メニュー。各選択肢の行をクリック → カラーパレットで色指定。 */
-function openTagColorMenu(field: ListField, x: number, y: number): void {
+// 未指定の選択肢に割り当たるプリセット色(memola-sc-0..5 と同じ)。
+const SC_COLORS = ['#e8e4d8', '#dde6dc', '#dce2e6', '#e8dccf', '#f0d8d2', '#f0e3ef'];
+
+/** Notion 風の選択肢エディタ: 追加 / 改名 / 削除 / 色(デフォルト色も表示)。
+ *  画面上部の白枠入力ボックス(列追加モーダル)は使わず、この場で完結。 */
+function openOptionsEditor(field: ListField, x: number, y: number): void {
   closeColumnMenu();
   const overlay = document.getElementById('memola-overlay');
   if (!overlay) return;
   const menu = document.createElement('div');
-  menu.className = 'memola-colmenu';
+  menu.className = 'memola-colmenu memola-optedit';
   menu.style.left = Math.round(x) + 'px';
   menu.style.top = Math.round(y) + 'px';
+
+  const choices = [...(field.Choices || [])];
+  const colKey = (opt: string): string => SC_COLORS[Math.max(0, choices.indexOf(opt)) % 6];
 
   const hdr = document.createElement('div');
   hdr.className = 'memola-colmenu-item';
   hdr.style.cssText = 'font-weight:600;color:var(--ink-3);cursor:default';
-  hdr.textContent = 'タグの色を変更';
+  hdr.textContent = '選択肢を編集';
   menu.appendChild(hdr);
   menu.appendChild(Object.assign(document.createElement('div'), { className: 'memola-colmenu-sep' }));
 
   void (async () => {
-    const [{ getTagColor, setTagColor }, { openColorPalette }] = await Promise.all([
-      import('./tag-colors'), import('./db-view-colors'),
-    ]);
-    for (const opt of (field.Choices || [])) {
+    const [{ getTagColor, setTagColor }, { openColorPalette }, { updateListFieldChoices }, { apiUpdateDbRow }] =
+      await Promise.all([import('./tag-colors'), import('./db-view-colors'), import('../api/sp-list'), import('../api/db')]);
+    const dataKey = field.Title || field.InternalName;
+
+    // 構造変更後: SP の選択肢を更新 → DB を開き直してエディタを再表示。
+    const commit = async (next: string[], migrate?: () => Promise<void>): Promise<void> => {
+      try {
+        setLoad(true, '選択肢を更新中...');
+        if (migrate) await migrate();
+        await updateListFieldChoices(S.dbList, field.InternalName, next);
+        await reloadDb();
+        const fresh = S.dbFields.find((f) => f.InternalName === field.InternalName);
+        if (fresh) openOptionsEditor(fresh, x, y);   // 最新の選択肢で再表示
+      } catch (e) { toast('選択肢の更新に失敗: ' + (e as Error).message, 'err'); }
+      finally { setLoad(false); }
+    };
+    const rowsWithVal = (v: string): Array<{ Id: number }> =>
+      S.dbItems.filter((it) => (it[field.InternalName] as string) === v) as Array<{ Id: number }>;
+
+    for (const opt of choices) {
       const row = document.createElement('div');
-      row.className = 'memola-colmenu-item';
-      row.style.cssText = 'display:flex;align-items:center;gap:8px';
-      const sw = document.createElement('span');
-      const cur = getTagColor(S.dbList, field.InternalName, opt);
-      sw.style.cssText = 'width:14px;height:14px;border-radius:4px;flex:0 0 auto;border:1px solid rgba(0,0,0,.15);background:' + (cur || '#e8e4d8');
-      const lbl = document.createElement('span'); lbl.textContent = opt; lbl.style.flex = '1';
-      row.append(sw, lbl);
-      row.addEventListener('click', (e) => {
+      row.className = 'memola-optedit-row';
+      // 色スウォッチ(上書き色 or デフォルト色)
+      const sw = document.createElement('button');
+      sw.className = 'memola-optedit-sw';
+      sw.title = '色を変更';
+      sw.style.background = getTagColor(S.dbList, field.InternalName, opt) || colKey(opt);
+      sw.addEventListener('click', (e) => {
         e.stopPropagation();
-        const r = row.getBoundingClientRect();
+        const r = sw.getBoundingClientRect();
         openColorPalette(r.right + 4, r.top, (color) => {
           setTagColor(S.dbList, field.InternalName, opt, color);
+          sw.style.background = color || colKey(opt);
           void reRender();
-          // 反映後、スウォッチを更新
-          sw.style.background = color || '#e8e4d8';
         });
       });
+      // 改名(テキスト入力)
+      const inp = document.createElement('input');
+      inp.className = 'memola-optedit-inp';
+      inp.value = opt;
+      const rename = (): void => {
+        const nv = inp.value.trim();
+        if (!nv || nv === opt) { inp.value = opt; return; }
+        if (choices.includes(nv)) { toast('同じ選択肢が既にあります'); inp.value = opt; return; }
+        const next = choices.map((c) => (c === opt ? nv : c));
+        void commit(next, async () => {
+          // 既存行の値を改名先へ移行 + タグ色キーを引き継ぎ
+          for (const it of rowsWithVal(opt)) await apiUpdateDbRow(S.dbList, it.Id, { [dataKey]: nv });
+          const ov = getTagColor(S.dbList, field.InternalName, opt);
+          if (ov) { setTagColor(S.dbList, field.InternalName, nv, ov); setTagColor(S.dbList, field.InternalName, opt, ''); }
+        });
+      };
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } });
+      inp.addEventListener('blur', rename);
+      // 削除
+      const del = document.createElement('button');
+      del.className = 'memola-optedit-del';
+      del.textContent = '×'; del.title = '削除';
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!confirm(`選択肢「${opt}」を削除しますか？(この選択肢の値は空になります)`)) return;
+        const next = choices.filter((c) => c !== opt);
+        void commit(next, async () => {
+          for (const it of rowsWithVal(opt)) await apiUpdateDbRow(S.dbList, it.Id, { [dataKey]: '' });
+          setTagColor(S.dbList, field.InternalName, opt, '');
+        });
+      });
+      row.append(sw, inp, del);
       menu.appendChild(row);
     }
-    if (!(field.Choices || []).length) {
-      const empty = document.createElement('div');
-      empty.className = 'memola-colmenu-item'; empty.style.color = 'var(--ink-3)'; empty.style.cursor = 'default';
-      empty.textContent = '選択肢がありません';
-      menu.appendChild(empty);
-    }
+
+    // 追加行
+    menu.appendChild(Object.assign(document.createElement('div'), { className: 'memola-colmenu-sep' }));
+    const addRow = document.createElement('div');
+    addRow.className = 'memola-optedit-row';
+    const addInp = document.createElement('input');
+    addInp.className = 'memola-optedit-inp';
+    addInp.placeholder = '＋ 新しい選択肢';
+    const doAdd = (): void => {
+      const v = addInp.value.trim();
+      if (!v) return;
+      if (choices.includes(v)) { toast('同じ選択肢が既にあります'); return; }
+      void commit([...choices, v]);
+    };
+    addInp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
+    addRow.appendChild(addInp);
+    menu.appendChild(addRow);
   })();
 
   overlay.appendChild(menu);

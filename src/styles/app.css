@@ -4177,6 +4177,15 @@
 #memola-overlay .memola-colmenu-item:hover{background:var(--paper-2,#f3f1ea)}
 #memola-overlay .memola-colmenu-item.danger{color:var(--danger,#b8534a)}
 #memola-overlay .memola-colmenu-sep{height:1px;background:var(--paper-3,#e8e4d8);margin:4px 0}
+/* 選択肢エディタ(行: 色スウォッチ + 改名入力 + 削除) */
+#memola-overlay .memola-optedit{min-width:240px}
+#memola-overlay .memola-optedit-row{display:flex;align-items:center;gap:8px;padding:3px 6px}
+#memola-overlay .memola-optedit-sw{flex:0 0 auto;width:16px;height:16px;border-radius:4px;border:1px solid rgba(0,0,0,.15);cursor:pointer;padding:0}
+#memola-overlay .memola-optedit-inp{flex:1;min-width:0;border:1px solid transparent;border-radius:5px;padding:4px 6px;font:inherit;font-size:var(--fs-sm);background:transparent;color:var(--ink,#2a2a26);outline:none}
+#memola-overlay .memola-optedit-inp:hover{background:var(--paper-2,#f3f1ea)}
+#memola-overlay .memola-optedit-inp:focus{background:var(--paper,#fff);border-color:var(--accent,#7a8a78)}
+#memola-overlay .memola-optedit-del{flex:0 0 auto;width:20px;height:20px;border:0;background:transparent;color:var(--ink-4,#a8a39a);cursor:pointer;border-radius:4px;font-size:15px;line-height:1}
+#memola-overlay .memola-optedit-del:hover{background:rgba(0,0,0,.08);color:var(--danger,#b8534a)}
 #memola-overlay #memola-tabstrip::-webkit-scrollbar{height:0}
 #memola-overlay .memola-tab{display:flex;align-items:center;gap:6px;max-width:200px;min-width:96px;padding:0 4px 0 10px;border-radius:7px 7px 0 0;cursor:pointer;color:var(--ink-3);font-size:var(--fs-sm);border:1px solid transparent;border-bottom:none;height:30px}
 #memola-overlay .memola-tab:hover{background:var(--paper-3)}

@@ -101,6 +101,21 @@ function makeValueEditor(
   return inp;
 }
 
+/** 列メニューから呼ぶ: その列のフィルター条件を追加してチップにフォーカス。
+ *  (＋フィルターボタンは廃止したので、これが列単位フィルターの入口) */
+export function addFilterForField(internalName: string): void {
+  if (!S.dbFilters.some((f) => f.field === internalName)) {
+    S.dbFilters.push({ field: internalName, op: 'contains', value: '' });
+  }
+  renderFilterChips();
+  renderDbTable();
+  setTimeout(() => {
+    const wrap = getEl('memola-filter-chips');
+    const chips = wrap?.querySelectorAll<HTMLElement>('.memola-flt-chip-val');
+    if (chips && chips.length > 0) chips[chips.length - 1].focus();
+  }, 50);
+}
+
 export function showFilterPopover(): void {
   const popMaybe = getEl('memola-filter-popover');
   const btn = getEl('memola-db-filter-btn');
