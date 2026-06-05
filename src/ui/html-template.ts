@@ -85,7 +85,7 @@ export function buildHtml(): string {
         '<button id="memola-nav-fwd" class="memola-nav-btn disabled" title="進む (Ctrl+])" disabled>' + ICONS.chevronRight + '</button>' +
         '<div id="memola-tabstrip"></div>' +
         // タブ列の右端: 再読み込み(丸矢印) + 設定(歯車)
-        '<button id="memola-reload-btn" class="memola-tabbar-act" title="再読み込み（一覧＋表示中のページ）">' + ICONS.refresh + '</button>' +
+        '<button id="memola-reload-btn" class="memola-tabbar-act" title="再読み込み（一覧＋表示中のページ）＋新バージョン確認">' + ICONS.refresh + '</button>' +
         '<button id="memola-settings-btn" class="memola-tabbar-act" title="設定">' + ICONS.gear + '</button>' +
       '</div>' +
       // ── 2段目: パンくず(親>タイトル) / スコープ / 公開 / 各ボタン ──

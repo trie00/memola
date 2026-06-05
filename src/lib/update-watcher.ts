@@ -41,17 +41,28 @@ function showBanner(remote: string): void {
   bar.querySelector('#memola-update-dismiss')?.addEventListener('click', () => { bar.remove(); });
 }
 
-async function checkOnce(): Promise<void> {
+async function checkOnce(): Promise<boolean> {
   const base = bundleBase();
-  if (!base) return;
+  if (!base) return false;
   const cur = currentVersion();
-  if (!cur) return;
+  if (!cur) return false;
   try {
     const r = await fetch(base + '/version.txt?t=' + Date.now(), { credentials: 'same-origin', cache: 'no-cache' });
-    if (!r.ok) return;
+    if (!r.ok) return false;
     const remote = (await r.text()).trim();
-    if (remote && remote !== cur) showBanner(remote);
+    if (remote && remote !== cur) { showBanner(remote); return true; }
   } catch { /* リレー未起動 / オフライン → 無視 */ }
+  return false;
+}
+
+/** 手動チェック(右上の更新ボタン等)。新版があればバナー表示、announce 指定時は
+ *  最新ならトーストで知らせる。 */
+export async function checkForUpdateNow(opts: { announce?: boolean } = {}): Promise<void> {
+  const found = await checkOnce();
+  if (!found && opts.announce) {
+    const { toast } = await import('../ui/ui-helpers');
+    toast('最新バージョンです (' + currentVersion() + ')');
+  }
 }
 
 /** 定期チェック開始(冪等)。 */

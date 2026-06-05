@@ -81,6 +81,8 @@ async function doReload(): Promise<void> {
       else await doSelect(id);
     }
     toast('再読み込みしました');
+    // 新規バージョンの確認も行う(新版ならバナー / 最新ならトースト)。
+    void import('../lib/update-watcher').then((m) => m.checkForUpdateNow({ announce: true }));
   } catch (e) { toast('再読み込み失敗: ' + (e as Error).message, 'err'); }
   finally { setLoad(false); }
 }
