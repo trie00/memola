@@ -96,6 +96,8 @@ export async function openRowAsPage(dbId: string, item: ListItem): Promise<void>
     const target = m.currentCommentTarget();
     if (target) void m.loadCommentsFor(target.pageId, target.scope);
   });
+  // タブ: アクティブタブの中身をこの行(DB行/デイリーノート)に差し替える。
+  void import('./tabs').then((m) => m.openRowInActiveTab(dbId, item.Id, (item.Title as string) || '無題'));
 }
 
 /** Save the row's title (DB list) + body (memola-pages). */

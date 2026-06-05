@@ -80,9 +80,12 @@ export interface ListItem {
  *  `kind:'search'` is a cross-document chat session (searchId). */
 export interface Tab {
   tabId: string;
-  kind: 'page' | 'search';
+  kind: 'page' | 'search' | 'row';
   pageId?: string;   // kind='page'
   searchId?: string; // kind='search'
+  // kind='row' (DB 行 / デイリーノートの個別ページ): 親DBの pageId + 行 ID
+  rowDbId?: string;
+  rowId?: number;
   title: string;
 }
 

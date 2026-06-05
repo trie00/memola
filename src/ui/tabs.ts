@@ -35,6 +35,7 @@ function recordActivation(tabId: string | null): void {
 /** タブのタイトルを最新化(ページ名の変更/削除に追従)。 */
 function tabTitle(t: Tab): string {
   if (t.kind === 'search') return t.title || '横断チャット';
+  if (t.kind === 'row') return t.title || '無題';
   if (t.pageId) {
     const m = metaById(t.pageId);
     if (m) return m.title || '無題';
@@ -61,6 +62,29 @@ export function openInActiveTab(pageId: string, title: string): void {
   } else {
     tab.kind = 'page';
     tab.pageId = pageId;
+    tab.searchId = undefined;
+    tab.rowDbId = undefined;
+    tab.rowId = undefined;
+    tab.title = title;
+  }
+  renderTabs();
+  persist();
+}
+
+/** openRowAsPage から呼ばれ、アクティブタブの中身を DB 行(デイリーノート含む)に
+ *  差し替える。アクティブが検索/無しなら新規タブ。 */
+export function openRowInActiveTab(dbId: string, rowId: number, title: string): void {
+  let tab = activeTab();
+  if (!tab || tab.kind === 'search') {
+    tab = { tabId: genTabId(), kind: 'row', rowDbId: dbId, rowId, title };
+    S.tabs.push(tab);
+    S.activeTabId = tab.tabId;
+    recordActivation(tab.tabId);
+  } else {
+    tab.kind = 'row';
+    tab.rowDbId = dbId;
+    tab.rowId = rowId;
+    tab.pageId = undefined;
     tab.searchId = undefined;
     tab.title = title;
   }
@@ -100,6 +124,17 @@ export async function activateTab(tabId: string): Promise<void> {
   const x = await import('./xchat');
   if (tab.kind === 'search') {
     x.showSearchTab(tab.searchId || x.newSearchId());
+    return;
+  }
+  // 行タブ(DB行/デイリーノート): 親DBを開いて行を再オープン(nav-history と同方式)。
+  if (tab.kind === 'row') {
+    x.hideSearchTab();
+    if (tab.rowDbId && tab.rowId != null) {
+      const { doSelect } = await import('./views');
+      await doSelect(tab.rowDbId);
+      const row = S.dbItems.find((it) => it.Id === tab.rowId);
+      if (row) { const rp = await import('./row-page'); await rp.openRowAsPage(tab.rowDbId, row); }
+    }
     return;
   }
   // ページタブ: 検索パネルを隠してからページを表示。
@@ -177,6 +212,7 @@ export function renderTabs(): void {
     const ic = document.createElement('span');
     ic.className = 'memola-tab-ic';
     if (t.kind === 'search') ic.innerHTML = ICONS.chat;
+    else if (t.kind === 'row') ic.textContent = '📄';
     else {
       const m = t.pageId ? metaById(t.pageId) : null;
       ic.textContent = m?.icon || (m?.type === 'database' ? '🗂' : '📄');
@@ -207,11 +243,15 @@ export async function restoreTabs(fallbackPageId: string | null): Promise<void> 
   const savedTabs = (saved?.tabs as Tab[] | undefined) || [];
   // page タブは存在するページのみ残す(削除済みは捨てる)。search タブは保持。
   const valid = savedTabs.filter((t) =>
-    t && ((t.kind === 'page' && t.pageId && metaById(t.pageId)) || (t.kind === 'search' && t.searchId)));
+    t && ((t.kind === 'page' && t.pageId && metaById(t.pageId))
+      || (t.kind === 'search' && t.searchId)
+      || (t.kind === 'row' && t.rowDbId && metaById(t.rowDbId) && t.rowId != null)));
   if (valid.length) {
     S.tabs = valid.map((t) => t.kind === 'search'
       ? { tabId: t.tabId || genTabId(), kind: 'search', searchId: t.searchId, title: t.title || '横断チャット' }
-      : { tabId: t.tabId || genTabId(), kind: 'page', pageId: t.pageId, title: t.title || '' });
+      : t.kind === 'row'
+        ? { tabId: t.tabId || genTabId(), kind: 'row', rowDbId: t.rowDbId, rowId: t.rowId, title: t.title || '無題' }
+        : { tabId: t.tabId || genTabId(), kind: 'page', pageId: t.pageId, title: t.title || '' });
     const activeOk = S.tabs.some((t) => t.tabId === saved?.active);
     S.activeTabId = activeOk ? saved!.active : S.tabs[0].tabId;
     // アクティブ化履歴を復元(順序＝タブ列、アクティブを最後に)。閉じたときの戻り先用。
