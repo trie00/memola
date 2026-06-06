@@ -6,14 +6,34 @@ import { S } from '../state';
 import { prefDbFormulas, type DbFormulaDef } from '../lib/prefs';
 import { checkFormula } from '../lib/formula';
 import { setLoad } from './ui-helpers';
+import { loadDbConfig, patchDbConfig } from '../api/db-config';
+
+// 数式定義は SharePoint 共有(memola-db-config)に保存。描画は同期で行うため
+// 開いた DB の定義はメモリにキャッシュし、変更時に SP へ非同期保存する。
+const _cache = new Map<string, DbFormulaDef[]>();
+
+/** DB を開いた時に呼ぶ: 共有設定から数式定義を読み込みキャッシュ。
+ *  旧ローカル(localStorage)に定義が残っていて共有側が空なら一度だけ移行する。 */
+export async function loadFormulas(listTitle: string): Promise<void> {
+  try {
+    const cfg = await loadDbConfig(listTitle);
+    let defs = cfg.formulas || [];
+    const local = prefDbFormulas.get()[listTitle];
+    if (!defs.length && local && local.length) {
+      defs = local;                                   // ローカル→共有へ移行
+      await patchDbConfig(listTitle, { formulas: defs }).catch(() => undefined);
+    }
+    _cache.set(listTitle, defs);
+  } catch { _cache.set(listTitle, _cache.get(listTitle) || []); }
+}
 
 export function listFormulas(listTitle: string): DbFormulaDef[] {
-  return prefDbFormulas.get()[listTitle] || [];
+  return _cache.get(listTitle) || [];
 }
 function save(listTitle: string, defs: DbFormulaDef[]): void {
-  const all = prefDbFormulas.get();
-  if (defs.length) all[listTitle] = defs; else delete all[listTitle];
-  prefDbFormulas.set(all);
+  _cache.set(listTitle, defs);
+  // 共有保存(非同期・ベストエフォート)。UI はキャッシュで即時反映。
+  void patchDbConfig(listTitle, { formulas: defs }).catch(() => undefined);
 }
 function newId(): string { return 'f' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36); }
 
