@@ -15,6 +15,7 @@ export function attachColumnModal(): void {
   _attached = true;
 
   let typeKind = 2;
+  let typeTk = '2';            // 生の data-tk('formula' 等の擬似タイプも保持)
   const colGrid = document.getElementById('memola-col-type-grid');
   if (colGrid) {
     const tiles = Array.from(colGrid.querySelectorAll<HTMLDivElement>('.memola-col-type'));
@@ -23,7 +24,8 @@ export function attachColumnModal(): void {
       tile.addEventListener('click', () => {
         tiles.forEach((t) => t.classList.remove('on'));
         tile.classList.add('on');
-        typeKind = parseInt(tile.dataset.tk || '2');
+        typeTk = tile.dataset.tk || '2';
+        typeKind = parseInt(typeTk);      // 'formula' は NaN(下で分岐するので未使用)
         // Show the choices textarea only for Choice (6) / Lookup (15)
         g('col-choices-row').classList.toggle('on', typeKind === 6 || typeKind === 15);
       });
@@ -37,6 +39,18 @@ export function attachColumnModal(): void {
   g('col-ok').addEventListener('click', async () => {
     const name = (g('col-name') as HTMLInputElement).value.trim();
     if (!name) { g('col-name').focus(); return; }
+    // 「数式」は SP 列ではなくクライアント側の数式列 → 数式エディタを開く。
+    if (typeTk === 'formula') {
+      g('col-md').classList.remove('on');
+      const r = (g('col-ok') as HTMLElement).getBoundingClientRect();
+      const m = await import('./db-formulas');
+      m.openFormulaEditor(S.dbList, null, r.left, r.bottom + 4, () => {
+        renderDbTable();
+        const w = document.getElementById('memola-dt-wrap');
+        if (w) w.scrollLeft = w.scrollWidth;
+      }, name);
+      return;
+    }
     let choices: string[] = [];
     if (typeKind === 6 || typeKind === 15) {
       const raw = (g('col-choices') as HTMLTextAreaElement).value.trim();

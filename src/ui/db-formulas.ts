@@ -37,8 +37,9 @@ export function deleteFormula(listTitle: string, id: string): void {
 let _pop: HTMLElement | null = null;
 export function closeFormulaEditor(): void { if (_pop) { _pop.remove(); _pop = null; } }
 
-/** 数式列の作成/編集。def=null で新規。保存/削除後に reload を呼ぶ。 */
-export function openFormulaEditor(listTitle: string, def: DbFormulaDef | null, x: number, y: number, reload: () => void): void {
+/** 数式列の作成/編集。def=null で新規。保存/削除後に reload を呼ぶ。
+ *  initialName: 新規時の列名プリセット(＋モーダルから来た場合)。 */
+export function openFormulaEditor(listTitle: string, def: DbFormulaDef | null, x: number, y: number, reload: () => void, initialName?: string): void {
   closeFormulaEditor();
   const overlay = document.getElementById('memola-overlay') || document.body;
   const pop = document.createElement('div');
@@ -56,7 +57,7 @@ export function openFormulaEditor(listTitle: string, def: DbFormulaDef | null, x
   const nameInp = document.createElement('input');
   nameInp.className = 'memola-formula-name';
   nameInp.placeholder = '列名';
-  nameInp.value = def?.name || '';
+  nameInp.value = def?.name || initialName || '';
 
   const exprTa = document.createElement('textarea');
   exprTa.className = 'memola-formula-expr';
