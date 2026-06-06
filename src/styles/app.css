@@ -3580,6 +3580,26 @@
 }
 #memola-dt th.memola-th-add:hover { opacity: 1; color: var(--ink); background: var(--paper-2); }
 #memola-dt th.memola-th-del, #memola-dt td.memola-td-del { width: 32px; padding: 0; }
+/* 数式列(読み取り専用) */
+#memola-overlay #memola-dt th.memola-th-formula { width: 160px; background: var(--paper); }
+#memola-overlay #memola-dt th.memola-th-formula .memola-th-label { color: var(--ink-3); font-style: italic; }
+#memola-overlay #memola-dt td.memola-td-formula { background: var(--paper-2, #f3f1ea); }
+#memola-overlay .memola-dc-formula { display: block; padding: 0 14px; height: 40px; line-height: 40px; white-space: nowrap; overflow: hidden; font-size: var(--fs-sm); color: var(--ink-2, #4a463f); }
+/* 数式エディタ */
+#memola-overlay .memola-formula-pop { min-width: 340px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+#memola-overlay .memola-formula-name {
+  border: 1px solid var(--paper-3); border-radius: 6px; padding: 6px 8px; font: inherit; font-size: var(--fs-sm);
+  background: var(--paper); color: var(--ink); outline: none;
+}
+#memola-overlay .memola-formula-name:focus { border-color: var(--accent); }
+#memola-overlay .memola-formula-expr {
+  border: 1px solid var(--paper-3); border-radius: 6px; padding: 6px 8px; font-family: var(--font-mono, monospace);
+  font-size: 13px; background: var(--paper); color: var(--ink); outline: none; resize: vertical; min-height: 56px;
+}
+#memola-overlay .memola-formula-expr:focus { border-color: var(--accent); }
+#memola-overlay .memola-formula-err { color: var(--danger, #b8534a); font-size: var(--fs-xs); }
+#memola-overlay .memola-formula-help { color: var(--ink-4); font-size: var(--fs-xs); line-height: 1.5; }
+#memola-overlay .memola-formula-acts { display: flex; gap: 8px; justify-content: flex-end; }
 
 /* ── Row selection checkbox (Notion-style hover-reveal) ── */
 #memola-dt th.memola-th-cb, #memola-dt td.memola-td-cb,

@@ -32,6 +32,10 @@ export function attachDbToolbar(): void {
   g('db-csv-export').addEventListener('click', exportCsv);
   g('db-csv-import').addEventListener('click', importCsv);
   document.getElementById('memola-db-new-row')?.addEventListener('click', doNewDbRow);
+  document.getElementById('memola-db-add-formula')?.addEventListener('click', (e) => {
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    void import('./db-formulas').then((m) => m.openNewFormula(r.left, r.bottom + 4));
+  });
 
   // フィルターは列ヘッダのメニューから開く(ツールバーの＋フィルターは廃止)。
   void import('./filter-ui').then((m) => m.attachFilterPopoverOutsideClick());

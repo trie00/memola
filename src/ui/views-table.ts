@@ -22,13 +22,16 @@ import {
 } from './db-view-colors';
 import { getView } from './db-views-model';
 import { resolveTagColor } from './tag-colors';
-import type { DbColorRule } from '../lib/prefs';
+import { listFormulas } from './db-formulas';
+import { evalFormula, formatFormulaValue } from '../lib/formula';
+import type { DbColorRule, DbFormulaDef } from '../lib/prefs';
 import type { DbColorMap } from '../lib/prefs';
 
 /** View-level colour overlay for the current render pass. Set at the top of
  *  renderDbTable so mkDbRow / header can read it without re-parsing prefs. */
 let _renderColors: DbColorMap = {};
 let _renderRules: DbColorRule[] = [];
+let _renderFormulas: DbFormulaDef[] = [];
 
 export function getDbFields(): ListField[] {
   // 2=text, 3=multiline, 4=date, 6=choice, 8=bool, 9=number
@@ -130,6 +133,7 @@ export function renderDbTable(): void {
   _renderColors = getDbColors(S.dbList, S.dbViewId);
   gcDbColors(S.dbList, S.dbViewId, S.dbItems.map((it) => it.Id));
   _renderRules = getView(S.dbList, S.dbViewId).rules || [];
+  _renderFormulas = listFormulas(S.dbList);
 
   // Reflect "any-selected" mode on the table so CSS can switch to always-show
   const dt = g('dt');
@@ -246,6 +250,24 @@ export function renderDbTable(): void {
     thead.appendChild(th);
   });
 
+  // 数式列ヘッダ(データ列の後ろ・読み取り専用)。クリックで式エディタ。
+  _renderFormulas.forEach((def) => {
+    const th = document.createElement('th');
+    th.className = 'memola-th-formula';
+    th.dataset.formulaId = def.id;
+    const span = document.createElement('span');
+    span.className = 'memola-th-label';
+    span.textContent = 'ƒ ' + def.name;
+    span.title = def.expr;
+    span.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const r = span.getBoundingClientRect();
+      void import('./db-formulas').then((m) => m.openFormulaEditor(S.dbList, def, r.left, r.bottom + 4, () => renderDbTable()));
+    });
+    th.appendChild(span);
+    thead.appendChild(th);
+  });
+
   // Delete column header (icon column)
   const thDel = document.createElement('th'); thDel.className = 'memola-th-del'; thead.appendChild(thDel);
   // "+" column right after the data columns
@@ -278,7 +300,8 @@ export function renderDbTable(): void {
   // 明示し、CSS の min-width:100% と併用 → 広い時は溢れて wrap 内を横スクロール、
   // 狭い時は 100% に伸びて spacer が余白を吸収。
   const CB_W = 24, DEL_W = 32, ADD_W = 36, DEF_COL_W = 160;
-  const fieldsW = fields.reduce((s, f) => s + (S.dbColumnWidths[f.InternalName] || DEF_COL_W), 0);
+  const fieldsW = fields.reduce((s, f) => s + (S.dbColumnWidths[f.InternalName] || DEF_COL_W), 0)
+    + _renderFormulas.length * DEF_COL_W;
   dt.style.width = (CB_W + DEL_W + ADD_W + fieldsW) + 'px';
 }
 
@@ -580,6 +603,25 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
     }
     tr.appendChild(td);
   });
+
+  // 数式列セル(読み取り専用・各行で評価)。prop は表示名/内部名で同じ行の値。
+  if (_renderFormulas.length) {
+    const propFn = (name: string): unknown => {
+      const f = fields.find((x) => x.Title === name || x.InternalName === name);
+      return f ? item[f.InternalName] : null;
+    };
+    _renderFormulas.forEach((def) => {
+      const td = document.createElement('td');
+      td.className = 'memola-td-formula';
+      const span = document.createElement('span');
+      span.className = 'memola-dc memola-dc-formula';
+      const { value, error } = evalFormula(def.expr, propFn);
+      if (error) { span.textContent = '⚠'; span.title = error; span.style.color = 'var(--danger,#b8534a)'; }
+      else span.textContent = formatFormulaValue(value);
+      td.appendChild(span);
+      tr.appendChild(td);
+    });
+  }
 
   const delTd = document.createElement('td');
   delTd.className = 'memola-td-del';

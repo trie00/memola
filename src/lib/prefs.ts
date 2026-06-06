@@ -86,6 +86,10 @@ export interface DbViewDef {
 export interface DbViewsState { activeId: string; views: DbViewDef[] }
 export const prefDbViews = jsonPref<Record<string, DbViewsState>>('memola.dbViews', {});
 
+// DB「数式」列(リスト単位)。値は保存せず描画時に各行で評価する読み取り専用列。
+export interface DbFormulaDef { id: string; name: string; expr: string }
+export const prefDbFormulas = jsonPref<Record<string, DbFormulaDef[]>>('memola.dbFormulas', {});
+
 // ── AI ────────────────────────────────────────────────────────────────
 // (The body of these prefs is wrapped by api/ai-settings.ts which adds
 //  per-pref validation. UI code should prefer api/ai-settings exports.)
