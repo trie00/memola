@@ -3453,6 +3453,18 @@
 /* min-width:0 が無いと flex 既定の min-width:auto で中の広いテーブルに押し広げられ、
    横スクロールにならず画面外にはみ出す。0 にして wrap 内で横スクロールさせる。 */
 #memola-dt-wrap { flex: 1; overflow: auto; padding: 0; min-width: 0; }
+/* macOS のオーバーレイ型スクロールバーは自動で隠れて気付きにくいので、
+   ::-webkit-scrollbar を定義して常時表示の従来型バーに切り替える(溢れた時のみ表示)。 */
+#memola-overlay #memola-dt-wrap::-webkit-scrollbar { height: 12px; width: 12px; }
+#memola-overlay #memola-dt-wrap::-webkit-scrollbar-track { background: var(--paper-2, #f3f1ea); border-radius: 6px; }
+#memola-overlay #memola-dt-wrap::-webkit-scrollbar-thumb {
+  background: rgba(42, 42, 38, 0.28); border-radius: 6px;
+  border: 3px solid var(--paper-2, #f3f1ea);   /* 余白を作って細く見せる */
+}
+#memola-overlay #memola-dt-wrap::-webkit-scrollbar-thumb:hover { background: rgba(42, 42, 38, 0.45); }
+#memola-overlay #memola-dt-wrap::-webkit-scrollbar-corner { background: transparent; }
+/* Firefox 用 */
+#memola-overlay #memola-dt-wrap { scrollbar-width: thin; scrollbar-color: rgba(42,42,38,0.35) var(--paper-2, #f3f1ea); }
 #memola-dt {
   /* 列が多くて入りきらない時は縮めず、内容幅(列幅の合計)まで広げて
      #memola-dt-wrap の横スクロールで見せる。少ない時は 100% に伸ばす。 */
