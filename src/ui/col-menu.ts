@@ -54,6 +54,14 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
   };
   menu.append(
     item('列名を変更', () => startColRename(field)),
+    item('💬 コメント', () => {
+      void (async () => {
+        const { metaById } = await import('../lib/page-store');
+        const scope = metaById(S.currentId)?.scope === 'org' ? 'org' : 'user';
+        const m = await import('./comments-ui');
+        await m.openColumnComment(S.dbList, scope, field.InternalName, field.Title);
+      })();
+    }),
     sep(),
     item('↑ 昇順で並べ替え', () => sortBy(true)),
     item('↓ 降順で並べ替え', () => sortBy(false)),

@@ -136,6 +136,9 @@ export function attachBlockDrag(editor: Editor, rootEl: HTMLElement): () => void
         if (target) m.openCommentPopover(target.pageId, blockId);
       });
     }));
+    const sep = document.createElement('div');
+    sep.className = 'memola-blk-menu-sep';
+    menu.appendChild(sep);
     const hd = document.createElement('div');
     hd.className = 'memola-blk-menu-hd';
     hd.textContent = '種類を変更';

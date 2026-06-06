@@ -945,6 +945,9 @@
   padding: 8px 10px 3px; font-size: var(--fs-xs, 11px);
   color: var(--ink-3, #9b9a97); font-weight: 500;
 }
+#memola-overlay .memola-blk-menu-sep {
+  height: 1px; margin: 4px 0; background: var(--paper-3, #e8e4d8);
+}
 
 /* ── Comments: gutter markers + right-side pane (Notion風) ── */
 #memola-overlay .memola-cmt-marker {

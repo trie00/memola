@@ -121,6 +121,21 @@ export async function loadCommentsFor(pageId: string, scopeDefault: CommentScope
   bindReposition();
 }
 
+// DB 列コメント用: 列内部名→表示名(アンカー表記用)。
+const _colTitles: Record<string, string> = {};
+
+/** DB 一覧ページの「列」に対するコメントを開く。
+ *  pageId は `dbcol:<listTitle>`(リスト単位で安定)、blockId は `col:<内部名>`。
+ *  エディタ本文が無いビューでも、右側コメントペインで読み書きできる。 */
+export async function openColumnComment(
+  listTitle: string, scope: CommentScope, internalName: string, title: string,
+): Promise<void> {
+  const pageId = 'dbcol:' + listTitle;
+  _colTitles[internalName] = title;
+  if (_pageId !== pageId) await loadCommentsFor(pageId, scope);
+  openCommentPopover(pageId, 'col:' + internalName);
+}
+
 export function clearComments(): void {
   _pageId = '';
   _threads = [];
@@ -465,6 +480,10 @@ function syncComposer(): void {
 
 function anchorTextFor(blockId: string): string {
   if (!blockId) return '';
+  if (blockId.startsWith('col:')) {
+    const internal = blockId.slice(4);
+    return '列: ' + (_colTitles[internal] || internal);
+  }
   const el = getEd().querySelector<HTMLElement>('[data-block-id="' + cssEscape(blockId) + '"]');
   return (el?.textContent || '').trim().slice(0, 80);
 }
