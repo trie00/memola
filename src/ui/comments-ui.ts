@@ -149,6 +149,11 @@ export async function openRowComment(
 export function clearComments(): void {
   _pageId = '';
   _threads = [];
+  // 作成対象/編集/開閉の状態もリセット(別ページのブロックを対象に持ち越して
+  // 次の投稿が誤って別ブロックへ紐づくのを防ぐ)。
+  _composeBlockId = '';
+  _editingId = 0;
+  _paneOpen = false;
   removeMarkers();
   closeFloat();
   closeMentionPicker();
