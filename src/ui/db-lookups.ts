@@ -105,8 +105,15 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
     if (!title) return;
     try {
       const fields = await getListFields(title);
-      for (const f of fields) {
+      // 対象のキー列はユニーク(重複禁止)の列のみ選択可 → 一意に引けることを保証。
+      const uniqueFields = fields.filter((f) => f.Unique);
+      if (uniqueFields.length === 0) {
+        const o = document.createElement('option'); o.value = ''; o.textContent = '— ユニークな列がありません —'; o.disabled = true; o.selected = true; tKeySel.appendChild(o);
+      }
+      for (const f of uniqueFields) {
         const a = document.createElement('option'); a.value = f.InternalName; a.textContent = f.Title; if (f.InternalName === def?.targetKeyField) a.selected = true; tKeySel.appendChild(a);
+      }
+      for (const f of fields) {
         const b = document.createElement('option'); b.value = f.InternalName; b.textContent = f.Title; if (f.InternalName === def?.returnField) b.selected = true; tRetSel.appendChild(b);
       }
     } catch { /* 取得失敗時は空 */ }

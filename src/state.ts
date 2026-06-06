@@ -68,6 +68,7 @@ export interface ListField {
   InternalName: string;
   FieldTypeKind: number;
   Choices?: string[];
+  Unique?: boolean;          // SP EnforceUniqueValues(重複禁止)
 }
 
 export interface ListItem {

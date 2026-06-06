@@ -73,6 +73,22 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
     menu.append(item('選択肢を編集', () => openOptionsEditor(field, x, y)));
   }
 
+  // ユニーク(重複禁止)トグル — 対応型のみ(テキスト/日付/選択単一/数値)。
+  if ([2, 4, 6, 9].includes(field.FieldTypeKind)) {
+    menu.append(item((field.Unique ? '☑' : '☐') + ' ユニーク（重複禁止）', () => {
+      void (async () => {
+        try {
+          setLoad(true, 'ユニーク設定を変更中...');
+          const { setFieldUnique } = await import('../api/sp-list');
+          await setFieldUnique(S.dbList, field.InternalName, !field.Unique);
+          await reloadDb();
+          toast(field.Unique ? 'ユニークを解除しました' : 'ユニーク（重複禁止）にしました', 'ok');
+        } catch (e) { toast('ユニーク設定の変更に失敗(既存の重複値がある可能性): ' + (e as Error).message, 'err'); }
+        finally { setLoad(false); }
+      })();
+    }));
+  }
+
   menu.append(sep(), item('🗑 列を削除', () => {
     if (!confirm(`列「${field.Title}」を削除しますか？(この列の値も失われます)`)) return;
     void (async () => {

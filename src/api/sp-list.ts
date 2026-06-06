@@ -12,6 +12,7 @@ interface SPField {
   InternalName: string;
   FieldTypeKind: number;
   Choices?: { results: string[] };
+  EnforceUniqueValues?: boolean;
 }
 
 const _etCache: Record<string, string> = {};
@@ -334,7 +335,7 @@ export async function getListEntityType(listTitle: string): Promise<string> {
 export async function getListFields(listTitle: string): Promise<ListField[]> {
   const d = await spGetD<{ results: SPField[] }>(
     spListUrl(listTitle,
-      "/fields?$filter=Hidden eq false and ReadOnlyField eq false&$select=Title,InternalName,FieldTypeKind,Choices"),
+      "/fields?$filter=Hidden eq false and ReadOnlyField eq false&$select=Title,InternalName,FieldTypeKind,Choices,EnforceUniqueValues"),
   );
   if (!d) throw new Error('スキーマ取得失敗');
   return d.results
@@ -344,6 +345,7 @@ export async function getListFields(listTitle: string): Promise<ListField[]> {
         Title: f.Title,
         InternalName: f.InternalName,
         FieldTypeKind: f.FieldTypeKind,
+        Unique: !!f.EnforceUniqueValues,
       };
       if (f.FieldTypeKind === 6 && f.Choices && f.Choices.results) {
         field.Choices = f.Choices.results;
@@ -549,6 +551,29 @@ export async function updateListFieldChoices(
   if (!r.ok) {
     const txt = await r.text().catch(() => '');
     throw new Error('選択肢の更新失敗: ' + r.status + (txt ? ' — ' + extractSpErrorDetail(txt) : ''));
+  }
+}
+
+/** 列の「一意の値を適用(EnforceUniqueValues=重複禁止)」を切替。
+ *  有効化には Indexed=true も必要。既存に重複があると SP がエラーを返す。
+ *  対応型: 1行テキスト(2)/日付(4)/選択単一(6)/数値(9) 等(複数行/真偽は不可)。 */
+export async function setFieldUnique(listTitle: string, fieldInternalName: string, unique: boolean): Promise<void> {
+  const d = await getDigest();
+  delete _etCache[listTitle];
+  const url = spListUrl(listTitle, "/fields/getbyinternalnameortitle('" + fieldInternalName + "')");
+  const cur = await spGetD<{ __metadata?: { type?: string } }>(url);
+  const type = cur?.__metadata?.type || 'SP.Field';
+  const body: Record<string, unknown> = { __metadata: { type }, EnforceUniqueValues: unique };
+  if (unique) body.Indexed = true;            // ユニークはインデックス必須
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { ...ODATA_POST_HEADERS, 'X-RequestDigest': d, 'X-HTTP-Method': 'MERGE', 'If-Match': '*' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => '');
+    throw new Error('ユニーク設定の変更失敗: ' + r.status + (txt ? ' — ' + extractSpErrorDetail(txt) : ''));
   }
 }
 
