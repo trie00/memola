@@ -547,7 +547,8 @@ function tableBlockFromClipboard(dt: DataTransfer): Block | null {
         Array.from(tr.children).map((c) =>
           ((c as HTMLElement).textContent || '').replace(/\s+/g, ' ').trim()),
       );
-      if (grid.length > 0 && grid.some((r) => r.length > 0)) {
+      // 複数セルのときだけ表化(単一セルはテキストとして扱う)。
+      if (grid.length >= 2 || grid.some((r) => r.length >= 2)) {
         return buildTable(grid);
       }
     }

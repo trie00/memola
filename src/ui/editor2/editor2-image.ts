@@ -139,6 +139,11 @@ export function attachImageHandlers(editor: Editor, rootEl: HTMLElement): () => 
     const imageFile = Array.from(items)
       .find((it) => it.kind === 'file' && it.type.startsWith('image/'))?.getAsFile();
     if (!imageFile) return;
+    // Excel/Sheets はセル範囲を「表(html/tsv)＋セル画像」の両方でコピーする。
+    // 表データがある場合は画像化せず、バブル段階の表ペーストハンドラに委譲する。
+    const clipHtml = ev.clipboardData?.getData('text/html') || '';
+    const clipText = ev.clipboardData?.getData('text/plain') || '';
+    if (/<table[\s\S]*?<\/table>/i.test(clipHtml) || clipText.includes('\t')) return;
     ev.preventDefault();
     ev.stopPropagation();
     const anchorId = captureAnchor();
