@@ -3452,7 +3452,11 @@
 /* ── DB Table (Notion風: 縦罫線なし・横は控えめ・タイトル列は太字) ── */
 /* min-width:0 が無いと flex 既定の min-width:auto で中の広いテーブルに押し広げられ、
    横スクロールにならず画面外にはみ出す。0 にして wrap 内で横スクロールさせる。 */
-#memola-dt-wrap { flex: 1; overflow: auto; padding: 0; min-width: 0; }
+/* flex:1 だと行が少なくてもラッパが縦いっぱいに伸び、横スクロールバーが
+   表のずっと下(余白の最下部)に出て気づきにくい。flex:0 1 auto にすると
+   行が少ない時は表の高さに縮まり横バーが「最終行の直下」に出る。行が多い時は
+   shrink して内部で縦スクロール(ヘッダ固定)＋横バーは可視領域の下端に出る。 */
+#memola-dt-wrap { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 0; min-width: 0; }
 /* macOS のオーバーレイ型スクロールバーは自動で隠れて気付きにくいので、
    ::-webkit-scrollbar を定義して常時表示の従来型バーに切り替える(溢れた時のみ表示)。 */
 #memola-overlay #memola-dt-wrap::-webkit-scrollbar { height: 12px; width: 12px; }
