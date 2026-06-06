@@ -4,6 +4,8 @@ import { S } from '../state';
 import { toast, setLoad } from './ui-helpers';
 import { addListField, getListFields, getListItems, createListItem } from '../api/sp-list';
 import { renderDbTable } from './views';
+import { listFormulas } from './db-formulas';
+import { evalFormula, formatFormulaValue } from '../lib/formula';
 
 function csvEscape(v: unknown): string {
   if (v == null) return '';
@@ -39,10 +41,23 @@ function parseCsv(text: string): string[][] {
 export function exportCsv(): void {
   if (!S.dbList) { toast('DBが選択されていません', 'err'); return; }
   const fields = S.dbFields.filter((f) => [2, 4, 6, 8, 9].includes(f.FieldTypeKind));
-  const header = fields.map((f) => csvEscape(f.Title)).join(',');
-  const rows = S.dbItems.map((item) =>
-    fields.map((f) => csvEscape(item[f.InternalName])).join(','),
-  );
+  // 数式列(読み取り専用の計算列)も末尾に出力。各行で評価した値を入れる。
+  const formulas = listFormulas(S.dbList);
+  const header = [...fields.map((f) => f.Title), ...formulas.map((d) => d.name)].map(csvEscape).join(',');
+  const rows = S.dbItems.map((item) => {
+    const cells = fields.map((f) => csvEscape(item[f.InternalName]));
+    if (formulas.length) {
+      const propFn = (name: string): unknown => {
+        const f = S.dbFields.find((x) => x.Title === name || x.InternalName === name);
+        return f ? item[f.InternalName] : null;
+      };
+      for (const d of formulas) {
+        const { value, error } = evalFormula(d.expr, propFn);
+        cells.push(csvEscape(error ? '' : formatFormulaValue(value)));
+      }
+    }
+    return cells.join(',');
+  });
   const csv = '﻿' + [header, ...rows].join('\n');     // BOM for Excel
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
