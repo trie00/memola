@@ -136,6 +136,16 @@ export async function openColumnComment(
   openCommentPopover(pageId, 'col:' + internalName);
 }
 
+/** DB 行に対するコメントを開く。pageId=`row:<list>:<itemId>`(行ページと同じキー)、
+ *  blockId='' のページ単位コメント。行をページで開いた時のコメントと一致する。 */
+export async function openRowComment(
+  listTitle: string, scope: CommentScope, itemId: number,
+): Promise<void> {
+  const pageId = 'row:' + listTitle + ':' + itemId;
+  if (_pageId !== pageId) await loadCommentsFor(pageId, scope);
+  openCommentPopover(pageId, '');
+}
+
 export function clearComments(): void {
   _pageId = '';
   _threads = [];

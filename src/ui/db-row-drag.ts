@@ -25,7 +25,7 @@ function ensureHandle(): FloatingHandle {
   if (_handle) return _handle;
   _handle = createFloatingHandle({
     id: 'memola-row-handle',
-    title: 'ドラッグして行を並べ替え',
+    title: 'クリックでメニュー / ドラッグで並べ替え',
     centred: true,                         // 18px high, centred on row
     onDragStart: onDragStart,
     onDragEnd: onDragEnd,
@@ -34,6 +34,11 @@ function ensureHandle(): FloatingHandle {
       if (rt && _hoveredRow && _hoveredRow.contains(rt)) return;
       hideHandle();
     },
+  });
+  // クリック(ドラッグでない)→ 行メニュー(コメント/開く/削除)。
+  _handle.el.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (_hoveredRow) openRowMenu(_hoveredRow, _handle!.el);
   });
   return _handle;
 }
@@ -76,6 +81,8 @@ function showLine(row: HTMLTableRowElement, after: boolean): void {
 function hideLine(): void { if (_line) _line.classList.remove('on'); }
 
 function onDragStart(e: DragEvent): void {
+  // ドラッグ並べ替えは手動順の時のみ(ソート/フィルター中は不可)。
+  if (!isManualRowOrderActive()) { e.preventDefault(); return; }
   if (!_hoveredRow) { e.preventDefault(); return; }
   const idStr = _hoveredRow.dataset.id;
   if (!idStr) { e.preventDefault(); return; }
@@ -153,15 +160,69 @@ function rowUnderCursor(clientX: number, clientY: number): HTMLTableRowElement |
   return null;
 }
 
+// ── 行ハンドルのクリックメニュー(コメント / 開く / 削除) ──
+let _rowMenu: HTMLElement | null = null;
+function closeRowMenu(): void {
+  if (_rowMenu) { _rowMenu.remove(); _rowMenu = null; }
+  document.removeEventListener('mousedown', onRowMenuOutside, true);
+}
+function onRowMenuOutside(e: MouseEvent): void {
+  if (_rowMenu && !_rowMenu.contains(e.target as Node)) closeRowMenu();
+}
+function openRowMenu(row: HTMLTableRowElement, anchor: HTMLElement): void {
+  closeRowMenu();
+  const itemId = parseInt(row.dataset.id || '0', 10);
+  if (!itemId) return;
+  const menu = document.createElement('div');
+  menu.className = 'memola-blk-menu';   // ESC/外側クリックで閉じる既存スタイルを流用
+  const add = (label: string, run: () => void): void => {
+    const b = document.createElement('button');
+    b.className = 'memola-blk-menu-item';
+    b.textContent = label;
+    b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); closeRowMenu(); run(); });
+    menu.appendChild(b);
+  };
+
+  add('💬 コメント', () => {
+    void (async () => {
+      const { metaById } = await import('../lib/page-store');
+      const scope = metaById(S.currentId)?.scope === 'org' ? 'org' : 'user';
+      const m = await import('./comments-ui');
+      await m.openRowComment(S.dbList, scope, itemId);
+    })();
+  });
+  add('↗ 行を開く', () => {
+    const item = S.dbItems.find((i) => i.Id === itemId);
+    if (item) void import('./row-page').then((m) => m.openRowAsPage(S.currentId || '', item));
+  });
+  const sep = document.createElement('div'); sep.className = 'memola-blk-menu-sep'; menu.appendChild(sep);
+  add('🗑 削除', () => {
+    if (!confirm('この行を削除しますか？(⌘Z で復元可能)')) return;
+    void import('./db-history').then((m) => m.deleteRowWithUndo(S.dbList, itemId)).then(() => {
+      void import('./views').then((m) => m.renderDbTable());
+    });
+  });
+
+  (document.getElementById('memola-overlay') || document.body).appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = (r.right + window.scrollX + 4) + 'px';
+  menu.style.top = (r.top + window.scrollY) + 'px';
+  const mr = menu.getBoundingClientRect();
+  if (mr.right > window.innerWidth) menu.style.left = (r.left + window.scrollX - mr.width - 4) + 'px';
+  if (mr.bottom > window.innerHeight) menu.style.top = (window.innerHeight - mr.height - 8 + window.scrollY) + 'px';
+  _rowMenu = menu;
+  setTimeout(() => document.addEventListener('mousedown', onRowMenuOutside, true), 0);
+}
+
 let _attached = false;
 export function attachDbRowDrag(): void {
   if (_attached) return;
   _attached = true;
   document.addEventListener('mousemove', (e) => {
     if (_draggingId !== null) return;
-    // Only active when viewing a DB table
+    // Only active when viewing a DB table. ハンドル自体は常に出す(クリックで
+    // 行メニューを開けるように)。ドラッグ並べ替えは手動順の時だけ有効(onDragStartで制御)。
     if (S.currentType !== 'database') { hideHandle(); return; }
-    if (!isManualRowOrderActive()) { hideHandle(); return; }
     const dt = document.getElementById('memola-dt');
     if (!dt) { hideHandle(); return; }
 
