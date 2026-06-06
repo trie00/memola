@@ -250,11 +250,13 @@ export function renderDbTable(): void {
     thead.appendChild(th);
   });
 
-  // 数式列ヘッダ(データ列の後ろ・読み取り専用)。クリックで式エディタ。
-  _renderFormulas.forEach((def) => {
+  // 数式列ヘッダ(データ列の後ろ・読み取り専用)。クリックで式エディタ、
+  // 数式列どうしはドラッグで並べ替え可能。
+  _renderFormulas.forEach((def, fidx) => {
     const th = document.createElement('th');
     th.className = 'memola-th-formula';
     th.dataset.formulaId = def.id;
+    th.draggable = true;
     const span = document.createElement('span');
     span.className = 'memola-th-label';
     span.textContent = 'ƒ ' + def.name;
@@ -263,6 +265,33 @@ export function renderDbTable(): void {
       e.stopPropagation();
       const r = span.getBoundingClientRect();
       void import('./db-formulas').then((m) => m.openFormulaEditor(S.dbList, def, r.left, r.bottom + 4, () => renderDbTable()));
+    });
+    th.addEventListener('dragstart', (e) => {
+      if (!e.dataTransfer) return;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/memola-formula', String(fidx));
+      th.classList.add('memola-th-dragging');
+    });
+    th.addEventListener('dragend', () => th.classList.remove('memola-th-dragging'));
+    th.addEventListener('dragover', (e) => {
+      const dt = e.dataTransfer;
+      if (!dt || Array.from(dt.types).indexOf('text/memola-formula') < 0) return;
+      e.preventDefault(); dt.dropEffect = 'move';
+      const rect = th.getBoundingClientRect();
+      const after = e.clientX > rect.left + rect.width / 2;
+      th.classList.toggle('memola-th-drop-before', !after);
+      th.classList.toggle('memola-th-drop-after', after);
+    });
+    th.addEventListener('dragleave', () => th.classList.remove('memola-th-drop-before', 'memola-th-drop-after'));
+    th.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      const fromStr = dt?.getData('text/memola-formula');
+      if (!fromStr) return;
+      e.preventDefault();
+      th.classList.remove('memola-th-drop-before', 'memola-th-drop-after');
+      const rect = th.getBoundingClientRect();
+      const after = e.clientX > rect.left + rect.width / 2;
+      void import('./db-formulas').then((m) => { m.reorderFormulas(S.dbList, parseInt(fromStr, 10), after ? fidx + 1 : fidx); renderDbTable(); });
     });
     th.appendChild(span);
     thead.appendChild(th);

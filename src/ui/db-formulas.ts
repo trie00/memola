@@ -33,6 +33,18 @@ export function deleteFormula(listTitle: string, id: string): void {
   save(listTitle, listFormulas(listTitle).filter((f) => f.id !== id));
 }
 
+/** 数式列どうしの並べ替え(from を to の位置へ)。 */
+export function reorderFormulas(listTitle: string, from: number, to: number): void {
+  const defs = listFormulas(listTitle).slice();
+  if (from < 0 || from >= defs.length) return;
+  const [m] = defs.splice(from, 1);
+  let t = to;
+  if (from < to) t -= 1;          // 取り除いた分の補正
+  t = Math.max(0, Math.min(defs.length, t));
+  defs.splice(t, 0, m);
+  save(listTitle, defs);
+}
+
 // ── エディタ(ポップオーバー) ──
 let _pop: HTMLElement | null = null;
 export function closeFormulaEditor(): void { if (_pop) { _pop.remove(); _pop = null; } }
