@@ -1,0 +1,184 @@
+// DB「参照(XLOOKUP)」列のモデル + エディタ。
+//   - 自DBのキー列の値を、対象DBのキー列から探して「返す列」の値を表示(先頭一致)。
+//   - 値は保存せず描画時に評価する読み取り専用列。定義は共有(memola-db-config)。
+//   - 対象DBは GUID(targetListId)で参照 → 対象DBの改名/ツリー移動に強い。
+
+import { S } from '../state';
+import type { DbLookupDef } from '../lib/prefs';
+import { loadDbConfig, patchDbConfig } from '../api/db-config';
+import { getListFields, getListItems, resolveListIdByTitle, resolveListTitleById } from '../api/sp-list';
+import { setLoad, toast } from './ui-helpers';
+
+// 定義キャッシュ(現在開いている DB ごと)と、対象データの照合マップ(def.id → key→value)。
+const _defs = new Map<string, DbLookupDef[]>();
+const _data = new Map<string, Map<string, string>>();
+
+function newId(): string { return 'lk' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36); }
+function val2str(v: unknown): string {
+  if (v == null) return '';
+  if (typeof v === 'object') { const o = v as Record<string, unknown>; return String(o.Title ?? o.Label ?? o.Value ?? ''); }
+  return String(v);
+}
+
+export function listLookups(listTitle: string): DbLookupDef[] { return _defs.get(listTitle) || []; }
+export function getLookupValue(defId: string, keyValue: unknown): string {
+  return _data.get(defId)?.get(val2str(keyValue)) ?? '';
+}
+
+/** 1つの参照定義について、対象DBを引いて key→value マップを作る。 */
+async function buildData(def: DbLookupDef): Promise<void> {
+  try {
+    const title = (await resolveListTitleById(def.targetListId)) || def.targetTitle;
+    if (!title) { _data.set(def.id, new Map()); return; }
+    const items = await getListItems(title);
+    const map = new Map<string, string>();
+    for (const it of items) {
+      const k = val2str((it as Record<string, unknown>)[def.targetKeyField]);
+      if (k === '' || map.has(k)) continue;               // 先頭一致を採用
+      map.set(k, val2str((it as Record<string, unknown>)[def.returnField]));
+    }
+    _data.set(def.id, map);
+  } catch { _data.set(def.id, new Map()); }
+}
+
+/** DB を開いた時に呼ぶ: 共有設定から参照定義を読み込み、対象データを取得。 */
+export async function loadLookups(listTitle: string): Promise<void> {
+  try {
+    const defs = (await loadDbConfig(listTitle)).lookups || [];
+    _defs.set(listTitle, defs);
+    await Promise.all(defs.map(buildData));
+  } catch { _defs.set(listTitle, _defs.get(listTitle) || []); }
+}
+
+async function persist(listTitle: string): Promise<void> {
+  await patchDbConfig(listTitle, { lookups: _defs.get(listTitle) || [] }).catch(() => undefined);
+}
+
+// ── エディタ ──
+let _pop: HTMLElement | null = null;
+export function closeLookupEditor(): void { if (_pop) { _pop.remove(); _pop = null; } }
+
+/** 参照列の作成/編集。def=null で新規。保存/削除後に reload を呼ぶ。 */
+export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: number, y: number, reload: () => void): void {
+  closeLookupEditor();
+  const overlay = document.getElementById('memola-overlay') || document.body;
+  const pop = document.createElement('div');
+  pop.className = 'memola-colmenu memola-formula-pop';
+  pop.style.left = Math.round(Math.min(x, window.innerWidth - 380)) + 'px';
+  pop.style.top = Math.round(y) + 'px';
+  _pop = pop;
+
+  const hdr = document.createElement('div');
+  hdr.className = 'memola-colmenu-item';
+  hdr.style.cssText = 'font-weight:600;color:var(--ink-3);cursor:default';
+  hdr.textContent = def ? '参照列を編集' : '参照列を追加';
+  pop.appendChild(hdr);
+
+  const nameInp = document.createElement('input');
+  nameInp.className = 'memola-formula-name';
+  nameInp.placeholder = '列名';
+  nameInp.value = def?.name || '';
+  nameInp.addEventListener('keydown', (e) => e.stopPropagation());
+
+  const mkSel = (): HTMLSelectElement => { const s = document.createElement('select'); s.className = 'memola-rule-f'; s.style.maxWidth = 'none'; s.style.width = '100%'; return s; };
+  const labelled = (text: string, el: HTMLElement): HTMLElement => {
+    const w = document.createElement('div'); w.style.cssText = 'display:flex;flex-direction:column;gap:3px;margin:2px 0';
+    const l = document.createElement('label'); l.textContent = text; l.style.cssText = 'font-size:var(--fs-xs);color:var(--ink-3)';
+    w.append(l, el); return w;
+  };
+
+  // 自DBのキー列
+  const keySel = mkSel();
+  for (const f of S.dbFields) { const o = document.createElement('option'); o.value = f.InternalName; o.textContent = f.Title; if (f.InternalName === def?.keyField) o.selected = true; keySel.appendChild(o); }
+
+  // 対象DB(データベースページ一覧)
+  const targetSel = mkSel();
+  const dbPages = S.meta.pages.filter((p) => p.type === 'database' && p.list);
+  { const o = document.createElement('option'); o.value = ''; o.textContent = '— 対象DBを選択 —'; targetSel.appendChild(o); }
+  for (const p of dbPages) { const o = document.createElement('option'); o.value = p.list as string; o.textContent = (p.icon ? p.icon + ' ' : '') + (p.title || p.list); if (p.list === def?.targetTitle) o.selected = true; targetSel.appendChild(o); }
+
+  // 対象のキー列 / 返す列(対象DB選択後に取得)
+  const tKeySel = mkSel();
+  const tRetSel = mkSel();
+  const fillTargetFields = async (title: string): Promise<void> => {
+    tKeySel.innerHTML = ''; tRetSel.innerHTML = '';
+    if (!title) return;
+    try {
+      const fields = await getListFields(title);
+      for (const f of fields) {
+        const a = document.createElement('option'); a.value = f.InternalName; a.textContent = f.Title; if (f.InternalName === def?.targetKeyField) a.selected = true; tKeySel.appendChild(a);
+        const b = document.createElement('option'); b.value = f.InternalName; b.textContent = f.Title; if (f.InternalName === def?.returnField) b.selected = true; tRetSel.appendChild(b);
+      }
+    } catch { /* 取得失敗時は空 */ }
+  };
+  targetSel.addEventListener('change', () => { void fillTargetFields(targetSel.value); });
+  if (def?.targetTitle) void fillTargetFields(def.targetTitle);
+
+  const help = document.createElement('div');
+  help.className = 'memola-formula-help';
+  help.textContent = '自DBの「キー列」の値を、対象DBの「キー列」から探して「返す列」の値を表示します(先頭一致)。対象DBは改名・移動しても追従します。';
+
+  const acts = document.createElement('div');
+  acts.className = 'memola-formula-acts';
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'memola-btn p'; saveBtn.textContent = '保存';
+  saveBtn.addEventListener('click', () => {
+    const name = nameInp.value.trim() || '参照';
+    const targetTitle = targetSel.value;
+    if (!targetTitle) { toast('対象DBを選択してください', 'err'); return; }
+    if (!tKeySel.value || !tRetSel.value) { toast('対象のキー列と返す列を選択してください', 'err'); return; }
+    void (async () => {
+      try {
+        setLoad(true, '保存中...');
+        const targetListId = await resolveListIdByTitle(targetTitle);
+        const defs = listLookups(listTitle).slice();
+        const next: DbLookupDef = {
+          id: def?.id || newId(), name,
+          keyField: keySel.value, targetListId, targetTitle,
+          targetKeyField: tKeySel.value, returnField: tRetSel.value,
+        };
+        const idx = defs.findIndex((d) => d.id === next.id);
+        if (idx >= 0) defs[idx] = next; else defs.push(next);
+        _defs.set(listTitle, defs);
+        await persist(listTitle);
+        await buildData(next);
+        closeLookupEditor();
+        reload();
+      } catch (e) { toast('参照列の保存に失敗: ' + (e as Error).message, 'err'); }
+      finally { setLoad(false); }
+    })();
+  });
+  acts.appendChild(saveBtn);
+  if (def) {
+    const delBtn = document.createElement('button');
+    delBtn.className = 'memola-btn ghost'; delBtn.textContent = '削除'; delBtn.style.color = 'var(--danger,#b8534a)';
+    delBtn.addEventListener('click', () => {
+      if (!confirm(`参照列「${def.name}」を削除しますか？`)) return;
+      _defs.set(listTitle, listLookups(listTitle).filter((d) => d.id !== def.id));
+      _data.delete(def.id);
+      void persist(listTitle).then(() => { closeLookupEditor(); reload(); });
+    });
+    acts.appendChild(delBtn);
+  }
+
+  pop.append(nameInp, labelled('自DBのキー列', keySel), labelled('対象DB', targetSel),
+    labelled('対象のキー列', tKeySel), labelled('返す列', tRetSel), help, acts);
+  overlay.appendChild(pop);
+  const r = pop.getBoundingClientRect();
+  if (r.bottom > window.innerHeight - 8) pop.style.top = Math.max(8, window.innerHeight - r.height - 8) + 'px';
+  nameInp.focus();
+  const onOut = (e: MouseEvent): void => {
+    if (_pop && !_pop.contains(e.target as Node)) { closeLookupEditor(); document.removeEventListener('mousedown', onOut, true); }
+  };
+  setTimeout(() => document.addEventListener('mousedown', onOut, true), 0);
+}
+
+/** 新規参照列エディタを開く(S.dbList 対象)。 */
+export function openNewLookup(x: number, y: number): void {
+  openLookupEditor(S.dbList, null, x, y, () => {
+    void import('./views-table').then((m) => {
+      m.renderDbTable();
+      const w = document.getElementById('memola-dt-wrap'); if (w) w.scrollLeft = w.scrollWidth;
+    });
+  });
+}

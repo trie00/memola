@@ -3,7 +3,7 @@
 // ブラウザローカルではなく全員で共有される(DBスキーマと同じ扱い)。
 
 import { ensureList, getListItems, createListItem, updateListItem, type FieldSpec } from './sp-list';
-import type { DbFormulaDef } from '../lib/prefs';
+import type { DbFormulaDef, DbLookupDef } from '../lib/prefs';
 
 const LIST = 'memola-db-config';
 const FIELDS: FieldSpec[] = [
@@ -13,6 +13,7 @@ const FIELDS: FieldSpec[] = [
 
 export interface DbConfig {
   formulas?: DbFormulaDef[];
+  lookups?: DbLookupDef[];
   // 将来: 共有したいビュー/タグ色などをここに追加可能
 }
 

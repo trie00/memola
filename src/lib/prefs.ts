@@ -90,6 +90,18 @@ export const prefDbViews = jsonPref<Record<string, DbViewsState>>('memola.dbView
 export interface DbFormulaDef { id: string; name: string; expr: string }
 export const prefDbFormulas = jsonPref<Record<string, DbFormulaDef[]>>('memola.dbFormulas', {});
 
+// DB「参照(XLOOKUP)」列。自列のキー値を相手DBのキー列から探し、返す列の値を表示。
+// 値は保存せず描画時に評価。対象DBは GUID(targetListId)で参照し、改名/移動に強い。
+export interface DbLookupDef {
+  id: string;
+  name: string;
+  keyField: string;        // 自DBの照合キー列(InternalName)
+  targetListId: string;    // 対象SPリストのGUID
+  targetTitle: string;     // 対象リスト名(表示/フォールバック)
+  targetKeyField: string;  // 対象側の照合キー列(InternalName)
+  returnField: string;     // 対象側の返す列(InternalName)
+}
+
 // ── AI ────────────────────────────────────────────────────────────────
 // (The body of these prefs is wrapped by api/ai-settings.ts which adds
 //  per-pref validation. UI code should prefer api/ai-settings exports.)

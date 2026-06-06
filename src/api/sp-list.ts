@@ -552,6 +552,19 @@ export async function updateListFieldChoices(
   }
 }
 
+/** リスト名 → リストGUID。参照(XLOOKUP)列の対象を改名/移動に強い形で保持するため。 */
+export async function resolveListIdByTitle(listTitle: string): Promise<string> {
+  const d = await spGetD<{ Id?: string }>(spListUrl(listTitle, '?$select=Id'));
+  return d?.Id || '';
+}
+
+/** リストGUID → 現在のリスト名(改名されていても追従できる)。見つからなければ ''。 */
+export async function resolveListTitleById(listId: string): Promise<string> {
+  if (!listId) return '';
+  const d = await spGetD<{ Title?: string }>(SITE + "/_api/web/lists(guid'" + listId + "')?$select=Title");
+  return d?.Title || '';
+}
+
 /** 列の表示名(Title)を変更する。タイトル列を含む任意の列に使える。
  *  内部名(InternalName)は不変。実際の __metadata.type を取得してから MERGE
  *  するので、Choice/DateTime など派生型でも型不一致で弾かれない。 */

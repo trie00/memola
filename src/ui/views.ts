@@ -426,8 +426,11 @@ export async function doSelectDb(id: string, page: Page): Promise<void> {
     S.dbList   = meta.list;
     S.dbSelected.clear();
     setSelectionAnchor(null);
-    // 数式列(共有設定)を先に読み込む → テーブル描画時に反映される。
-    await import('./db-formulas').then((m) => m.loadFormulas(S.dbList)).catch(() => undefined);
+    // 数式列・参照列(共有設定)を先に読み込む → テーブル描画時に反映される。
+    await Promise.all([
+      import('./db-formulas').then((m) => m.loadFormulas(S.dbList)),
+      import('./db-lookups').then((m) => m.loadLookups(S.dbList)),
+    ]).catch(() => undefined);
     // ビュー(リスト単位で複数)を初期化 → active ビューの filters/sort/type を反映。
     const bar = await import('./db-views-bar');
     const { getActiveViewId } = await import('./db-views-model');

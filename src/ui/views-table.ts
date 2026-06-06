@@ -23,8 +23,9 @@ import {
 import { getView } from './db-views-model';
 import { resolveTagColor } from './tag-colors';
 import { listFormulas } from './db-formulas';
+import { listLookups, getLookupValue } from './db-lookups';
 import { evalFormula, formatFormulaValue } from '../lib/formula';
-import type { DbColorRule, DbFormulaDef } from '../lib/prefs';
+import type { DbColorRule, DbFormulaDef, DbLookupDef } from '../lib/prefs';
 import type { DbColorMap } from '../lib/prefs';
 
 /** View-level colour overlay for the current render pass. Set at the top of
@@ -32,6 +33,7 @@ import type { DbColorMap } from '../lib/prefs';
 let _renderColors: DbColorMap = {};
 let _renderRules: DbColorRule[] = [];
 let _renderFormulas: DbFormulaDef[] = [];
+let _renderLookups: DbLookupDef[] = [];
 
 export function getDbFields(): ListField[] {
   // 2=text, 3=multiline, 4=date, 6=choice, 8=bool, 9=number
@@ -134,6 +136,7 @@ export function renderDbTable(): void {
   gcDbColors(S.dbList, S.dbViewId, S.dbItems.map((it) => it.Id));
   _renderRules = getView(S.dbList, S.dbViewId).rules || [];
   _renderFormulas = listFormulas(S.dbList);
+  _renderLookups = listLookups(S.dbList);
 
   // Reflect "any-selected" mode on the table so CSS can switch to always-show
   const dt = g('dt');
@@ -297,6 +300,24 @@ export function renderDbTable(): void {
     thead.appendChild(th);
   });
 
+  // 参照(XLOOKUP)列ヘッダ(読み取り専用)。クリックで参照エディタ。
+  _renderLookups.forEach((def) => {
+    const th = document.createElement('th');
+    th.className = 'memola-th-formula';
+    th.dataset.lookupId = def.id;
+    const span = document.createElement('span');
+    span.className = 'memola-th-label';
+    span.textContent = '↗ ' + def.name;
+    span.title = '参照: ' + def.targetTitle;
+    span.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const r = span.getBoundingClientRect();
+      void import('./db-lookups').then((m) => m.openLookupEditor(S.dbList, def, r.left, r.bottom + 4, () => renderDbTable()));
+    });
+    th.appendChild(span);
+    thead.appendChild(th);
+  });
+
   // Delete column header (icon column)
   const thDel = document.createElement('th'); thDel.className = 'memola-th-del'; thead.appendChild(thDel);
   // "+" column right after the data columns
@@ -330,7 +351,7 @@ export function renderDbTable(): void {
   // 狭い時は 100% に伸びて spacer が余白を吸収。
   const CB_W = 24, DEL_W = 32, ADD_W = 36, DEF_COL_W = 160;
   const fieldsW = fields.reduce((s, f) => s + (S.dbColumnWidths[f.InternalName] || DEF_COL_W), 0)
-    + _renderFormulas.length * DEF_COL_W;
+    + (_renderFormulas.length + _renderLookups.length) * DEF_COL_W;
   dt.style.width = (CB_W + DEL_W + ADD_W + fieldsW) + 'px';
 }
 
@@ -647,6 +668,19 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
       const { value, error } = evalFormula(def.expr, propFn);
       if (error) { span.textContent = '⚠'; span.title = error; span.style.color = 'var(--danger,#b8534a)'; }
       else span.textContent = formatFormulaValue(value);
+      td.appendChild(span);
+      tr.appendChild(td);
+    });
+  }
+
+  // 参照(XLOOKUP)列セル(読み取り専用)。自列キー→対象DBの返す列。
+  if (_renderLookups.length) {
+    _renderLookups.forEach((def) => {
+      const td = document.createElement('td');
+      td.className = 'memola-td-formula';
+      const span = document.createElement('span');
+      span.className = 'memola-dc memola-dc-formula';
+      span.textContent = getLookupValue(def.id, item[def.keyField]);
       td.appendChild(span);
       tr.appendChild(td);
     });

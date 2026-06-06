@@ -51,6 +51,18 @@ export function attachColumnModal(): void {
       }, name);
       return;
     }
+    // 「参照(他DB)」も SP 列ではなくクライアント側の XLOOKUP 参照列 → 参照エディタ。
+    if (typeTk === 'lookup') {
+      g('col-md').classList.remove('on');
+      const r = (g('col-ok') as HTMLElement).getBoundingClientRect();
+      const m = await import('./db-lookups');
+      m.openLookupEditor(S.dbList, null, r.left, r.bottom + 4, () => {
+        renderDbTable();
+        const w = document.getElementById('memola-dt-wrap');
+        if (w) w.scrollLeft = w.scrollWidth;
+      });
+      return;
+    }
     let choices: string[] = [];
     if (typeKind === 6 || typeKind === 15) {
       const raw = (g('col-choices') as HTMLTextAreaElement).value.trim();
