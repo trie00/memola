@@ -21,7 +21,7 @@ import {
   getDbColors, gcDbColors, cellOverlay, rowRuleColor,
 } from './db-view-colors';
 import { getView } from './db-views-model';
-import { getTagColor } from './tag-colors';
+import { resolveTagColor } from './tag-colors';
 import type { DbColorRule } from '../lib/prefs';
 import type { DbColorMap } from '../lib/prefs';
 
@@ -484,43 +484,9 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
     } else if (f.FieldTypeKind === 6 && f.Choices) {
       const wrapper = document.createElement('div');
       wrapper.style.padding = '4px 12px';
-      const sel = document.createElement('select');
-      sel.style.cssText = 'border:none;background:transparent;font-size:14px;font-family:inherit;outline:none;cursor:pointer;max-width:140px;';
-      const emptyOpt = document.createElement('option');
-      emptyOpt.value = ''; emptyOpt.textContent = '—';
-      sel.appendChild(emptyOpt);
-      f.Choices.forEach((choice) => {
-        const opt = document.createElement('option');
-        opt.value = choice; opt.textContent = choice;
-        if (item[f.InternalName] === choice) opt.selected = true;
-        sel.appendChild(opt);
-      });
-
       const choices = f.Choices;
-      function renderChip(val: string): void {
-        wrapper.innerHTML = '';
-        if (val) {
-          const idx = choices.indexOf(val) % 6;
-          const chip = document.createElement('span');
-          chip.className = 'memola-select-chip memola-sc-' + idx;
-          chip.textContent = val;
-          // 列メニューで設定したタグ色があれば上書き(未設定はプリセット sc-N)。
-          const ov = getTagColor(S.dbList, f.InternalName, val);
-          if (ov) { chip.style.background = ov; chip.style.color = '#2a2a26'; }
-          chip.style.cursor = 'pointer';
-          chip.addEventListener('click', () => {
-            wrapper.innerHTML = '';
-            wrapper.appendChild(sel);
-            sel.focus();
-          });
-          wrapper.appendChild(chip);
-        } else {
-          wrapper.appendChild(sel);
-        }
-      }
 
-      sel.addEventListener('change', () => {
-        const nv = sel.value;
+      const apply = (nv: string): void => {
         const oldVal = (item[f.InternalName] as string) || '';
         if (nv === oldVal) return;
         // Send by Display Title — InternalName for Japanese choice columns is
@@ -534,8 +500,34 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
             recordCellChange(S.dbList, item.Id, f.InternalName, f.Title, oldVal, nv);
           })
           .catch((e: Error) => { toast(e.message, 'err'); });
-      });
-      sel.addEventListener('blur', () => { renderChip(sel.value); });
+      };
+      const openPicker = (anchor: HTMLElement): void => {
+        const cur = (item[f.InternalName] as string) || '';
+        const items = [
+          { value: '', label: '—' },
+          ...choices.map((c) => ({ value: c, label: c, color: resolveTagColor(S.dbList, f.InternalName, c, choices) })),
+        ];
+        void import('./choice-popover').then((m) => m.openChoicePopover(anchor, items, cur, apply));
+      };
+      function renderChip(val: string): void {
+        wrapper.innerHTML = '';
+        if (val) {
+          const chip = document.createElement('span');
+          chip.className = 'memola-select-chip';
+          chip.style.background = resolveTagColor(S.dbList, f.InternalName, val, choices);
+          chip.style.color = '#2a2a26';
+          chip.textContent = val;
+          chip.style.cursor = 'pointer';
+          chip.addEventListener('click', () => openPicker(chip));
+          wrapper.appendChild(chip);
+        } else {
+          const ph = document.createElement('span');
+          ph.textContent = '—';
+          ph.style.cssText = 'cursor:pointer;color:var(--ink-4);padding:2px 6px;';
+          ph.addEventListener('click', () => openPicker(ph));
+          wrapper.appendChild(ph);
+        }
+      }
 
       renderChip((item[f.InternalName] as string) || '');
       td.appendChild(wrapper);

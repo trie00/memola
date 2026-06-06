@@ -19,6 +19,7 @@ import { toast } from './ui-helpers';
 import { formatDateJST, parseFlexibleDate } from '../lib/date-utils';
 import { recordCellChange } from './db-history';
 import { openChoicePopover } from './choice-popover';
+import { resolveTagColor } from './tag-colors';
 
 /** Commit a single-cell change, capturing the previous value for undo. */
 async function commit(
@@ -109,9 +110,12 @@ function buildEditor(
       const renderLabel = (): void => {
         const v = (item[field.InternalName] as string) || '';
         if (v) {
-          const idx = choices.indexOf(v);
-          btn.innerHTML = '<span class="memola-select-chip memola-sc-' + (idx >= 0 ? idx % 6 : 0) + '">' +
-            v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span>';
+          const chip = document.createElement('span');
+          chip.className = 'memola-select-chip';
+          chip.style.background = resolveTagColor(listTitle, field.InternalName, v, choices);
+          chip.style.color = '#2a2a26';
+          chip.textContent = v;
+          btn.innerHTML = ''; btn.appendChild(chip);
         } else {
           btn.innerHTML = '<span class="memola-rp-placeholder">—</span>';
         }
@@ -119,7 +123,10 @@ function buildEditor(
       renderLabel();
       btn.addEventListener('click', () => {
         const cur = (item[field.InternalName] as string) || '';
-        const items = [{ value: '', label: '—' }, ...choices.map((c) => ({ value: c, label: c }))];
+        const items = [
+          { value: '', label: '—' },
+          ...choices.map((c) => ({ value: c, label: c, color: resolveTagColor(listTitle, field.InternalName, c, choices) })),
+        ];
         openChoicePopover(btn, items, cur, (v) => {
           void commit(listTitle, item.Id, field, v, item).then(renderLabel);
         });

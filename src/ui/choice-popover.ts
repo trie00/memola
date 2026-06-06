@@ -20,6 +20,7 @@ export interface ChoiceItem {
   label: string;
   icon?: string;          // optional emoji / single char
   sub?: string;           // optional secondary line
+  color?: string;         // 指定時はラベルを色付きチップで表示(選択肢タグ用)
 }
 
 /**
@@ -50,8 +51,18 @@ export function openChoicePopover(
     ic.textContent = isSel ? '✓' : (it.icon || '');
     const lbl = document.createElement('span');
     lbl.className = 'memola-cp-label';
-    lbl.textContent = it.label || '—';
-    if (!it.label) lbl.classList.add('memola-cp-empty');
+    if (it.color && it.label) {
+      // 色付きチップ表示(選択肢タグ)
+      const chip = document.createElement('span');
+      chip.className = 'memola-select-chip';
+      chip.style.background = it.color;
+      chip.style.color = '#2a2a26';
+      chip.textContent = it.label;
+      lbl.appendChild(chip);
+    } else {
+      lbl.textContent = it.label || '—';
+      if (!it.label) lbl.classList.add('memola-cp-empty');
+    }
     row.append(ic, lbl);
     if (it.sub) {
       const sub = document.createElement('span');
