@@ -97,7 +97,7 @@ export class VectorDb {
   }
 
   /** Top-K 検索。keywordWeight>0 でハイブリッド (ベクトル + 文字bigram)。
-   *  `mustKeywords` を渡すと、それらを **すべて含む** レコードに絞る(外部ベクトル 流の
+   *  `mustKeywords` を渡すと、それらを **すべて含む** レコードに絞る(ExtVec 流の
    *  完全一致必須キーワード)。絞った結果が 0 件なら絞らずにフォールバック(過剰
    *  抽出で検索が死なないように)。score は 0..1。 */
   search(qvec: Float32Array, topK: number, queryText = '', keywordWeight = 0, mustKeywords: string[] = []): DbHit[] {

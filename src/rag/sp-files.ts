@@ -1,6 +1,6 @@
 // SharePoint Document Library ファイル操作 (RAG ベクトル配置用)。
 // memola の既存 list REST とは別に、ベクトルセグメント (manifest.json / seg-*.json)
-// を Document Library のテキストファイルとして読み書きする。外部ベクトル の
+// を Document Library のテキストファイルとして読み書きする。ExtVec の
 // SharePointClient のファイルメソッド群を memola の SITE/getDigest に合わせて移植。
 //
 // 認証はブラウザの Cookie (credentials:'include')。中継サーバは SPO に認証できない

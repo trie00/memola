@@ -134,11 +134,11 @@ export const prefDevLocalBase    = strPref('memola.dev.local-base', 'http://127.
 // 未設定の選択肢はプリセット(memola-sc-N)のまま。
 export const prefDbTagColors = jsonPref<Record<string, Record<string, Record<string, string>>>>('memola.dbTagColors', {});
 
-// 外部ベクトル が収集したベクトルを横断検索で「横から読む」設定。
-// folder: サイト相対のフォルダ(例 'Shared Documents/外部ベクトル')。空 = 無効。
-export const prefRag外部ベクトルFolder    = strPref('memola.rag.extvecFolder', '');
+// ExtVec が収集したベクトルを横断検索で「横から読む」設定。
+// folder: サイト相対のフォルダ(例 'Shared Documents/ExtVec')。空 = 無効。
+export const prefRagExtVecFolder    = strPref('memola.rag.extVecFolder', '');
 // 検索対象に含める kind(CSV)。既定は全種。
-export const prefRag外部ベクトルKinds     = strPref('memola.rag.extvecKinds', 'mail,onenote,pptx,doc,transcript');
+export const prefRagExtVecKinds     = strPref('memola.rag.extVecKinds', 'mail,onenote,pptx,doc,transcript');
 // 横断チャット (cross-document chat)
 export const prefXChatHistory       = strPref('memola.xchat.history');   // raw JSON sessions
 export const prefXChatOpen          = strPref('memola.xchat.open');       // '1' / ''

@@ -606,7 +606,7 @@ export async function parseMsgFile(file: File): Promise<ParsedEml> {
     { key: 'creationTime',         val: (data as Record<string, unknown>).creationTime as string | undefined },
     { key: 'lastModificationTime', val: (data as Record<string, unknown>).lastModificationTime as string | undefined },
   ];
-  console.debug('[app/parseMsg] date candidates:', dateCandidates);
+  console.debug('[eml/parseMsg] date candidates:', dateCandidates);
   let dateISO: string | undefined;
   for (const c of dateCandidates) {
     if (!c.val || typeof c.val !== 'string') continue;
@@ -615,7 +615,7 @@ export async function parseMsgFile(file: File): Promise<ParsedEml> {
     const year = new Date(t).getUTCFullYear();
     if (year < 1980 || year > 2100) continue; // FILETIME 0 や 1601 を排除
     dateISO = new Date(t).toISOString();
-    console.debug('[app/parseMsg] adopted date:', c.key, '→', dateISO);
+    console.debug('[eml/parseMsg] adopted date:', c.key, '→', dateISO);
     break;
   }
 

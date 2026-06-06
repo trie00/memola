@@ -1,6 +1,6 @@
 // env 集約された AI 設定を relay から取得し、起動時にローカル設定へ反映する。
 //
-// 設計 (外部ベクトル 流: AI 設定は env に集約):
+// 設計 (ExtVec 流: AI 設定は env に集約):
 //   - relay が `GET /memola/ai-config` で env の MEMOLA_AI_* / MEMOLA_EMBED_* /
 //     MEMOLA_RAG_* を JSON 配信する (api キー類は含まない)。
 //   - ブラウザは起動時に 1 度だけこれを取得し、対応する localStorage pref に

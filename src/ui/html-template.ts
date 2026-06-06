@@ -46,7 +46,7 @@ export function buildHtml(): string {
         '<div id="memola-cm-templates"></div>' +
       '</div>' +
     '</aside>' +
-    // ── 横断チャット (cross-document RAG chat) — 外部ベクトル レイアウト ──
+    // ── 横断チャット (cross-document RAG chat) — ExtVec レイアウト ──
     // [サイドバー(セッション一覧)] | [トップバー + スレッド + コンポーザ]
     '<div id="memola-xchat" class="tdr-shell" aria-hidden="true">' +
       '<div class="tdr-chat">' +
@@ -449,23 +449,23 @@ export function buildHtml(): string {
             '<div class="memola-set-row"><label>最小スコア</label>' +
               '<input id="memola-set-rag-minscore" type="number" min="0" max="1" step="0.05" placeholder="0.2">' +
             '</div>' +
-            // ── 外部ベクトル 連携 (横断検索で 外部ベクトル のベクトルを横から読む) ──
-            '<div class="memola-set-row"><label style="font-weight:600;border-top:1px solid var(--border,#e3e3e0);padding-top:14px">外部ベクトル 連携 (横断検索)</label>' +
+            // ── 外部ベクトル連携 (横断検索で外部ツールのベクトルを横から読む) ──
+            '<div class="memola-set-row"><label style="font-weight:600;border-top:1px solid var(--border,#e3e3e0);padding-top:14px">外部ベクトル連携 (横断検索)</label>' +
               '<div class="memola-set-hint" style="border-top:1px solid var(--border,#e3e3e0);padding-top:14px">' +
-              '外部ベクトル が収集したベクトル(メール/OneNote/PPTX等)を横断チャットの検索対象に加えます。' +
-              '<b>埋め込みモデル/次元を 外部ベクトル と同じ</b>にしておく必要があります(不一致のベクトルは自動でスキップ)。本文はベクトルファイル内にあるため中継サーバは不要です。' +
+              '外部ツールが収集したベクトル(メール/OneNote/PPTX等)を横断チャットの検索対象に加えます。' +
+              '<b>埋め込みモデル/次元を外部ツールと同じ</b>にしておく必要があります(不一致のベクトルは自動でスキップ)。本文はベクトルファイル内にあるため中継サーバは不要です。' +
               '</div>' +
             '</div>' +
-            '<div class="memola-set-row"><label>外部ベクトル ベクトルフォルダ</label>' +
-              '<input id="memola-set-rag-extvec-folder" type="text" placeholder="例: Shared Documents/外部ベクトル (空欄=無効)">' +
+            '<div class="memola-set-row"><label>外部ベクトルフォルダ</label>' +
+              '<input id="memola-set-rag-extVec-folder" type="text" placeholder="例: Shared Documents/vectors (空欄=無効)">' +
             '</div>' +
             '<div class="memola-set-row"><label>検索対象の種類</label>' +
               '<div class="memola-set-hint" style="display:flex;flex-wrap:wrap;gap:10px 16px">' +
-                '<label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="memola-set-rag-extvec-mail">メール</label>' +
-                '<label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="memola-set-rag-extvec-onenote">OneNote</label>' +
-                '<label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="memola-set-rag-extvec-pptx">PPTX</label>' +
-                '<label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="memola-set-rag-extvec-doc">文書</label>' +
-                '<label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="memola-set-rag-extvec-transcript">文字起こし</label>' +
+                '<label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="memola-set-rag-extVec-mail">メール</label>' +
+                '<label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="memola-set-rag-extVec-onenote">OneNote</label>' +
+                '<label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="memola-set-rag-extVec-pptx">PPTX</label>' +
+                '<label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="memola-set-rag-extVec-doc">文書</label>' +
+                '<label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="memola-set-rag-extVec-transcript">文字起こし</label>' +
               '</div>' +
             '</div>' +
             '<div class="memola-set-row"><label></label>' +

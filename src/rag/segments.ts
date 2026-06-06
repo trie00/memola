@@ -1,4 +1,4 @@
-// ベクトルDB の配布フォーマット (doc-keyed)。外部ベクトル の mail-keyed セグメント設計を
+// ベクトルDB の配布フォーマット (doc-keyed)。ExtVec の mail-keyed セグメント設計を
 // memola の「文書(ページ)単位」へ作り替えたもの。
 //
 //   - 1 レコード = 1 チャンク。key = `${docKey}#${chunkIdx}`。

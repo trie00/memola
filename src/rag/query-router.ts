@@ -1,5 +1,5 @@
 // ユーザの質問を LLM が解析し、検索戦略 (ベクトル文 / 必須キーワード) を返す。
-// 外部ベクトル の src/rag/queryRouter.ts を memola のプロバイダ層へ移植。
+// ExtVec の src/rag/queryRouter.ts を memola のプロバイダ層へ移植。
 // 例: 「申請番号 APP-2026-1234 の承認状況は?」
 //   → vectorQuery: "申請の承認状況", keywords: ["APP-2026-1234"]
 // ID/固有名詞のような distinctive な文字列は完全一致で必須にしつつ、意味の文脈は

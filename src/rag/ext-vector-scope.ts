@@ -1,26 +1,26 @@
-// 外部ベクトル が収集したベクトルを「横から読む」読み取り専用スコープ。
+// ExtVec が収集したベクトルを「横から読む」読み取り専用スコープ。
 //
-// 外部ベクトル は /<site>/<library>/外部ベクトル/ に manifest.json + seg-*.json を置き、
+// ExtVec は /<site>/<library>/ExtVec/ に manifest.json + seg-*.json を置き、
 // 各レコードに emb(Base64 Float16)と本文(body)・kind(mail/onenote/pptx/doc/
 // transcript)等のメタを持つ。memola とエンベロープ(manifest/segment)が同形式
 // なので素の JSON として読める。本文がセグメント内にあるため、横断検索は中継
 // サーバ無し・セグメントだけで本文まで使える。
 //
-// 制約: クエリ埋め込みは 外部ベクトル と同じモデル/次元である必要がある。次元が一致
+// 制約: クエリ埋め込みは ExtVec と同じモデル/次元である必要がある。次元が一致
 // しないベクトルは検索からスキップする(誤検出防止)。
 
 import { decodeEmbedding, normalize } from './float16';
 import { readFileText } from './sp-files';
 import { SITE_REL } from '../config';
-import { prefRag外部ベクトルFolder } from '../lib/prefs';
+import { prefRagExtVecFolder } from '../lib/prefs';
 
-export type 外部ベクトルKind = 'mail' | 'onenote' | 'doc' | 'pptx' | 'transcript';
-export const EXTVEC_KINDS: 外部ベクトルKind[] = ['mail', 'onenote', 'doc', 'pptx', 'transcript'];
+export type ExtVecKind = 'mail' | 'onenote' | 'doc' | 'pptx' | 'transcript';
+export const EXTVEC_KINDS: ExtVecKind[] = ['mail', 'onenote', 'doc', 'pptx', 'transcript'];
 
-export interface 外部ベクトルDoc {
+export interface ExtVecDoc {
   key: string;
   messageId: string;
-  kind: 外部ベクトルKind;
+  kind: ExtVecKind;
   subject: string;
   from: string;
   date: string;
@@ -36,14 +36,14 @@ export interface 外部ベクトルDoc {
 
 interface RawRecord {
   seq: number; op?: 'upsert' | 'delete'; messageId: string;
-  kind?: 外部ベクトルKind; internetMessageId?: string; conversationId?: string;
+  kind?: ExtVecKind; internetMessageId?: string; conversationId?: string;
   subject?: string; from?: string; date?: string; body?: string;
   docPath?: string; pptxFile?: string; pptxServerRelUrl?: string;
   slideNo?: number; slideTitle?: string;
   chunkIdx?: number; emb?: string;
 }
 
-let _docs = new Map<string, 外部ベクトルDoc>();
+let _docs = new Map<string, ExtVecDoc>();
 let _loadedFolder: string | null = null;     // どの folder で読み込み済みか
 let _dimSkipped = 0;                          // 次元不一致でスキップした件数(最新検索時)
 
@@ -59,16 +59,16 @@ function coverage(q: Set<string>, d: Set<string>): number {
   return hit / q.size;
 }
 
-function extvecFolderServerRel(): string | null {
-  const f = prefRag外部ベクトルFolder.get().trim().replace(/^\/+|\/+$/g, '');
+function extVecFolderServerRel(): string | null {
+  const f = prefRagExtVecFolder.get().trim().replace(/^\/+|\/+$/g, '');
   if (!f) return null;
   return SITE_REL.replace(/\/+$/, '') + '/' + f;
 }
 
-/** 外部ベクトル のセグメントを読み込んでメモリ上に生存文書を構築。冪等(同 folder は再利用)。
+/** ExtVec のセグメントを読み込んでメモリ上に生存文書を構築。冪等(同 folder は再利用)。
  *  force=true で再読み込み。返り値は文書数。 */
-export async function load外部ベクトルIndex(force = false): Promise<number> {
-  const base = extvecFolderServerRel();
+export async function loadExtVecIndex(force = false): Promise<number> {
+  const base = extVecFolderServerRel();
   if (!base) { _docs = new Map(); _loadedFolder = null; return 0; }
   if (!force && _loadedFolder === base) return _docs.size;
 
@@ -91,7 +91,7 @@ export async function load外部ベクトルIndex(force = false): Promise<number
   }
   all.sort((a, b) => a.seq - b.seq);
 
-  const docs = new Map<string, 外部ベクトルDoc>();
+  const docs = new Map<string, ExtVecDoc>();
   const appliedSeq = new Map<string, number>();
   for (const r of all) {
     if (!r.messageId) continue;
@@ -103,7 +103,7 @@ export async function load外部ベクトルIndex(force = false): Promise<number
     docs.set(key, {
       key,
       messageId: r.messageId,
-      kind: (r.kind || 'mail') as 外部ベクトルKind,
+      kind: (r.kind || 'mail') as ExtVecKind,
       subject: r.subject || '',
       from: r.from || '',
       date: r.date || '',
@@ -123,23 +123,23 @@ export async function load外部ベクトルIndex(force = false): Promise<number
 }
 
 /** kind 別の件数(設定 UI / 件数表示用)。 */
-export function extvecStats(): { total: number; byKind: Record<外部ベクトルKind, number>; enabled: boolean } {
-  const byKind = { mail: 0, onenote: 0, doc: 0, pptx: 0, transcript: 0 } as Record<外部ベクトルKind, number>;
+export function extVecStats(): { total: number; byKind: Record<ExtVecKind, number>; enabled: boolean } {
+  const byKind = { mail: 0, onenote: 0, doc: 0, pptx: 0, transcript: 0 } as Record<ExtVecKind, number>;
   for (const d of _docs.values()) byKind[d.kind] = (byKind[d.kind] || 0) + 1;
-  return { total: _docs.size, byKind, enabled: !!extvecFolderServerRel() };
+  return { total: _docs.size, byKind, enabled: !!extVecFolderServerRel() };
 }
 
 /** 直近検索で次元不一致のためスキップした件数(0 でなければモデル不一致の警告に使う)。 */
-export function extvecDimSkipped(): number { return _dimSkipped; }
+export function extVecDimSkipped(): number { return _dimSkipped; }
 
-export interface 外部ベクトルHit { doc: 外部ベクトルDoc; score: number }
+export interface ExtVecHit { doc: ExtVecDoc; score: number }
 
-/** 外部ベクトル スコープを cosine(+bigram)検索。enabledKinds に無い kind と、qvec と
+/** ExtVec スコープを cosine(+bigram)検索。enabledKinds に無い kind と、qvec と
  *  次元が違うベクトルは除外する。 */
-export function extvecSearch(
-  qvec: Float32Array, topK: number, enabledKinds: Set<外部ベクトルKind>,
+export function extVecSearch(
+  qvec: Float32Array, topK: number, enabledKinds: Set<ExtVecKind>,
   queryText = '', keywordWeight = 0,
-): 外部ベクトルHit[] {
+): ExtVecHit[] {
   _dimSkipped = 0;
   if (_docs.size === 0 || enabledKinds.size === 0) return [];
   const q = normalize(qvec);
@@ -148,7 +148,7 @@ export function extvecSearch(
   const qbi = useKw ? bigrams(queryText) : null;
   const w = Math.min(1, Math.max(0, keywordWeight));
 
-  const hits: 外部ベクトルHit[] = [];
+  const hits: ExtVecHit[] = [];
   for (const d of _docs.values()) {
     if (!enabledKinds.has(d.kind)) continue;
     if (d.vec.length !== dim) { _dimSkipped++; continue; }

@@ -335,7 +335,7 @@ function paintBlockContent(el: HTMLElement, b: Block): void {
       const src = document.createElement('button');
       src.className = 'memola-email-src';
       src.type = 'button';
-      src.innerHTML = ICONS.external;   // 外部ベクトル と同じ「ソースを開く」外部リンクアイコン
+      src.innerHTML = ICONS.external;   // ExtVec と同じ「ソースを開く」外部リンクアイコン
       src.title = 'Outlook でこのメールを開く (InternetMessageId 検索)';
       src.dataset.emailSrc = b.imid;
       if (!b.imid) { src.disabled = true; src.title = 'Message-Id が取得できなかったため開けません'; }

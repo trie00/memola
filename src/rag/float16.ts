@@ -1,4 +1,4 @@
-// Float16 (half precision) <-> Base64 変換 (外部ベクトル より移植)。
+// Float16 (half precision) <-> Base64 変換 (ExtVec より移植)。
 // 埋め込みベクトルを SharePoint Document Library のテキストファイルに詰める
 // ためのエンコード。1 ベクトル ≒ dims*2 バイト → Base64 で約 700B (256 次元)。
 

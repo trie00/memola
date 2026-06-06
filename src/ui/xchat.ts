@@ -1,6 +1,6 @@
 // 横断チャット (cross-document RAG chat) の UI ロジック。
 //
-// レイアウト (外部ベクトル 準拠): [履歴(セッション一覧)] | [スレッド + コンポーザ]。
+// レイアウト (ExtVec 準拠): [履歴(セッション一覧)] | [スレッド + コンポーザ]。
 // 送信 → ragSearch (org+user 横断) → 取得チャンクを文脈に AI 回答 (ストリーム) →
 // 出典カード (クリックでソース文書へ遷移)。セッションは localStorage に保存し、
 // 左ペインの右側の履歴一覧から再表示できる。
@@ -12,13 +12,13 @@ import { ragInit, ragRefresh, ragSearch, ragStats, type RagHit } from '../rag/se
 import { canEmbed } from '../rag/embed';
 
 interface XSource {
-  docKey: string; appPageId: string; scope: 'org' | 'user' | 'extvec';
+  docKey: string; appPageId: string; scope: 'org' | 'user' | 'extVec';
   title: string; heading?: string; snippet: string; chunkIdx: number; score: number;
-  // 外部ベクトル 由来 (scope==='extvec')
+  // ExtVec 由来 (scope==='extVec')
   kind?: string; from?: string; date?: string; body?: string;
 }
 
-/** 出典バッジ/ラベル。extvec は kind 別に表示。 */
+/** 出典バッジ/ラベル。extVec は kind 別に表示。 */
 function scopeLabel(s: { scope: string; kind?: string }): string {
   if (s.scope === 'org') return '組織';
   if (s.scope === 'user') return 'プライベート';
@@ -28,7 +28,7 @@ function scopeLabel(s: { scope: string; kind?: string }): string {
     case 'pptx': return 'PPTX';
     case 'transcript': return '文字起こし';
     case 'doc': return '文書';
-    default: return '外部ベクトル';
+    default: return '外部';
   }
 }
 interface XTurn { q: string; a: string; sources: XSource[]; at?: number }
@@ -168,11 +168,11 @@ function setIdx(text: string): void { const idx = $('memola-xchat-idx'); if (idx
 
 /** 現在のベクトル化件数を常時表示 (確認用)。prefix で前置きメッセージを足せる。 */
 function showStats(prefix = ''): void {
-  const { org, user, extvec } = ragStats();
+  const { org, user, extVec } = ragStats();
   const total = org.chunks + user.chunks;
-  if (total === 0 && !extvec.docs && !prefix) { setIdx('未ベクトル化 — 「文書を読み込み」を押してください'); return; }
+  if (total === 0 && !extVec.docs && !prefix) { setIdx('未ベクトル化 — 「文書を読み込み」を押してください'); return; }
   let msg = `${prefix}ベクトル化済: 組織 ${org.docs}文書 / 個人 ${user.docs}文書 ・計 ${total} チャンク`;
-  if (extvec.enabled) msg += ` ・外部ベクトル ${extvec.docs}件`;
+  if (extVec.enabled) msg += ` ・外部 ${extVec.docs}件`;
   setIdx(msg);
 }
 
@@ -282,7 +282,7 @@ function toggleMenu(): void {
   m.classList.toggle('on');
 }
 
-// ─── render: thread (外部ベクトル レイアウト) ───────────────────────────────
+// ─── render: thread (ExtVec レイアウト) ───────────────────────────────
 const CHEVRON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 
 function fmtTime(ms: number): string {
@@ -431,9 +431,9 @@ async function navigateToSource(appPageId: string): Promise<void> {
 function buildSystemPrompt(hits: RagHit[]): string {
   const ctx = hits.map((h, i) => {
     const label = scopeLabel(h);
-    // 外部ベクトル はセグメントに本文があるので body をそのまま根拠に使う(中継不要)。
+    // ExtVec はセグメントに本文があるので body をそのまま根拠に使う(中継不要)。
     // 1出典あたり最大 2000 字(topK 件分入れても文脈が膨れすぎないように)。
-    const text = (h.scope === 'extvec' && h.body) ? h.body.slice(0, 2000) : h.snippet;
+    const text = (h.scope === 'extVec' && h.body) ? h.body.slice(0, 2000) : h.snippet;
     const meta = (h.from || h.date) ? `\n(${[h.from, h.date].filter(Boolean).join(' / ')})` : '';
     return `[${i + 1}] 文書「${h.title}」${h.heading ? ` / ${h.heading}` : ''} (${label})${meta}\n${text}`;
   }).join('\n\n');

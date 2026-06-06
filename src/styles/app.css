@@ -4067,7 +4067,7 @@
 }
 
 
-/* ════════ 横断チャット (cross-document RAG chat) — 外部ベクトル レイアウト忠実移植 ════════ */
+/* ════════ 横断チャット (cross-document RAG chat) — ExtVec レイアウト忠実移植 ════════ */
 /* 起動ボタン (+新規の隣) */
 .memola-quick-wrap{display:flex;align-items:center;gap:6px}
 #memola-overlay .memola-quick-add{flex:0 0 auto;min-width:0}
@@ -4084,7 +4084,7 @@
 #memola-overlay .memola-quick-chat svg{width:15px;height:15px;flex:0 0 auto}
 #memola-sb.rail .memola-quick-chat{display:none}
 
-/* ── パネル本体: 外部ベクトル のデザイントークンをスコープ内に定義 (テーマに依らず 外部ベクトル 見た目) ── */
+/* ── パネル本体: ExtVec のデザイントークンをスコープ内に定義 (テーマに依らず ExtVec 見た目) ── */
 #memola-xchat{
   --ink:#2a2a26; --ink-3:#7a766c; --ink-4:#a8a39a;
   --paper:#fafaf7; --paper-2:#f3f1ea; --paper-3:#e8e4d8;
