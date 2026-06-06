@@ -151,7 +151,7 @@ function dismissOpenPopup(): boolean {
   //    picker (.memola-cmt-float), block-handle menu, DB colour palette,
   //    workspace menu, shortcuts modal.
   const floater = document.querySelector<HTMLElement>(
-    '.memola-cmt-float, .memola-blk-menu, #memola-dbcolor-pop, #memola-ws-menu, #memola-shortcuts-md',
+    '.memola-cmt-float, .memola-blk-menu, #memola-dbcolor-pop, #memola-ws-menu, #memola-shortcuts-md, .memola-colmenu',
   );
   if (floater) { floater.remove(); return true; }
 

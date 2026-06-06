@@ -552,6 +552,31 @@ export async function updateListFieldChoices(
   }
 }
 
+/** 列の表示名(Title)を変更する。タイトル列を含む任意の列に使える。
+ *  内部名(InternalName)は不変。実際の __metadata.type を取得してから MERGE
+ *  するので、Choice/DateTime など派生型でも型不一致で弾かれない。 */
+export async function renameListField(
+  listTitle: string,
+  fieldInternalName: string,
+  newTitle: string,
+): Promise<void> {
+  const d = await getDigest();
+  delete _etCache[listTitle];
+  const url = spListUrl(listTitle, "/fields/getbyinternalnameortitle('" + fieldInternalName + "')");
+  const cur = await spGetD<{ __metadata?: { type?: string } }>(url);
+  const type = cur?.__metadata?.type || 'SP.Field';
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { ...ODATA_POST_HEADERS, 'X-RequestDigest': d, 'X-HTTP-Method': 'MERGE', 'If-Match': '*' },
+    credentials: 'include',
+    body: JSON.stringify({ __metadata: { type }, Title: newTitle }),
+  });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => '');
+    throw new Error('列名の変更失敗: ' + r.status + (txt ? ' — ' + extractSpErrorDetail(txt) : ''));
+  }
+}
+
 /** Hard-delete a column from an SP list. Used to dedupe columns that
  *  past code paths added more than once (the SP REST `/fields` POST does
  *  not enforce display-name uniqueness — duplicates get auto-numbered

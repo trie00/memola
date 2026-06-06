@@ -53,6 +53,8 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
     void reRender();
   };
   menu.append(
+    item('列名を変更', () => startColRename(field)),
+    sep(),
     item('↑ 昇順で並べ替え', () => sortBy(true)),
     item('↓ 降順で並べ替え', () => sortBy(false)),
     item('フィルター', () => { void import('./filter-ui').then((m) => m.addFilterForField(field.InternalName)); }),
@@ -86,6 +88,42 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
   _outside = (e: MouseEvent): void => { if (_menu && !_menu.contains(e.target as Node)) closeColumnMenu(); };
   setTimeout(() => { if (_outside) document.addEventListener('mousedown', _outside, true); }, 0);
   _menu = menu;
+}
+
+/** 列ヘッダをその場でインライン編集して列名(表示名)を変更。タイトル列も可。 */
+function startColRename(field: ListField): void {
+  const sel = '#memola-dt th[data-field="' + CSS.escape(field.InternalName) + '"]';
+  const th = document.querySelector<HTMLElement>(sel);
+  if (!th) return;
+  const inp = document.createElement('input');
+  inp.className = 'memola-colrename-inp';
+  inp.value = field.Title;
+  th.innerHTML = '';
+  th.appendChild(inp);
+  inp.focus(); inp.select();
+  let done = false;
+  const restore = (): void => { void reRender(); };
+  const commit = (): void => {
+    if (done) return; done = true;
+    const nv = inp.value.trim();
+    if (!nv || nv === field.Title) { restore(); return; }
+    void (async () => {
+      try {
+        setLoad(true, '列名を変更中...');
+        const { renameListField } = await import('../api/sp-list');
+        await renameListField(S.dbList, field.InternalName, nv);
+        await reloadDb();
+        toast('列名を変更しました', 'ok');
+      } catch (e) { toast('列名の変更に失敗: ' + (e as Error).message, 'err'); restore(); }
+      finally { setLoad(false); }
+    })();
+  };
+  inp.addEventListener('keydown', (e) => {
+    e.stopPropagation();   // ESC/Enter をグローバルキーマップに伝播させない(アプリ終了確認防止)
+    if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+    if (e.key === 'Escape') { e.preventDefault(); done = true; restore(); }
+  });
+  inp.addEventListener('blur', commit);
 }
 
 // 未指定の選択肢に割り当たるプリセット色(memola-sc-0..5 と同じ)。
