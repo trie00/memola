@@ -122,5 +122,12 @@ export function openFormulaEditor(listTitle: string, def: DbFormulaDef | null, x
 
 /** S.dbList の数式列エディタを開く(新規)。 */
 export function openNewFormula(x: number, y: number): void {
-  openFormulaEditor(S.dbList, null, x, y, () => { void import('./views-table').then((m) => m.renderDbTable()); });
+  openFormulaEditor(S.dbList, null, x, y, () => {
+    void import('./views-table').then((m) => {
+      m.renderDbTable();
+      // 数式列はデータ列の右端に追加されるので、横に広いDBでも気づけるよう右へスクロール。
+      const wrap = document.getElementById('memola-dt-wrap');
+      if (wrap) wrap.scrollLeft = wrap.scrollWidth;
+    });
+  });
 }
