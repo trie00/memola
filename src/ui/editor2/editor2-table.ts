@@ -431,6 +431,8 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
   const onCellBlur = (e: FocusEvent): void => {
     const cell = e.target as HTMLElement | null;
     if (!cell || cell.tagName !== 'TD') return;
+    // クリックで別セルへ移動中なら、その対象を控える(再描画後に復元)。
+    const pf = _pendingFocus; _pendingFocus = null;
     // The cell may have been detached from the document by a
     // re-render (e.g. moveToCell already committed + repainted, then
     // the browser fires a synthetic blur on the now-orphan DOM node
@@ -459,7 +461,25 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
       if (prev && JSON.stringify(prev) === JSON.stringify(inline)) return;
     }
     editor.applyMutation((s) => tableSetCell(s, blockId, rowIdx, colIdx, inline), 'typing');
+    // 編集確定の再描画でクリック先セルのDOMが差し替わるため、クリック先セルへ
+    // フォーカス＋クリック座標のキャレットを復元する。
+    if (pf) restoreClickFocus(pf);
   };
+
+  /** 再描画後にクリック先セルへフォーカスし、可能ならクリック座標のキャレットを復元。 */
+  function restoreClickFocus(pf: { blockId: string; row: number; col: number; x: number; y: number }): void {
+    const nc = findCellInBlock(pf.blockId, pf.row, pf.col);
+    if (!nc) return;
+    nc.focus();
+    const crf = (document as unknown as { caretRangeFromPoint?: (x: number, y: number) => Range | null }).caretRangeFromPoint;
+    const cr = crf ? crf.call(document, pf.x, pf.y) : null;
+    if (cr && nc.contains(cr.startContainer)) {
+      const ws = window.getSelection();
+      if (ws) { ws.removeAllRanges(); ws.addRange(cr); }
+    } else {
+      focusCellEnd(nc);
+    }
+  }
 
   // ── Column resize (drag the right edge of a cell) ────
   // Within ~6 px of a cell's right edge we treat the mousedown as a
@@ -549,6 +569,10 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
   // the browser's caret placement runs as normal.
   let _dragAnchor: { blockId: string; row: number; col: number } | null = null;
   let _dragging = false;
+  // 別セルをクリックした際、blur 確定の再描画でクリック先セルのDOMが差し替わり
+  // フォーカス/キャレットが失われる(1クリックで有効化されない)。クリック先と
+  // クリック座標を覚えておき、再描画後に復元する。
+  let _pendingFocus: { blockId: string; row: number; col: number; x: number; y: number } | null = null;
 
   const onTableMousedown = (e: MouseEvent): void => {
     if (e.button !== 0) return;
@@ -571,6 +595,8 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     }
     _dragAnchor = { blockId, row: pos.row, col: pos.col };
     _dragging = false;
+    // クリック先と座標を記録 → 編集確定の再描画でフォーカスが外れても復元できる。
+    _pendingFocus = { blockId, row: pos.row, col: pos.col, x: e.clientX, y: e.clientY };
     // Select this cell → show the edge handles. A drag (range-select)
     // hides them again (see onTableMousemoveForRange).
     _selCell = { blockId, row: pos.row, col: pos.col };
@@ -611,6 +637,7 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
   const onTableMouseup = (): void => {
     const wasDrag = _dragging;
     _dragAnchor = null;
+    _pendingFocus = null;       // blur が発火しなかった場合の後始末
     // 範囲ドラッグ確定後は、フォーカスセルにハンドル(右の太枠)を再表示する。
     // → 太枠の色メニューから範囲全体を一括着色できる(#2)。範囲ハイライト(.selcel)は維持。
     if (wasDrag) {
