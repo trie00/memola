@@ -317,7 +317,13 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
       editor.applyMutation((s) => tableAddRow(s, blockId, row), 'structural');
       targetCell = findCellInBlock(blockId, row, col);
     }
-    if (targetCell) focusCellEnd(targetCell);
+    if (targetCell) {
+      focusCellEnd(targetCell);
+      // 移動先を選択セルにして、ハンドル(外枠の太線)も追従させる。
+      // (Enter/Tab/矢印 でのセル移動後、旧セルが選択のまま残るのを防ぐ)
+      const tpos = findCellPos(targetCell);
+      if (tpos) { _selCell = { blockId, row: tpos.row, col: tpos.col }; showSelHandles(); }
+    }
   }
 
   // ── Cell caret-position helpers ────────────────────
