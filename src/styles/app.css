@@ -3459,7 +3459,10 @@
    表のずっと下(余白の最下部)に出て気づきにくい。flex:0 1 auto にすると
    行が少ない時は表の高さに縮まり横バーが「最終行の直下」に出る。行が多い時は
    shrink して内部で縦スクロール(ヘッダ固定)＋横バーは可視領域の下端に出る。 */
-#memola-dt-wrap { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 0; min-width: 0; }
+/* テーブル領域がDBビューの残り高さを満たし、縦横ともこの中でスクロールさせる
+   (ページ側の隠れるオーバーレイバーではなく、テーブル内に常時表示バーを出す)。
+   flex:1 1 0 で高さを確定 → overflow:auto + ::-webkit-scrollbar で両軸の常時バー。 */
+#memola-dt-wrap { flex: 1 1 0%; min-height: 0; overflow: auto; padding: 0; min-width: 0; }
 /* macOS のオーバーレイ型スクロールバーは自動で隠れて気付きにくいので、
    ::-webkit-scrollbar を定義して常時表示の従来型バーに切り替える(溢れた時のみ表示)。 */
 #memola-overlay #memola-dt-wrap::-webkit-scrollbar { height: 12px; width: 12px; }
@@ -3470,8 +3473,9 @@
 }
 #memola-overlay #memola-dt-wrap::-webkit-scrollbar-thumb:hover { background: rgba(42, 42, 38, 0.45); }
 #memola-overlay #memola-dt-wrap::-webkit-scrollbar-corner { background: transparent; }
-/* Firefox 用 */
-#memola-overlay #memola-dt-wrap { scrollbar-width: thin; scrollbar-color: rgba(42,42,38,0.35) var(--paper-2, #f3f1ea); }
+/* 注意: 標準プロパティ scrollbar-width を指定すると Chrome がそちらを優先して
+   ::-webkit-scrollbar(常時表示クラシック)を無視し、macではオーバーレイ(自動で
+   隠れる)に戻ってしまう。そのため scrollbar-width はあえて指定しない。 */
 #memola-dt {
   /* 列が多くて入りきらない時は縮めず、内容幅(列幅の合計)まで広げて
      #memola-dt-wrap の横スクロールで見せる。少ない時は 100% に伸ばす。 */
