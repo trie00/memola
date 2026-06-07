@@ -5,12 +5,19 @@ import { spGetD } from './sp-rest';
 
 let _cache: { high: number; low: number } | null = null;
 
-/** /_api/web/effectiveBasePermissions を取得(High/Low の 64bit マスク)。 */
+/** /_api/web/effectiveBasePermissions を取得(High/Low の 64bit マスク)。
+ *  プロパティ直接取得のため、応答は { EffectiveBasePermissions: { High, Low } } の
+ *  形で返る(verbose)。念のため d 直下の High/Low もフォールバックで見る。 */
 async function getPerms(): Promise<{ high: number; low: number } | null> {
   if (_cache) return _cache;
-  const d = await spGetD<{ High?: string | number; Low?: string | number }>(SITE + '/_api/web/effectiveBasePermissions');
+  const d = await spGetD<{ EffectiveBasePermissions?: { High?: string | number; Low?: string | number };
+    High?: string | number; Low?: string | number }>(SITE + '/_api/web/effectiveBasePermissions');
   if (!d) return null;
-  _cache = { high: Number(d.High || 0), low: Number(d.Low || 0) };
+  const node = d.EffectiveBasePermissions || d;
+  const high = Number(node.High);
+  const low = Number(node.Low);
+  if (!isFinite(high) || !isFinite(low)) return null;   // 解釈不能 → ブロックしない
+  _cache = { high, low };
   return _cache;
 }
 
