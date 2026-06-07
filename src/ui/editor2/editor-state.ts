@@ -1393,6 +1393,23 @@ export function tableSetRowBg(state: EditorState, blockId: BlockId, r: number, c
   return replaceBlock(state, found.idx, { ...tbl, cellBg });
 }
 
+/** 矩形範囲(anchor〜focus)の全セルを着色('' で解除)。 */
+export function tableSetRangeBg(
+  state: EditorState, blockId: BlockId,
+  a: { row: number; col: number }, f: { row: number; col: number }, color: string,
+): EditorState {
+  const found = findBlock(state, blockId);
+  if (!found || found.block.kind !== 'table') return state;
+  const tbl = found.block;
+  const r0 = Math.max(0, Math.min(a.row, f.row));
+  const r1 = Math.min(tbl.rows.length - 1, Math.max(a.row, f.row));
+  const c0 = Math.max(0, Math.min(a.col, f.col));
+  const c1 = Math.min((tbl.rows[0]?.length || 0) - 1, Math.max(a.col, f.col));
+  const cellBg = ensureBgGrid(tbl);
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) cellBg[r][c] = color;
+  return replaceBlock(state, found.idx, { ...tbl, cellBg });
+}
+
 /** Colour every cell in column `c` ('' clears). */
 export function tableSetColBg(state: EditorState, blockId: BlockId, c: number, color: string): EditorState {
   const found = findBlock(state, blockId);

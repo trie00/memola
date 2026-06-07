@@ -10,7 +10,7 @@
 import type { Editor } from './editor2';
 import {
   tableAddRow, tableAddCol, tableRemoveRow, tableRemoveCol, tableSetCell,
-  tableSetRowBg, tableSetColBg, tableSetCellBg,
+  tableSetRowBg, tableSetColBg, tableSetCellBg, tableSetRangeBg,
 } from './editor-state';
 import type { Inline } from '../../lib/blocks';
 import { inlineToPlainText } from '../../lib/blocks';
@@ -563,6 +563,12 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
     const pos = findCellPos(cell);
     const blockId = cell.closest<HTMLElement>('[data-block-id]')?.dataset.blockId;
     if (!pos || !blockId) return;
+    // 既存の範囲選択(table-cells)は、別セルをクリックした時点でリセットする。
+    // (ハンドル「太枠」クリックは overlay 上のため onTableMousedown を通らず、範囲は保持される)
+    const prevSel = editor.getSelection();
+    if (prevSel && prevSel.kind === 'table-cells') {
+      editor.applyMutation((s) => ({ ...s, selection: null }), 'selection');
+    }
     _dragAnchor = { blockId, row: pos.row, col: pos.col };
     _dragging = false;
     // Select this cell → show the edge handles. A drag (range-select)
@@ -603,10 +609,17 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
   };
 
   const onTableMouseup = (): void => {
+    const wasDrag = _dragging;
     _dragAnchor = null;
-    // Keep `_dragging` so the next click that lands outside any cell
-    // can detect "we just finished a range select" if needed; reset
-    // whenever a fresh mousedown starts.
+    // 範囲ドラッグ確定後は、フォーカスセルにハンドル(右の太枠)を再表示する。
+    // → 太枠の色メニューから範囲全体を一括着色できる(#2)。範囲ハイライト(.selcel)は維持。
+    if (wasDrag) {
+      const cs = editor.getSelection();
+      if (cs && cs.kind === 'table-cells') {
+        _selCell = { blockId: cs.blockId, row: cs.focus.row, col: cs.focus.col };
+        showSelHandles();
+      }
+    }
   };
 
   // ── Notion-style edge handles (no right-click menu) ──────────────────
@@ -747,9 +760,14 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
         colorRow((color) => mut((s) => tableSetColBg(s, blockId, col, color))),
       );
     } else {
+      // 範囲選択(table-cells)が有効なら範囲全体を、なければ単一セルを着色。
+      const cs = editor.getSelection();
+      const range = (cs && cs.kind === 'table-cells' && cs.blockId === blockId) ? cs : null;
       menu.append(
-        colorLabel('セルの色'),
-        colorRow((color) => mut((s) => tableSetCellBg(s, blockId, row, col, color))),
+        colorLabel(range ? '選択範囲の色' : 'セルの色'),
+        colorRow((color) => mut((s) => range
+          ? ({ ...tableSetRangeBg(s, blockId, range.anchor, range.focus, color), selection: null })
+          : tableSetCellBg(s, blockId, row, col, color))),
       );
     }
 
@@ -949,35 +967,8 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
       hideButtons();
     };
 
-    // -row / -col buttons: small ✕ in the row/col header. Only show
-    // when there's more than one row/col (else the action is a no-op).
-    const rmRowBtn = ensureButton('rm-row', '✕', '行を削除');
-    if (rowIdx >= 0 && trs.length > 1) {
-      const rr = trs[rowIdx].getBoundingClientRect();
-      rmRowBtn.style.top = (rr.top + window.scrollY + (rr.height - 18) / 2) + 'px';
-      rmRowBtn.style.left = (rr.left + window.scrollX - 22) + 'px';
-      rmRowBtn.style.display = 'block';
-      rmRowBtn.onclick = () => {
-        editor.applyMutation((s) => tableRemoveRow(s, blockId, rowIdx), 'structural');
-        hideButtons();
-      };
-    } else {
-      rmRowBtn.style.display = 'none';
-    }
-
-    const rmColBtn = ensureButton('rm-col', '✕', '列を削除');
-    if (colIdx >= 0 && cells.length > 1) {
-      const cr = cells[colIdx].getBoundingClientRect();
-      rmColBtn.style.top = (cr.top + window.scrollY - 22) + 'px';
-      rmColBtn.style.left = (cr.left + window.scrollX + (cr.width - 16) / 2) + 'px';
-      rmColBtn.style.display = 'block';
-      rmColBtn.onclick = () => {
-        editor.applyMutation((s) => tableRemoveCol(s, blockId, colIdx), 'structural');
-        hideButtons();
-      };
-    } else {
-      rmColBtn.style.display = 'none';
-    }
+    // 行/列の ✕ 削除ボタン(テーブル外に浮く)は廃止。削除はセルクリックで出る
+    // 行/列ハンドルのメニュー「行を削除 / 列を削除」から行う。
   }
 }
 
