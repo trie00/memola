@@ -13,6 +13,7 @@
 
 import { S, type Tab } from '../state';
 import { metaById } from '../lib/page-store';
+import { toast } from './ui-helpers';
 import { prefTabs } from '../lib/prefs';
 import { SITE } from '../config';
 import { ICONS } from '../icons';
@@ -149,24 +150,37 @@ export async function activateTab(tabId: string): Promise<void> {
     x.showSearchTab(tab.searchId || x.newSearchId());
     return;
   }
-  // 行タブ(DB行/デイリーノート): 親DBを開いて行を再オープン(nav-history と同方式)。
-  // 読み込み中は in-place 扱い(余計なタブを作らせない)。
+  // 行タブ(DB行/デイリーノート): DB一覧は開かず、その行だけを取得して再表示する。
+  // 以前は doSelect(dbId)(=DB一覧を丸ごと開く処理)を流用していたため、(1)全行を無駄に
+  // ロードし、(2)その副作用で「この行タブ」が DBページタブに上書きされ DB一覧タブが
+  // 二重化していた。行に必要なのは「列定義」と「その1行」だけなので直接取得する。
+  // 一覧へ戻るのはパンくず(課題一覧 > 課題1)の「課題一覧」クリック時に再読込する。
   if (tab.kind === 'row') {
     x.hideSearchTab();
-    // doSelect(dbId) は内部の openInActiveTab で「この tab」を DBページタブに
-    // 書き換え、tab.rowDbId/tab.rowId を消去する。必ず先に退避してから使う
-    // (消えた tab.rowId で行を探すと見つからず、tab が DBタブのまま残って
-    //  DB一覧タブが二重化していた)。
     const rowDbId = tab.rowDbId;
     const rowId = tab.rowId;
     if (rowDbId && rowId != null) {
-      _navInPlace = true;
-      try {
-        const { doSelect } = await import('./views');
-        await doSelect(rowDbId);
-        const row = S.dbItems.find((it) => it.Id === rowId);
-        if (row) { const rp = await import('./row-page'); await rp.openRowAsPage(rowDbId, row); }
-      } finally { _navInPlace = false; }
+      const meta = metaById(rowDbId);
+      const listTitle = meta?.list;
+      if (listTitle) {
+        try {
+          S.currentId = rowDbId;          // パンくず/サイドバーは親DBに固定
+          S.dbList = listTitle;
+          const { getListFields, getListItemById } = await import('../api/sp-list');
+          const { stripInternalDbFields } = await import('../api/db');
+          const [fields, item] = await Promise.all([
+            getListFields(listTitle),
+            getListItemById(listTitle, rowId),
+          ]);
+          S.dbFields = stripInternalDbFields(fields);
+          if (item) {
+            const rp = await import('./row-page');
+            await rp.openRowAsPage(rowDbId, item);   // 内部で openRowInActiveTab → 既存行タブを再利用(複製しない)
+          } else {
+            toast('行が見つかりません (削除された可能性)', 'err');
+          }
+        } catch (e) { toast('行の読み込みに失敗: ' + (e as Error).message, 'err'); }
+      }
     }
     return;
   }
