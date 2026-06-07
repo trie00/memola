@@ -5,62 +5,33 @@
 // all wired together via subscriptions; nothing else has to know about
 // state transitions.
 //
-// Public API:
-//   - `schedSave()`       editor mutation hook (flips Saver to 'dirty')
-//   - `flushPendingSave()` save the current edits NOW (Ctrl+S, page
-//                         nav, app close). Handles both Saver-driven
-//                         pages and the legacy row-page branch.
-//   - `clearSaveTimer()`  cancel pending autosave (close path)
+// 通常ページも DB行ページも同じ Saver 経路で保存する(行専用の saveCurrentRow /
+// armRowAutosave / `if (S.currentRow)` 分岐は廃止)。行ページは openRowAsPage が
+// saver.loadPage で「その行」を保存対象に設定済みなので、ここは currentRow を
+// 区別せず常にセーバへ流す。
 //
-// Row-page saves take a separate code path (`row-page.saveCurrentRow`)
-// because DB rows aren't yet migrated to the Saver. flushPendingSave
-// delegates when `S.currentRow` is set.
+// Public API:
+//   - `schedSave()`        editor mutation hook (flips Saver to 'dirty')
+//   - `flushPendingSave()` save the current edits NOW (Ctrl+S, page nav, close)
+//   - `clearSaveTimer()`   cancel pending autosave (close path)
 
 import { S } from '../state';
 import { g, getEd } from './dom';
 import { saver } from '../lib/saver';
 import { cancelAutosave } from '../lib/autosave';
 import { syncEditor2IntoSaver } from './editor2/editor2-bridge';
-import { setSave } from './ui-helpers';
-import { SAVE_MS } from '../config';
 
-// Row-pages (DB row bodies) don't go through the Saver state machine, so
-// the Saver-driven autosave scheduler never fires for them. We run a small
-// debounced timer here instead so edits to a DB row's body autosave just
-// like a normal page (they previously only persisted on Ctrl+S / nav / close).
-let _rowSaveTimer: ReturnType<typeof setTimeout> | null = null;
-
-function clearRowSaveTimer(): void {
-  if (_rowSaveTimer) { clearTimeout(_rowSaveTimer); _rowSaveTimer = null; }
-}
-
-function armRowAutosave(): void {
-  clearRowSaveTimer();
-  _rowSaveTimer = setTimeout(() => {
-    _rowSaveTimer = null;
-    if (!S.currentRow || !S.dirty || S.saving) return;
-    void import('./row-page').then((m) => m.saveCurrentRow()).catch(() => undefined);
-  }, SAVE_MS);
-}
-
-/** Pull the editor's current content (HTML → markdown + title) and
- *  push it to the Saver. Called from every editor mutation site via
- *  `schedSave()` and from the keyboard `Ctrl+S` / page-nav flush.
- *
- *  This is the only bridge between "the editor's DOM" and "the
- *  Saver's view of pending changes". Everywhere else, the source of
- *  truth is `saver.state()`. */
+/** Pull the editor's current content (blocks + title) and push it to the
+ *  Saver. The only bridge between "the editor's DOM" and "the Saver's view
+ *  of pending changes". The Saver writes to its loaded page (base.pageId),
+ *  which is the normal page OR the DB row established by openRowAsPage. */
 function syncEditorIntoSaver(): void {
   if (!S.currentId) return;
   if (S.currentType === 'database') return;
-  if (S.currentRow) return;     // row-pages have their own save path
   const te = g('ttl') as HTMLTextAreaElement | null;
   const ed = getEd();
   if (!te || !ed) return;
   const title = te.value.trim() || '無題';
-  // editor2 (controlled-rendering) owns the editor DOM — pull blocks
-  // straight from its canonical state. The legacy htmlToBlocks parse
-  // path was deleted in Phase 2c-5 along with editor.ts.
   syncEditor2IntoSaver(title);
 }
 
@@ -69,31 +40,12 @@ function syncEditorIntoSaver(): void {
  *  scheduler arms a timer to call `saver.save()`. */
 export function schedSave(): void {
   if (!S.currentId || S.currentType === 'database') return;
-  if (S.currentRow) {
-    // Row-pages still use the legacy dirty/saving markers (= the
-    // memola-pages row save path is markdown-based and doesn't go
-    // through the Saver state machine). Mark dirty so the next
-    // flushPendingSave / Ctrl+S / close-app actually persists the
-    // edit; legacy editor.ts did this on every mutation, and after
-    // moving row-pages to editor2 we need to re-establish the same
-    // signal at the editor-subscribe boundary.
-    if (!S.dirty) {
-      S.dirty = true;
-      setSave('未保存');
-    }
-    // Debounced autosave for row-pages (previously these only saved on
-    // explicit flush — Ctrl+S / nav / close — so quietly-edited DB rows
-    // were never auto-persisted).
-    armRowAutosave();
-    return;
-  }
   syncEditorIntoSaver();
 }
 
 /** Cancel any pending autosave timer. Used by close / nav teardown. */
 export function clearSaveTimer(): void {
   cancelAutosave();
-  clearRowSaveTimer();
 }
 
 /** Robust "save right now and don't lose anything" flush. Used by:
@@ -102,25 +54,9 @@ export function clearSaveTimer(): void {
  *  - app close / bookmarklet teardown
  *
  *  The Saver's `flush()` waits for any in-flight save and triggers a
- *  follow-up if the user typed during the round-trip. It does NOT
- *  retry after a conflict — the user must resolve it explicitly. */
+ *  follow-up if the user typed during the round-trip. It does NOT retry
+ *  after a conflict — the user must resolve it explicitly. */
 export async function flushPendingSave(): Promise<void> {
-  // Row-page (= DB row's body editor) still uses its own save path
-  // distinct from the Saver state machine. Without this branch the
-  // row-page Ctrl+S, page-nav flush and close-app flush were all
-  // no-ops (the lower syncEditorIntoSaver early-returns when
-  // `S.currentRow` is set), silently dropping unsaved row edits.
-  if (S.currentRow) {
-    clearRowSaveTimer();     // a debounced row autosave may be pending — supersede it
-    if (S.dirty && !S.saving) {
-      S.saving = true;
-      try {
-        const m = await import('./row-page');
-        await m.saveCurrentRow();
-      } finally { S.saving = false; }
-    }
-    return;
-  }
   syncEditorIntoSaver();
   await saver.flush();
 }

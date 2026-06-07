@@ -419,6 +419,13 @@ export function pageIdForListItem(sourceList: string, numericId: number): string
   return resolvePageId(SOURCE_LIST_BY_PAGEID, sourceList, numericId);
 }
 
+/** DB行ページを通常ページと同じ保存/読込経路に載せるため、行 pageId(例
+ *  `memola-db-…:5`)→そのDBリスト の対応を登録する。listForPageId がこれを見て
+ *  apiLoadContentMeta / apiSavePageBlocks を正しいリストへルーティングできる。 */
+export function registerPageSourceList(pageId: string, list: string): void {
+  SOURCE_LIST_BY_PAGEID.set(pageId, list);
+}
+
 /** Stable, USER-INDEPENDENT key for a page, used to anchor comments so they
  *  are shared correctly across users. The app's `pageId` can differ per
  *  user (numeric-id collisions with each user's per-user list mint a

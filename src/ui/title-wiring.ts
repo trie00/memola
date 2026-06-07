@@ -28,6 +28,20 @@ export function attachTitleWiring(): void {
     if (ke.isComposing || ke.keyCode === 229) return;
     if (ke.key === 'Enter') { e.preventDefault(); getEd().focus(); }
   });
+  // 行ページ(デイリーノート)のタイトル確定時: 本文を保存してから、日付形式から
+  // 外れていれば通常ページへの変換を提案する(旧 saveCurrentRow の役割を継承)。
+  // maybePromptDailyConvert はデイリー以外/提案済みなら no-op。
+  te.addEventListener('blur', () => {
+    const row = S.currentRow;
+    if (!row) return;
+    const title = (te.value || '').trim() || '無題';
+    void (async () => {
+      const { flushPendingSave } = await import('./save-control');
+      await flushPendingSave();
+      const m = await import('./row-page');
+      await m.maybePromptDailyConvert(row.itemId, title, row.listTitle);
+    })();
+  });
 
   // DB title (contenteditable span)
   g('dv-ttl').addEventListener('input', () => {
