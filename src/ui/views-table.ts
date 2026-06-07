@@ -251,6 +251,12 @@ export function renderDbTable(): void {
         document.body.style.userSelect = '';
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        // 列幅を端末ローカルに保存(リスト単位)。
+        void import('../lib/prefs').then(({ prefDbColumnWidths }) => {
+          const all = prefDbColumnWidths.get();
+          all[S.dbList] = { ...S.dbColumnWidths };
+          prefDbColumnWidths.set(all);
+        });
       }
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);

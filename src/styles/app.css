@@ -3623,6 +3623,16 @@
 #memola-overlay .memola-formula-li-1 { font-family: var(--font-mono, monospace); font-size: 12px; color: var(--ink); white-space: nowrap; }
 #memola-overlay .memola-formula-li-2 { font-size: var(--fs-xs); color: var(--ink-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #memola-overlay .memola-formula-acts { display: flex; gap: 8px; justify-content: flex-end; }
+/* ログイン中ユーザー アイコン(右上) */
+#memola-overlay .memola-user-avatar {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; margin-left: 4px;
+  display: inline-flex; align-items: center; justify-content: center; overflow: hidden;
+  background: var(--accent, #7a8a78); color: #fff; font-size: 12px; font-weight: 600;
+  cursor: default; user-select: none;
+}
+#memola-overlay .memola-user-avatar .memola-user-photo { width: 100%; height: 100%; object-fit: cover; display: none; }
+#memola-overlay .memola-user-avatar.has-photo .memola-user-photo { display: block; }
+#memola-overlay .memola-user-avatar.has-photo .memola-user-initial { display: none; }
 /* 参照のみユーザー向け警告モーダル */
 #memola-overlay .memola-readonly-md {
   position: fixed; inset: 0; z-index: 2147483647; display: flex; align-items: center; justify-content: center;

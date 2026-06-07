@@ -91,6 +91,8 @@ export function attachAll(): void {
   // Top bar
   g('x').addEventListener('click', closeApp);
   g('reload-btn').addEventListener('click', () => void doReload());
+  // 右上のログイン中ユーザーアイコン(AD プロフィール画像)
+  void import('./user-avatar').then((m) => m.attachUserAvatar());
 
   // Sidebar / nav-history / daily-notes / empty-state CTAs
   attachSidebarWiring({ openTodayDailyNote, showDailyPicker, doNewDb });

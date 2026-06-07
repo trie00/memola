@@ -87,6 +87,8 @@ export function buildHtml(): string {
         // タブ列の右端: 再読み込み(丸矢印) + 設定(歯車)
         '<button id="memola-reload-btn" class="memola-tabbar-act" title="再読み込み（一覧＋表示中のページ）＋新バージョン確認">' + ICONS.refresh + '</button>' +
         '<button id="memola-settings-btn" class="memola-tabbar-act" title="設定">' + ICONS.gear + '</button>' +
+        // ログイン中ユーザー(AD プロフィール画像)。画像が無ければ頭文字。
+        '<span id="memola-user-avatar" class="memola-user-avatar" title=""><span class="memola-user-initial"></span></span>' +
       '</div>' +
       // ── 2段目: パンくず(親>タイトル) / スコープ / 公開 / 各ボタン ──
       '<div id="memola-top">' +

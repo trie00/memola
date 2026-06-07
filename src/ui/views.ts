@@ -424,6 +424,8 @@ export async function doSelectDb(id: string, page: Page): Promise<void> {
     }
     S.dbItems  = active;
     S.dbList   = meta.list;
+    // 列幅を端末ローカルから復元(アプリ再起動でリセットされないように)。
+    { const { prefDbColumnWidths } = await import('../lib/prefs'); S.dbColumnWidths = prefDbColumnWidths.get()[meta.list] || {}; }
     S.dbSelected.clear();
     setSelectionAnchor(null);
     // 数式列・参照列(共有設定)を先に読み込む → テーブル描画時に反映される。

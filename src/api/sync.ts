@@ -35,6 +35,17 @@ export function getCurrentUser(): Promise<string> {
   return _currentUserPromise;
 }
 
+/** 現在ユーザーの表示名 + メール(プロフィール画像取得用)。失敗時は空。 */
+let _currentUserInfoPromise: Promise<{ title: string; email: string }> | null = null;
+export function getCurrentUserInfo(): Promise<{ title: string; email: string }> {
+  if (_currentUserInfoPromise) return _currentUserInfoPromise;
+  _currentUserInfoPromise = (async () => {
+    const d = await spGetD<{ Title?: string; Email?: string }>(SITE + '/_api/web/currentuser?$select=Title,Email');
+    return { title: d?.Title || '', email: d?.Email || '' };
+  })().catch(() => ({ title: '', email: '' }));
+  return _currentUserInfoPromise;
+}
+
 /** Numeric SP user Id of the signed-in user. Used to filter rows by
  *  AuthorId (e.g. hide other users' drafts from this user's UI).
  *  Returns 0 on failure. */

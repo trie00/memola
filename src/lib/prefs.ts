@@ -86,6 +86,9 @@ export interface DbViewDef {
 export interface DbViewsState { activeId: string; views: DbViewDef[] }
 export const prefDbViews = jsonPref<Record<string, DbViewsState>>('memola.dbViews', {});
 
+// DB 列幅(リスト単位・端末ローカル)。{ [listTitle]: { internalName: px } }。
+export const prefDbColumnWidths = jsonPref<Record<string, Record<string, number>>>('memola.dbColWidths', {});
+
 // DB「数式」列(リスト単位)。値は保存せず描画時に各行で評価する読み取り専用列。
 export interface DbFormulaDef { id: string; name: string; expr: string }
 export const prefDbFormulas = jsonPref<Record<string, DbFormulaDef[]>>('memola.dbFormulas', {});
