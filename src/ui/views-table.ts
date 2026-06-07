@@ -35,6 +35,12 @@ let _renderRules: DbColorRule[] = [];
 let _renderFormulas: DbFormulaDef[] = [];
 let _renderLookups: DbLookupDef[] = [];
 
+/** セル値が変わった後に呼ぶ: 数式/参照列があれば再描画して再計算する。
+ *  計算列が無ければ何もしない(無駄な再描画を避ける)。 */
+function recalcComputed(): void {
+  if (_renderFormulas.length || _renderLookups.length) renderDbTable();
+}
+
 export function getDbFields(): ListField[] {
   // 2=text, 3=multiline, 4=date, 6=choice, 8=bool, 9=number
   const filtered = S.dbFields.filter((f) => [2, 3, 4, 6, 8, 9].indexOf(f.FieldTypeKind) >= 0);
@@ -499,6 +505,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
             .then(() => {
               setSave(''); renderText();
               recordCellChange(S.dbList, item.Id, f.InternalName, f.Title, oldRaw, '');
+              recalcComputed();
             })
             .catch((e: Error) => {
               toast(e.message, 'err');
@@ -516,6 +523,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
             .then(() => {
               setSave(''); renderText();
               recordCellChange(S.dbList, item.Id, f.InternalName, f.Title, oldRaw, norm);
+              recalcComputed();
             })
             .catch((e: Error) => {
               toast(e.message, 'err');
@@ -571,6 +579,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
           .then(() => {
             renderChip(nv);
             recordCellChange(S.dbList, item.Id, f.InternalName, f.Title, oldVal, nv);
+            recalcComputed();
           })
           .catch((e: Error) => { toast(e.message, 'err'); });
       };
@@ -640,6 +649,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
           .then(() => {
             setSave('');
             recordCellChange(S.dbList, item.Id, f.InternalName, f.Title, oldVal, nv);
+            recalcComputed();
           })
           .catch((e: Error) => { toast(e.message, 'err'); span.textContent = orig; });
       });
