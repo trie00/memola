@@ -25,6 +25,12 @@ export async function openRowAsPage(dbId: string, item: ListItem): Promise<void>
   const listTitle = S.dbList;
   if (!listTitle || !item) return;
 
+  // 直前のページ/行の保留保存を確定し、セーバを解放する。これをしないと、
+  // 通常ページ編集中に行ページを開いた時、後発のセーバ自動保存が「いま開いて
+  // いる行の内容」を直前ページへ書き込み、行タイトルが別ページにコピーされる。
+  try { const { flushPendingSave } = await import('./save-control'); await flushPendingSave(); } catch { /* ignore */ }
+  try { const { saver } = await import('../lib/saver'); saver.unload(); } catch { /* ignore */ }
+
   // Switch state — keep currentId pointing to the parent DB so sidebar stays
   // selected, but flip into row-page mode.
   S.currentRow = { listTitle, itemId: item.Id, dbId };

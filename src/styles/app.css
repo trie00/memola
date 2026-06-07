@@ -3656,6 +3656,7 @@
 #memola-overlay .memola-oplog-act { font-weight: 600; font-size: var(--fs-sm); }
 #memola-overlay .memola-oplog-src { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--paper-3); color: var(--ink-3); }
 #memola-overlay .memola-oplog-src.ai { background: #e7e0f5; color: #5a3a8a; }
+#memola-overlay .memola-oplog-actor { font-size: var(--fs-xs); color: var(--ink-3); }
 #memola-overlay .memola-oplog-time { margin-left: auto; font-size: var(--fs-xs); color: var(--ink-4); }
 #memola-overlay .memola-oplog-tgt { font-size: var(--fs-sm); color: var(--ink-2); margin-top: 2px; }
 #memola-overlay .memola-oplog-rest code { font-family: var(--font-mono, monospace); font-size: 11px; color: var(--ink-3); word-break: break-all; }

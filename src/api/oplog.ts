@@ -4,7 +4,7 @@
 // メソッド/URL を残し、どのコマンドが走ったか分かるようにする(別アプリと同形式)。
 
 import { ensureList, createListItem, getListItems, type FieldSpec } from './sp-list';
-import type { ListItem } from '../state';
+import { S, type ListItem } from '../state';
 
 const LIST = 'memola-oplog';
 const FIELDS: FieldSpec[] = [
@@ -14,6 +14,8 @@ const FIELDS: FieldSpec[] = [
   { name: 'Url', kind: 3 },                     // REST エンドポイント
   { name: 'Detail', kind: 3 },                  // 補足(body 要約など)
   { name: 'Source', kind: 2 },                  // user / ai
+  { name: 'ActorName', kind: 2 },               // 操作したユーザーの表示名
+  { name: 'ActorId', kind: 9 },                 // 操作したユーザーの SP user id
 ];
 
 let _ensured = false;
@@ -35,6 +37,8 @@ export async function logOp(e: OpLogEntry): Promise<void> {
   const src = _src;   // 呼び出し時点の発生源を確定(後で reset されても固定)
   try {
     await ensure();
+    const { getCurrentUserInfo } = await import('./sync');
+    const me = await getCurrentUserInfo().catch(() => ({ title: '', email: '' }));
     await createListItem(LIST, {
       Title: (e.action + ' ' + (e.target || '')).slice(0, 255),
       Action: e.action,
@@ -43,6 +47,8 @@ export async function logOp(e: OpLogEntry): Promise<void> {
       Url: e.url || '',
       Detail: e.detail || '',
       Source: src,
+      ActorName: (me.title || me.email || '').slice(0, 255),
+      ActorId: S.meta.myUserId || 0,
     });
   } catch { /* ログ失敗は無視 */ }
 }
@@ -50,7 +56,7 @@ export async function logOp(e: OpLogEntry): Promise<void> {
 /** 直近のログを新しい順に取得(設定画面のビューア用)。 */
 export async function listOps(limit = 100): Promise<ListItem[]> {
   await ensure();
-  const items = await getListItems(LIST, 'Id,Action,Target,Method,Url,Detail,Source,Created');
+  const items = await getListItems(LIST, 'Id,Action,Target,Method,Url,Detail,Source,ActorName,Created');
   items.sort((a, b) => String(b.Created || '').localeCompare(String(a.Created || '')));
   return items.slice(0, limit);
 }

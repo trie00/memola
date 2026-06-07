@@ -346,6 +346,7 @@ async function loadOpLog(): Promise<void> {
         '<div class="memola-oplog-l1">' +
           '<span class="memola-oplog-act">' + esc(rec.Action) + '</span>' +
           '<span class="memola-oplog-src ' + (src === 'ai' ? 'ai' : '') + '">' + esc(src) + '</span>' +
+          (rec.ActorName ? '<span class="memola-oplog-actor">👤 ' + esc(rec.ActorName) + '</span>' : '') +
           '<span class="memola-oplog-time">' + esc(fmt(rec.Created)) + '</span>' +
         '</div>' +
         '<div class="memola-oplog-tgt">' + esc(rec.Target) + '</div>' +
