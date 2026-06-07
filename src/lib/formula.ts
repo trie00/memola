@@ -9,6 +9,55 @@
 
 export type FormulaValue = number | string | boolean | Date | null;
 
+// ── 関数カタログ(数式エディタの一覧/挿入用) ────────────
+export interface FormulaFnDoc { name: string; sig: string; desc: string; group: string; noArgs?: boolean }
+export const FORMULA_FUNCTIONS: FormulaFnDoc[] = [
+  // 論理
+  { name: 'if', sig: 'if(条件, 真の値, 偽の値)', desc: '条件で値を分岐', group: '論理' },
+  { name: 'ifs', sig: 'ifs(条件1, 値1, …, 既定)', desc: '複数条件を順に評価', group: '論理' },
+  { name: 'and', sig: 'and(a, b, …)', desc: 'すべて真なら真', group: '論理' },
+  { name: 'or', sig: 'or(a, b, …)', desc: 'どれか真なら真', group: '論理' },
+  { name: 'not', sig: 'not(x)', desc: '真偽を反転', group: '論理' },
+  { name: 'empty', sig: 'empty(x)', desc: '空かどうか', group: '論理' },
+  // 文字列
+  { name: 'concat', sig: 'concat(a, b, …)', desc: '文字列を連結', group: '文字列' },
+  { name: 'join', sig: 'join(区切り, a, b, …)', desc: '区切り文字で連結', group: '文字列' },
+  { name: 'lower', sig: 'lower(s)', desc: '小文字に', group: '文字列' },
+  { name: 'upper', sig: 'upper(s)', desc: '大文字に', group: '文字列' },
+  { name: 'trim', sig: 'trim(s)', desc: '前後の空白を除去', group: '文字列' },
+  { name: 'length', sig: 'length(s)', desc: '文字数', group: '文字列' },
+  { name: 'contains', sig: 'contains(s, 部分)', desc: '部分文字列を含むか', group: '文字列' },
+  { name: 'replace', sig: 'replace(s, 検索, 置換)', desc: '最初の一致を置換', group: '文字列' },
+  { name: 'replaceAll', sig: 'replaceAll(s, 検索, 置換)', desc: 'すべて置換', group: '文字列' },
+  { name: 'slice', sig: 'slice(s, 開始, 終了)', desc: '部分を取り出す', group: '文字列' },
+  { name: 'substring', sig: 'substring(s, 開始, 終了)', desc: '部分を取り出す', group: '文字列' },
+  { name: 'format', sig: 'format(x)', desc: '文字列化', group: '文字列' },
+  // 数値
+  { name: 'round', sig: 'round(数, 桁)', desc: '四捨五入', group: '数値' },
+  { name: 'floor', sig: 'floor(数)', desc: '切り捨て', group: '数値' },
+  { name: 'ceil', sig: 'ceil(数)', desc: '切り上げ', group: '数値' },
+  { name: 'abs', sig: 'abs(数)', desc: '絶対値', group: '数値' },
+  { name: 'sqrt', sig: 'sqrt(数)', desc: '平方根', group: '数値' },
+  { name: 'pow', sig: 'pow(底, 指数)', desc: 'べき乗', group: '数値' },
+  { name: 'mod', sig: 'mod(a, b)', desc: '剰余', group: '数値' },
+  { name: 'sign', sig: 'sign(数)', desc: '符号(-1/0/1)', group: '数値' },
+  { name: 'min', sig: 'min(a, b, …)', desc: '最小値', group: '数値' },
+  { name: 'max', sig: 'max(a, b, …)', desc: '最大値', group: '数値' },
+  { name: 'toNumber', sig: 'toNumber(x)', desc: '数値に変換', group: '数値' },
+  // 日付
+  { name: 'now', sig: 'now()', desc: '現在の日時', group: '日付', noArgs: true },
+  { name: 'today', sig: 'today()', desc: '今日(0時)', group: '日付', noArgs: true },
+  { name: 'dateAdd', sig: 'dateAdd(日付, 数, "days")', desc: '日付を加算', group: '日付' },
+  { name: 'dateSubtract', sig: 'dateSubtract(日付, 数, "days")', desc: '日付を減算', group: '日付' },
+  { name: 'dateBetween', sig: 'dateBetween(日付1, 日付2, "days")', desc: '期間(差)を計算', group: '日付' },
+  { name: 'formatDate', sig: 'formatDate(日付, "YYYY-MM-DD")', desc: '日付を整形', group: '日付' },
+  { name: 'year', sig: 'year(日付)', desc: '年', group: '日付' },
+  { name: 'month', sig: 'month(日付)', desc: '月', group: '日付' },
+  { name: 'day', sig: 'day(日付)', desc: '日', group: '日付' },
+  { name: 'hour', sig: 'hour(日付)', desc: '時', group: '日付' },
+  { name: 'minute', sig: 'minute(日付)', desc: '分', group: '日付' },
+];
+
 // ── Tokenizer ────────────────────────────────────────────
 type Tok = { t: 'num' | 'str' | 'id' | 'op'; v: string };
 

@@ -3599,6 +3599,25 @@
 #memola-overlay .memola-formula-expr:focus { border-color: var(--accent); }
 #memola-overlay .memola-formula-err { color: var(--danger, #b8534a); font-size: var(--fs-xs); }
 #memola-overlay .memola-formula-help { color: var(--ink-4); font-size: var(--fs-xs); line-height: 1.5; }
+/* 列・関数の挿入リスト */
+#memola-overlay .memola-formula-picker { display: flex; flex-direction: column; gap: 6px; }
+#memola-overlay .memola-formula-search {
+  border: 1px solid var(--paper-3); border-radius: 6px; padding: 5px 8px; font: inherit;
+  font-size: var(--fs-sm); background: var(--paper); color: var(--ink); outline: none;
+}
+#memola-overlay .memola-formula-search:focus { border-color: var(--accent); }
+#memola-overlay .memola-formula-list {
+  max-height: 200px; overflow-y: auto; border: 1px solid var(--paper-3); border-radius: 6px; background: var(--paper);
+}
+#memola-overlay .memola-formula-list-hd {
+  padding: 5px 8px 2px; font-size: var(--fs-xs); color: var(--ink-4); font-weight: 600; position: sticky; top: 0; background: var(--paper);
+}
+#memola-overlay .memola-formula-list-item {
+  display: flex; align-items: baseline; gap: 8px; padding: 4px 10px; cursor: pointer; border-radius: 4px;
+}
+#memola-overlay .memola-formula-list-item:hover { background: var(--paper-2); }
+#memola-overlay .memola-formula-li-1 { font-family: var(--font-mono, monospace); font-size: 12px; color: var(--ink); white-space: nowrap; }
+#memola-overlay .memola-formula-li-2 { font-size: var(--fs-xs); color: var(--ink-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #memola-overlay .memola-formula-acts { display: flex; gap: 8px; justify-content: flex-end; }
 
 /* ── Row selection checkbox (Notion-style hover-reveal) ── */

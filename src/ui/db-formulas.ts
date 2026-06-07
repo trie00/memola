@@ -4,7 +4,7 @@
 
 import { S } from '../state';
 import { prefDbFormulas, type DbFormulaDef } from '../lib/prefs';
-import { checkFormula } from '../lib/formula';
+import { checkFormula, FORMULA_FUNCTIONS } from '../lib/formula';
 import { setLoad } from './ui-helpers';
 import { loadDbConfig, patchDbConfig } from '../api/db-config';
 
@@ -109,9 +109,63 @@ export function openFormulaEditor(listTitle: string, def: DbFormulaDef | null, x
   exprTa.addEventListener('keydown', (e) => { e.stopPropagation(); });   // ESC等をグローバルに伝播させない
   nameInp.addEventListener('keydown', (e) => { e.stopPropagation(); });
 
+  // カーソル位置に挿入(関数は () 内にキャレットを置く)。
+  const insertAtCaret = (text: string, caretBack = 0): void => {
+    const s = exprTa.selectionStart ?? exprTa.value.length;
+    const e = exprTa.selectionEnd ?? exprTa.value.length;
+    exprTa.value = exprTa.value.slice(0, s) + text + exprTa.value.slice(e);
+    const pos = s + text.length - caretBack;
+    exprTa.focus();
+    exprTa.setSelectionRange(pos, pos);
+    validate();
+  };
+
+  // 列・関数の一覧(検索 + クリックで挿入) — Notion 風。
+  const picker = document.createElement('div');
+  picker.className = 'memola-formula-picker';
+  const search = document.createElement('input');
+  search.className = 'memola-formula-search';
+  search.placeholder = '列・関数を挿入（検索）…';
+  search.addEventListener('keydown', (e) => e.stopPropagation());
+  const listEl = document.createElement('div');
+  listEl.className = 'memola-formula-list';
+  const addHeader = (text: string): void => {
+    const h = document.createElement('div'); h.className = 'memola-formula-list-hd'; h.textContent = text; listEl.appendChild(h);
+  };
+  const addItem = (primary: string, secondary: string, onPick: () => void): void => {
+    const it = document.createElement('div');
+    it.className = 'memola-formula-list-item';
+    it.innerHTML = '<span class="memola-formula-li-1"></span><span class="memola-formula-li-2"></span>';
+    (it.querySelector('.memola-formula-li-1') as HTMLElement).textContent = primary;
+    (it.querySelector('.memola-formula-li-2') as HTMLElement).textContent = secondary;
+    it.addEventListener('mousedown', (ev) => { ev.preventDefault(); onPick(); });   // preventDefault でテキストエリアのキャレット維持
+    listEl.appendChild(it);
+  };
+  const renderList = (q: string): void => {
+    listEl.innerHTML = '';
+    const ql = q.trim().toLowerCase();
+    const cols = S.dbFields.filter((f) => !ql || f.Title.toLowerCase().includes(ql));
+    if (cols.length) {
+      addHeader('列（プロパティ）');
+      for (const f of cols) addItem('prop("' + f.Title + '")', '', () => insertAtCaret('prop("' + f.Title + '")'));
+    }
+    let lastGroup = '';
+    for (const fn of FORMULA_FUNCTIONS) {
+      if (ql && !(fn.name.toLowerCase().includes(ql) || fn.desc.toLowerCase().includes(ql) || fn.group.toLowerCase().includes(ql))) continue;
+      if (fn.group !== lastGroup) { addHeader(fn.group); lastGroup = fn.group; }
+      addItem(fn.sig, fn.desc, () => insertAtCaret(fn.name + '()', 1));
+    }
+    if (!listEl.children.length) {
+      const empty = document.createElement('div'); empty.className = 'memola-formula-list-hd'; empty.textContent = '一致なし'; listEl.appendChild(empty);
+    }
+  };
+  search.addEventListener('input', () => renderList(search.value));
+  renderList('');
+  picker.append(search, listEl);
+
   const help = document.createElement('div');
   help.className = 'memola-formula-help';
-  help.textContent = '使える例: + - * / 、if(条件, A, B)、concat(a,b)、round(x,2)、dateBetween(prop("締切"), now(), "days")';
+  help.textContent = '演算子: + - * / %、比較 == != < >、&& || !、三項 ?:。列や関数は下の一覧から挿入できます。';
 
   const acts = document.createElement('div');
   acts.className = 'memola-formula-acts';
@@ -140,7 +194,7 @@ export function openFormulaEditor(listTitle: string, def: DbFormulaDef | null, x
     acts.appendChild(delBtn);
   }
 
-  pop.append(nameInp, exprTa, err, help, acts);
+  pop.append(nameInp, exprTa, err, picker, help, acts);
   overlay.appendChild(pop);
   validate();
   const r = pop.getBoundingClientRect();
