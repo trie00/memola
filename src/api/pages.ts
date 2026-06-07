@@ -196,7 +196,15 @@ async function provisionOnePagesList(listTitle: string): Promise<void> {
   const userIdMatch = listTitle.match(/^memola-user-(\d+)-pages$/);
   if (userIdMatch) {
     const userId = parseInt(userIdMatch[1], 10);
-    await applyOwnerOnlyAcl(listTitle, userId);
+    // 権限継承の切断(breakroleinheritance)は「権限の管理(Manage Permissions)」
+    // 権限が必要で、通常のメンバー/編集者ユーザーでは 403 になる。これは SP層の
+    // 付加的なプライバシー(defence-in-depth)であり、プライベート表示はクライアント
+    // 側フィルタ(filterVisiblePages)で担保されるため、失敗しても致命にせず継続する
+    // (= 別ユーザーがアプリを使えなくならないように)。
+    await applyOwnerOnlyAcl(listTitle, userId).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.warn('[memola] per-user リストの権限設定をスキップ(権限不足の可能性): ' + (e as Error).message);
+    });
   }
 }
 
