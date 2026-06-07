@@ -10,7 +10,7 @@
 //   4. /memola/health の復帰を ping で待つ。
 
 import { SITE } from '../config';
-import { prefAiCorpBaseUrl, prefDevBundleSource, prefDevLocalBase } from './prefs';
+import { prefAiCorpBaseUrl, prefDevLocalBase } from './prefs';
 
 export interface RelayManifest { version: string; files: string[] }
 export interface UpdateCheck {
@@ -19,15 +19,12 @@ export interface UpdateCheck {
 }
 export interface ApplyResult { ok: boolean; relayBackUp: boolean; newVersion: string | null; error?: string }
 
-/** relay の origin。
- *  - 開発(バンドル取得元=ローカル)の時はローカル配信元(memola.dev.local-base)の
- *    origin を見る(別ポートで起動していても relay 状態を正しく検出)。
- *  - それ以外は corp ベースURL → 既定 localhost:18080。 */
+/** relay の origin = 設定の「ローカルベース」(memola.dev.local-base)の origin。
+ *  ユーザーが設定に入力したURLをそのまま参照する(別ポートでもそこを見る)。
+ *  未設定時のみ corp ベースURL → 既定 localhost:18080 にフォールバック。 */
 function relayOrigin(): string {
-  if (prefDevBundleSource.get() === 'local') {
-    const local = prefDevLocalBase.get();
-    if (local) { try { return new URL(local).origin; } catch { /* ignore */ } }
-  }
+  const local = prefDevLocalBase.get();
+  if (local) { try { return new URL(local).origin; } catch { /* ignore */ } }
   const cur = prefAiCorpBaseUrl.get();
   if (cur) { try { return new URL(cur).origin; } catch { /* ignore */ } }
   return 'http://localhost:18080';
