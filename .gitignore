@@ -4,5 +4,9 @@ node_modules
 ai/
 dev/main.js
 
-# Memola relay local config (secrets)
-scripts/memola.env
+# Memola relay local config (secrets) — env は実値/機密を含むので一切追跡しない。
+# 例示用の *.env.example はこのパターンに一致しないため追跡される。
+*.env
+# バックアップ類
+*_bak.*
+*.bak
