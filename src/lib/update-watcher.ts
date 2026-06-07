@@ -5,19 +5,25 @@
 // version.txt を定期的に確認し、現在実行中の __BUILD_ID__ と違えば「新バージョン
 // あり」バナーを出してワンクリックでリロードさせる(編集中に勝手にリロードしない)。
 
+import { SITE } from '../config';
+
 declare const __BUILD_ID__: string;
 
 const POLL_MS = 90_000;
 let _timer: number | null = null;
 let _shown = false;
 
-/** loader と同じロジックでバンドル取得元ベースを決める。 */
+/** バンドル取得元ベース。開発(ローカル)→ アプリの SITE → _spPageContextInfo の順。
+ *  以前は _spPageContextInfo だけを見ていたが、ブックマークレット実行コンテキストで
+ *  未定義のことがあり、その場合 base が空になって更新検知が一切働かなかった。
+ *  アプリが全REST で使う SITE(絶対URL)を基準にすれば確実に解決できる。 */
 function bundleBase(): string {
   try {
     if (localStorage.getItem('memola.dev.bundle-source') === 'local') {
       return (localStorage.getItem('memola.dev.local-base') || 'http://127.0.0.1:18080/memola').replace(/\/+$/, '');
     }
   } catch { /* ignore */ }
+  if (SITE) return SITE.replace(/\/+$/, '') + '/Shared Documents/memola';
   const c = (window as unknown as { _spPageContextInfo?: { webServerRelativeUrl?: string } })._spPageContextInfo;
   if (c?.webServerRelativeUrl) return c.webServerRelativeUrl.replace(/\/$/, '') + '/Shared Documents/memola';
   return '';
