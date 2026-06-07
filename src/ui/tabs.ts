@@ -153,13 +153,19 @@ export async function activateTab(tabId: string): Promise<void> {
   // 読み込み中は in-place 扱い(余計なタブを作らせない)。
   if (tab.kind === 'row') {
     x.hideSearchTab();
-    if (tab.rowDbId && tab.rowId != null) {
+    // doSelect(dbId) は内部の openInActiveTab で「この tab」を DBページタブに
+    // 書き換え、tab.rowDbId/tab.rowId を消去する。必ず先に退避してから使う
+    // (消えた tab.rowId で行を探すと見つからず、tab が DBタブのまま残って
+    //  DB一覧タブが二重化していた)。
+    const rowDbId = tab.rowDbId;
+    const rowId = tab.rowId;
+    if (rowDbId && rowId != null) {
       _navInPlace = true;
       try {
         const { doSelect } = await import('./views');
-        await doSelect(tab.rowDbId);
-        const row = S.dbItems.find((it) => it.Id === tab.rowId);
-        if (row) { const rp = await import('./row-page'); await rp.openRowAsPage(tab.rowDbId, row); }
+        await doSelect(rowDbId);
+        const row = S.dbItems.find((it) => it.Id === rowId);
+        if (row) { const rp = await import('./row-page'); await rp.openRowAsPage(rowDbId, row); }
       } finally { _navInPlace = false; }
     }
     return;
