@@ -12,9 +12,19 @@ import { S, type Page, type ListItem, type ListField } from '../state';
 const INTERNAL_DB_COLUMN_NAMES = new Set<string>([
   'Trashed',
   'TrashedBy',
+  'Body_blocks',   // 行ページ本文(インライン保存)。テーブル/プロパティ/フィルタには出さない。
 ]);
 
-/** Strip internal-only columns (Trashed / TrashedBy) from a field list. */
+// 既存DBリストに本文列(Body_blocks)が存在することを保証(セッション内キャッシュ)。
+const _bodyColEnsured = new Set<string>();
+export async function ensureDbBodyColumn(listTitle: string): Promise<void> {
+  if (!listTitle || _bodyColEnsured.has(listTitle)) return;
+  _bodyColEnsured.add(listTitle);
+  try { await addListField(listTitle, 'Body_blocks', 3); }
+  catch { /* 既に存在 = OK */ }
+}
+
+/** Strip internal-only columns (Trashed / TrashedBy / Body_blocks) from a field list. */
 export function stripInternalDbFields(fields: ListField[]): ListField[] {
   return fields.filter((f) =>
     !INTERNAL_DB_COLUMN_NAMES.has(f.Title) &&
@@ -24,7 +34,7 @@ export function stripInternalDbFields(fields: ListField[]): ListField[] {
 import {
   ensureList, createListItem, updateListItem,
   deleteListItem, getListItemById, getListFields, getListItems,
-  softDelete, restoreSoftDelete, type FieldSpec,
+  softDelete, restoreSoftDelete, addListField, type FieldSpec,
 } from './sp-list';
 // Re-export type so callers don't need to chase imports
 export type { ListField } from '../state';
@@ -46,8 +56,11 @@ export async function apiCreateDb(title: string, parentId: string): Promise<Page
     fields: [
       { name: 'Trashed', kind: 9, indexed: true },
       { name: 'TrashedBy', kind: 9, indexed: true },
+      // 行ページ本文をこの行にインライン保存(通常ページと同じ Body_blocks 列)。
+      { name: 'Body_blocks', kind: 3 },
     ],
   });
+  _bodyColEnsured.add(listTitle);
   return await apiCreateDbPageRow(title, parentId, listTitle);
 }
 

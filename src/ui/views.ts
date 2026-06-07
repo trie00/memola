@@ -405,7 +405,9 @@ export async function doSelectDb(id: string, page: Page): Promise<void> {
 
   setLoad(true, 'データを読み込み中...');
   try {
-    // Bodies live in memola-pages; nothing to provision on the DB list itself.
+    // 行ページ本文はこの DB リストの Body_blocks 列にインライン保存する(通常ページと
+    // 統一)。既存DBにも列が無ければ足す(セッション内で1回・ベストエフォート)。
+    void import('../api/db').then((m) => m.ensureDbBodyColumn(meta.list!));
     const results = await Promise.all([getListFields(meta.list), getListItems(meta.list)]);
     // Drop infrastructure columns (Trashed/TrashedBy) so they don't leak
     // into the table view, row-props panel, filter picker, or column-add UI.
