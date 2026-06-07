@@ -11,11 +11,24 @@ function computeBuildId() {
   const pad = (n) => String(n).padStart(2, '0');
   const stamp = String(d.getFullYear()).slice(2) + pad(d.getMonth() + 1) + pad(d.getDate())
     + '-' + pad(d.getHours()) + pad(d.getMinutes());
+  // ハッシュは src/ 配下すべて + package.json から計算する。これにより、どの
+  // ソースを変更しても version.txt のハッシュが必ず変わり、更新検知が確実になる。
+  // (以前は4ファイル固定で、それ以外を変更してもハッシュが変わらなかった)
+  const files = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : 1)) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else files.push(p);
+    }
+  };
+  try { walk('src'); } catch { /* ignore */ }
+  files.push('package.json');
   const hash = crypto.createHash('sha256');
-  for (const f of ['src/main.ts', 'src/api/pages.ts', 'src/ui/wiring.ts', 'package.json']) {
-    try { hash.update(fs.readFileSync(f)); } catch { /* ignore */ }
+  for (const f of files) {
+    try { hash.update(f); hash.update('\0'); hash.update(fs.readFileSync(f)); } catch { /* ignore */ }
   }
-  return stamp + '-' + hash.digest('hex').slice(0, 6);
+  return stamp + '-' + hash.digest('hex').slice(0, 8);
 }
 const BUILD_ID = computeBuildId();
 
