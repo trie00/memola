@@ -15,13 +15,9 @@ const INTERNAL_DB_COLUMN_NAMES = new Set<string>([
   'Body_blocks',   // 行ページ本文(インライン保存)。テーブル/プロパティ/フィルタには出さない。
 ]);
 
-// 既存DBリストに本文列(Body_blocks)が存在することを保証(セッション内キャッシュ)。
-const _bodyColEnsured = new Set<string>();
+/** 既存DBリストに本文列(Body_blocks)が存在することを保証。実体は sp-list に一本化。 */
 export async function ensureDbBodyColumn(listTitle: string): Promise<void> {
-  if (!listTitle || _bodyColEnsured.has(listTitle)) return;
-  _bodyColEnsured.add(listTitle);
-  try { await addListField(listTitle, 'Body_blocks', 3); }
-  catch { /* 既に存在 = OK */ }
+  await ensureBodyBlocksColumn(listTitle);
 }
 
 /** Strip internal-only columns (Trashed / TrashedBy / Body_blocks) from a field list. */
@@ -34,7 +30,7 @@ export function stripInternalDbFields(fields: ListField[]): ListField[] {
 import {
   ensureList, createListItem, updateListItem,
   deleteListItem, getListItemById, getListFields, getListItems,
-  softDelete, restoreSoftDelete, addListField, type FieldSpec,
+  softDelete, restoreSoftDelete, ensureBodyBlocksColumn, type FieldSpec,
 } from './sp-list';
 // Re-export type so callers don't need to chase imports
 export type { ListField } from '../state';
@@ -60,7 +56,7 @@ export async function apiCreateDb(title: string, parentId: string): Promise<Page
       { name: 'Body_blocks', kind: 3 },
     ],
   });
-  _bodyColEnsured.add(listTitle);
+  await ensureBodyBlocksColumn(listTitle);   // 列確保のキャッシュにも登録
   return await apiCreateDbPageRow(title, parentId, listTitle);
 }
 

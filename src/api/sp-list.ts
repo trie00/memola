@@ -534,6 +534,17 @@ export async function addListField(
   return j.d;
 }
 
+// 行ページ本文をインライン保存する Body_blocks 列(Note)を、リストに用意する。
+// 通常ページ(memola-pages)とDB行を「Body_blocks を持つ行」に統一するための共通処理。
+// セッション内キャッシュで重複呼び出しを抑止。
+const _bodyColEnsured = new Set<string>();
+export async function ensureBodyBlocksColumn(listTitle: string): Promise<void> {
+  if (!listTitle || _bodyColEnsured.has(listTitle)) return;
+  _bodyColEnsured.add(listTitle);
+  try { await addListField(listTitle, 'Body_blocks', 3); }
+  catch { /* 既に存在 = OK */ }
+}
+
 /** 選択肢(Choice)列の選択肢一覧を更新(MERGE)。選択項目の追加/削除/リネームに使う。 */
 export async function updateListFieldChoices(
   listTitle: string,
