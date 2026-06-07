@@ -49,15 +49,31 @@ function showBanner(remote: string): void {
 
 async function checkOnce(): Promise<boolean> {
   const base = bundleBase();
-  if (!base) return false;
   const cur = currentVersion();
-  if (!cur) return false;
+  if (!base || !cur) {
+    // eslint-disable-next-line no-console
+    console.warn('[memola update] スキップ: base=' + JSON.stringify(base) + ' current=' + JSON.stringify(cur));
+    return false;
+  }
   try {
-    const r = await fetch(base + '/version.txt?t=' + Date.now(), { credentials: 'same-origin', cache: 'no-cache' });
-    if (!r.ok) return false;
+    // ローカル(別オリジンの relay)取得は credentials を送らない。same-origin だと
+    // クロスオリジンで挙動が分かりにくいので明示的に 'omit'。
+    const cross = /^https?:\/\//i.test(base) && !base.startsWith(location.origin);
+    const r = await fetch(base + '/version.txt?t=' + Date.now(), {
+      credentials: cross ? 'omit' : 'same-origin',
+      cache: 'no-store',
+    });
+    if (!r.ok) { console.warn('[memola update] version.txt HTTP ' + r.status + ' @ ' + base); return false; }
     const remote = (await r.text()).trim();
+    // eslint-disable-next-line no-console
+    console.log('[memola update] base=' + base + ' current=' + cur + ' remote=' + remote +
+      (remote === cur ? ' (最新)' : ' → 新版あり'));
     if (remote && remote !== cur) { showBanner(remote); return true; }
-  } catch { /* リレー未起動 / オフライン → 無視 */ }
+  } catch (e) {
+    // 握り潰さず可視化(CORS / Private Network / mixed-content / relay 未起動 等)。
+    // eslint-disable-next-line no-console
+    console.warn('[memola update] version.txt 取得失敗 @ ' + base + ': ' + ((e as Error)?.message || e));
+  }
   return false;
 }
 
@@ -74,9 +90,9 @@ export async function checkForUpdateNow(opts: { announce?: boolean } = {}): Prom
 /** 定期チェック開始(冪等)。 */
 export function startUpdateWatcher(): void {
   if (_timer !== null) return;
-  // 初回は起動直後の負荷を避けて少し遅らせる。
+  // 初回は早め(8秒)に1回チェックして、以後は POLL_MS 間隔。
   _timer = window.setTimeout(function tick() {
     void checkOnce();
     _timer = window.setTimeout(tick, POLL_MS);
-  }, POLL_MS);
+  }, 8_000);
 }
