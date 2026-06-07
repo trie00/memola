@@ -341,6 +341,7 @@ export function buildHtml(): string {
           '<div class="memola-set-major" data-major="other">' +
             '<div class="memola-set-major-h">その他</div>' +
             '<button class="memola-set-tab" data-tab="help">⌨ ヘルプ</button>' +
+            '<button class="memola-set-tab" data-tab="oplog">📜 操作ログ</button>' +
             '<button class="memola-set-tab" data-tab="dev">🛠 開発者</button>' +
             '<button class="memola-set-tab danger" data-tab="debug">⚠ リセット</button>' +
           '</div>' +
@@ -534,6 +535,16 @@ export function buildHtml(): string {
               '不具合を報告する時にこの ID を一緒に伝えてください。古いブックマークレットを使い続けていないかの確認にもなります。' +
               '</div>' +
             '</div>' +
+          '</div>' +
+          // 操作ログ pane(変更系のみ: ページ作成/削除・権限変更。AI由来も記録)
+          '<div class="memola-set-pane" data-pane="oplog">' +
+            '<div class="memola-set-row"><label>操作ログ</label>' +
+              '<button class="memola-btn s" id="memola-oplog-refresh">↻ 更新</button>' +
+            '</div>' +
+            '<div class="memola-set-row"><label></label>' +
+              '<div class="memola-set-hint">変更系のみ記録（ページ作成/削除・権限変更）。実行したREST APIのメソッド/URLを残します。参照やAIチャット自体は記録しません（AIがページを作成/削除した場合は <b>ai</b> として記録）。</div>' +
+            '</div>' +
+            '<div id="memola-oplog-list" class="memola-oplog-list"></div>' +
           '</div>' +
           // Developer pane — bundle source (loader 自動更新の取得元切替)
           '<div class="memola-set-pane" data-pane="dev">' +

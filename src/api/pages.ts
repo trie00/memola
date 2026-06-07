@@ -21,7 +21,8 @@ import {
   applyOwnerOnlyAcl,
 } from './sp-list';
 import { spListUrl, spGetD } from './sp-rest';
-import { SP_VERSION_LIMIT } from '../config';
+import { SP_VERSION_LIMIT, SITE } from '../config';
+import { logOp } from './oplog';
 import { mdToBlocks, blocksToMd } from '../lib/blocks-md';
 import { blocksToHtml } from '../lib/blocks-html';
 import type { Block, Inline } from '../lib/blocks';
@@ -775,6 +776,8 @@ export async function apiCreatePage(
     id, title, parent: parentId || '',
     type: 'page', icon: '', scope, authorId: S.meta.myUserId,
   });
+  void logOp({ action: 'page.create', target: '"' + title + '" (' + scope + ')',
+    method: 'POST', url: SITE + "/_api/web/lists/getbytitle('" + list + "')/items" });
   return { Id: id, Title: title, ParentId: parentId || '', Type: 'page' };
 }
 
@@ -1052,6 +1055,8 @@ export async function apiTrashPage(id: string): Promise<void> {
     }
   }
   if (failed.length) throw new Error('ゴミ箱への移動に失敗しました (' + failed.length + ' 件)。再度お試しください。');
+  void logOp({ action: 'page.delete', target: (guardMeta?.title || id) + ' (' + ids.length + '件)',
+    method: 'POST', url: SITE + "/_api/web/lists/.../items(<id>)  (Trashed=" + ts + ' に更新)' });
 }
 
 export async function apiRestorePage(id: string): Promise<void> {

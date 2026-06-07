@@ -143,8 +143,10 @@ export function attachSettingsModal(): void {
         .forEach((p) => p.classList.toggle('on', p.dataset.pane === target));
       // 開発者ペインを開いたら relay に配信フォルダを照会して表示。
       if (target === 'dev') void queryRelayBundleDir();
+      if (target === 'oplog') void loadOpLog();
     });
   });
+  document.getElementById('memola-oplog-refresh')?.addEventListener('click', () => { void loadOpLog(); });
 
   setBtn.addEventListener('click', () => {
     // Always reset to the first pane on open so the user has a
@@ -324,6 +326,34 @@ export function attachSettingsModal(): void {
     ov.dataset.density = prefDensity.get();
     ov.dataset.theme = prefTheme.get();
   }
+}
+
+/** 操作ログペイン: 直近の変更ログ(REST メソッド/URL付き)を一覧表示。 */
+async function loadOpLog(): Promise<void> {
+  const wrap = document.getElementById('memola-oplog-list');
+  if (!wrap) return;
+  wrap.textContent = '読み込み中…';
+  try {
+    const { listOps } = await import('../api/oplog');
+    const rows = await listOps(200);
+    if (!rows.length) { wrap.textContent = 'ログはまだありません。'; return; }
+    const esc = (s: unknown): string => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const fmt = (iso: unknown): string => { const d = iso ? new Date(String(iso)) : null; return d && !isNaN(d.getTime()) ? d.toLocaleString() : ''; };
+    wrap.innerHTML = rows.map((r) => {
+      const rec = r as Record<string, unknown>;
+      const src = String(rec.Source || 'user');
+      return '<div class="memola-oplog-item">' +
+        '<div class="memola-oplog-l1">' +
+          '<span class="memola-oplog-act">' + esc(rec.Action) + '</span>' +
+          '<span class="memola-oplog-src ' + (src === 'ai' ? 'ai' : '') + '">' + esc(src) + '</span>' +
+          '<span class="memola-oplog-time">' + esc(fmt(rec.Created)) + '</span>' +
+        '</div>' +
+        '<div class="memola-oplog-tgt">' + esc(rec.Target) + '</div>' +
+        '<div class="memola-oplog-rest"><code>' + esc(rec.Method) + ' ' + esc(rec.Url) + '</code></div>' +
+        (rec.Detail ? '<div class="memola-oplog-detail">' + esc(rec.Detail) + '</div>' : '') +
+      '</div>';
+    }).join('');
+  } catch (e) { wrap.textContent = 'ログ取得に失敗: ' + (e as Error).message; }
 }
 
 /** 開発者ペイン: relay の配信フォルダを照会して入力欄＋状態に反映。 */

@@ -15,6 +15,7 @@ import {
   apiSetTitle,
 } from '../api/pages';
 import { mdToBlocks } from '../lib/blocks-md';
+import { setLogSource } from '../api/oplog';
 import { renderTree } from '../ui/tree';
 import { confirmPageUpdate } from '../ui/diff-modal';
 import { collectDescendantIds } from '../lib/page-tree';
@@ -213,6 +214,9 @@ export async function executeTool(name: string, input: Record<string, unknown>):
   // Remove or gate behind a debug flag once stable.
   // eslint-disable-next-line no-console
   console.log('[Memola tool]', name, input);
+  // 変更系ツール実行中は操作ログの発生源を 'ai' にする(ページ作成/削除が
+  // AI 由来として記録される)。終了時に 'user' へ戻す。
+  setLogSource('ai');
   let result: ToolResult;
   try {
     switch (name) {
@@ -236,6 +240,8 @@ export async function executeTool(name: string, input: Record<string, unknown>):
     }
   } catch (e) {
     result = err((e as Error).message || 'unknown_error');
+  } finally {
+    setLogSource('user');
   }
   return JSON.stringify(result);
 }

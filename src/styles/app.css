@@ -3623,6 +3623,33 @@
 #memola-overlay .memola-formula-li-1 { font-family: var(--font-mono, monospace); font-size: 12px; color: var(--ink); white-space: nowrap; }
 #memola-overlay .memola-formula-li-2 { font-size: var(--fs-xs); color: var(--ink-4); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #memola-overlay .memola-formula-acts { display: flex; gap: 8px; justify-content: flex-end; }
+/* 参照のみユーザー向け警告モーダル */
+#memola-overlay .memola-readonly-md {
+  position: fixed; inset: 0; z-index: 2147483647; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.35);
+}
+#memola-overlay .memola-readonly-card {
+  background: var(--paper, #fff); border-radius: 12px; max-width: 480px; width: calc(100% - 48px);
+  padding: 24px; box-shadow: 0 10px 40px rgba(0,0,0,.25); color: var(--ink);
+}
+#memola-overlay .memola-readonly-ic { font-size: 40px; text-align: center; }
+#memola-overlay .memola-readonly-card h2 { margin: 8px 0; text-align: center; font-size: 18px; }
+#memola-overlay .memola-readonly-card p { font-size: var(--fs-sm); line-height: 1.7; color: var(--ink-2); }
+#memola-overlay .memola-readonly-guide { background: var(--paper-2); border-radius: 8px; padding: 12px 14px; margin: 14px 0; font-size: var(--fs-sm); }
+#memola-overlay .memola-readonly-guide ol { margin: 6px 0 0; padding-left: 20px; line-height: 1.8; }
+#memola-overlay .memola-readonly-site { margin-top: 8px; font-size: var(--fs-xs); color: var(--ink-3); word-break: break-all; }
+#memola-overlay .memola-readonly-acts { display: flex; gap: 8px; justify-content: flex-end; }
+/* 操作ログ ビューア */
+#memola-overlay .memola-oplog-list { max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+#memola-overlay .memola-oplog-item { border: 1px solid var(--paper-3); border-radius: 6px; padding: 6px 10px; background: var(--paper); }
+#memola-overlay .memola-oplog-l1 { display: flex; align-items: center; gap: 8px; }
+#memola-overlay .memola-oplog-act { font-weight: 600; font-size: var(--fs-sm); }
+#memola-overlay .memola-oplog-src { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--paper-3); color: var(--ink-3); }
+#memola-overlay .memola-oplog-src.ai { background: #e7e0f5; color: #5a3a8a; }
+#memola-overlay .memola-oplog-time { margin-left: auto; font-size: var(--fs-xs); color: var(--ink-4); }
+#memola-overlay .memola-oplog-tgt { font-size: var(--fs-sm); color: var(--ink-2); margin-top: 2px; }
+#memola-overlay .memola-oplog-rest code { font-family: var(--font-mono, monospace); font-size: 11px; color: var(--ink-3); word-break: break-all; }
+#memola-overlay .memola-oplog-detail { font-size: var(--fs-xs); color: var(--ink-4); margin-top: 2px; }
 
 /* ── Row selection checkbox (Notion-style hover-reveal) ── */
 #memola-dt th.memola-th-cb, #memola-dt td.memola-td-cb,

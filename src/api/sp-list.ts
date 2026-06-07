@@ -200,6 +200,10 @@ export async function applyOwnerOnlyAcl(
     // no body. A 4xx here means something genuine went wrong.
     throw new Error('権限付与に失敗: ' + grantRes.status);
   }
+  void import('./oplog').then((m) => m.logOp({
+    action: 'acl.ownerOnly', target: listTitle + ' (owner=' + principalId + ')',
+    method: 'POST', url: breakUrl + ' ＋ ' + grantUrl,
+  }));
 }
 
 /** Codex review PS3: read SP and decide whether the list already has
