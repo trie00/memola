@@ -206,6 +206,17 @@ async function handleTrashPage(input: { id: string }): Promise<ToolResult> {
   return ok({ trashed_ids: ids });
 }
 
+/** 複数DB構成の雛形を提案 → プレビュー確認画面を出す(即作成はしない)。 */
+async function handleScaffold(input: Record<string, unknown>): Promise<ToolResult> {
+  const spec = input as unknown as import('../ui/scaffold').WorkspaceSpec;
+  if (!Array.isArray(spec.dbs) || spec.dbs.length === 0) return err('no_dbs');
+  const { openScaffoldPreview } = await import('../ui/scaffold');
+  // 現在開いているのが通常ページならその配下、そうでなければルートに作る。
+  const parentId = (S.currentType === 'page' && !S.currentRow && S.currentId) ? S.currentId : '';
+  openScaffoldPreview(spec, parentId);
+  return ok({ presented: true, dbs: spec.dbs.map((d) => d.name), note: 'プレビューを表示しました。ユーザーが「作成する」を押すと生成されます。' });
+}
+
 // ── Dispatcher ──────────────────────────────────────────
 
 export async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
@@ -236,6 +247,7 @@ export async function executeTool(name: string, input: Record<string, unknown>):
       case 'create_db_row':  result = await db.handleCreateDbRow(input as { db_id: string; fields: Record<string, unknown>; body?: string }); break;
       case 'update_db_row':  result = await db.handleUpdateDbRow(input as { db_id: string; row_id: number; fields?: Record<string, unknown>; body?: string }); break;
       case 'delete_db_row':  result = await db.handleDeleteDbRow(input as { db_id: string; row_id: number }); break;
+      case 'scaffold_workspace': result = await handleScaffold(input as Record<string, unknown>); break;
       default:               result = err('unknown_tool: ' + name);
     }
   } catch (e) {

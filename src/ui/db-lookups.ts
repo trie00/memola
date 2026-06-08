@@ -219,6 +219,23 @@ export function openNewLookup(x: number, y: number): void {
   });
 }
 
+/** プログラム(AIスキャフォールド等)からリレーション/参照列を追加する。 */
+export async function addLookupSpec(listTitle: string, p: {
+  name: string; keyField: string; targetTitle: string;
+  targetKeyField: string; returnField: string; asLink?: boolean;
+}): Promise<void> {
+  const targetListId = await resolveListIdByTitle(p.targetTitle).catch(() => '');
+  const def: DbLookupDef = {
+    id: newId(), name: p.name, keyField: p.keyField, targetListId,
+    targetTitle: p.targetTitle, targetKeyField: p.targetKeyField,
+    returnField: p.returnField, asLink: !!p.asLink,
+  };
+  const defs = listLookups(listTitle).slice(); defs.push(def);
+  _defs.set(listTitle, defs);
+  await persist(listTitle);
+  await buildData(def);
+}
+
 /** 新規リレーション列エディタ(asLink 既定オン)を開く。 */
 export function openNewRelation(x: number, y: number): void {
   openLookupEditor(S.dbList, { asLink: true } as DbLookupDef, x, y, () => {

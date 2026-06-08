@@ -217,6 +217,24 @@ export function openRollupEditor(listTitle: string, def: DbRollupDef | null, x: 
   setTimeout(() => document.addEventListener('mousedown', onOut, true), 0);
 }
 
+/** プログラム(AIスキャフォールド等)からロールアップ列を追加する。childTitle から
+ *  GUID を解決して定義を保存し、集計データを構築する。 */
+export async function addRollupSpec(listTitle: string, p: {
+  name: string; parentKeyField: string; childTitle: string;
+  childForeignField: string; targetField: string; agg: DbRollupDef['agg'];
+}): Promise<void> {
+  const childListId = await resolveListIdByTitle(p.childTitle).catch(() => '');
+  const def: DbRollupDef = {
+    id: newId(), name: p.name, parentKeyField: p.parentKeyField,
+    childListId, childTitle: p.childTitle, childForeignField: p.childForeignField,
+    targetField: p.targetField, agg: p.agg,
+  };
+  const defs = listRollups(listTitle).slice(); defs.push(def);
+  _defs.set(listTitle, defs);
+  await persist(listTitle);
+  await buildData(def);
+}
+
 export function openNewRollup(x: number, y: number): void {
   openRollupEditor(S.dbList, null, x, y, () => {
     void import('./views-table').then((m) => {

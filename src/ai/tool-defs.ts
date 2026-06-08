@@ -304,6 +304,56 @@ memola-pages 上の対応する行ページ本文も同時に削除される（�
       required: ['db_id', 'row_id'],
     },
   },
+
+  {
+    name: 'scaffold_workspace',
+    description: `複数DB構成(リレーション/ロールアップ/ビュー/初期行)の雛形を設計し、
+ユーザー確認画面(プレビュー)を出す。「請求管理を作って」「タスク管理のDB一式」など、
+複数の関連DBから成る“仕組み”を一気に作りたい依頼で使う。単一DBで足りる場合は create_db を使う。
+
+重要な規約:
+- リレーション/ロールアップは「親の Title」で結ぶ。子DBには親の Title を入れる列(fkField)を1つ用意する。
+- 列タイプ: "text" | "number" | "date" | "select"(options必須) | "checkbox" | "person"。
+  各DBには自動で Title 列があるので columns に title は含めない。
+- rollups は「親DB」に置き、childDb の childForeignField(=親Titleを持つ子列)で集計する。
+  agg は count|sum|avg|min|max|join。count 以外は targetField を指定。
+- relations は「子DB」に置き、fkField(=親Titleを持つ自列)と targetDb を指定する。
+- views の type は table|board|list|gallery|calendar から。
+- このツールは即作成せず、プレビュー確認後にユーザーが確定して生成する。`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        dbs: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              columns: { type: 'array', items: { type: 'object', properties: {
+                name: { type: 'string' }, type: { type: 'string' },
+                options: { type: 'array', items: { type: 'string' } },
+              }, required: ['name'] } },
+              relations: { type: 'array', items: { type: 'object', properties: {
+                name: { type: 'string' }, fkField: { type: 'string' }, targetDb: { type: 'string' },
+              }, required: ['name', 'fkField', 'targetDb'] } },
+              rollups: { type: 'array', items: { type: 'object', properties: {
+                name: { type: 'string' }, childDb: { type: 'string' },
+                childForeignField: { type: 'string' }, targetField: { type: 'string' }, agg: { type: 'string' },
+              }, required: ['name', 'childDb', 'childForeignField', 'agg'] } },
+              views: { type: 'array', items: { type: 'object', properties: {
+                type: { type: 'string' }, name: { type: 'string' },
+              }, required: ['type'] } },
+            },
+            required: ['name'],
+          },
+        },
+        seed: { type: 'array', items: { type: 'object', properties: {
+          db: { type: 'string' }, rows: { type: 'array', items: { type: 'object' } },
+        }, required: ['db', 'rows'] } },
+      },
+      required: ['dbs'],
+    },
+  },
 ];
 
 // Apply cache_control to the LAST tool — this caches the entire tools array
