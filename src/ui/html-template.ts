@@ -274,6 +274,7 @@ export function buildHtml(): string {
           '<div class="memola-col-type" data-tk="8"  data-ic="☐"><span class="memola-col-type-ic">☐</span><span>チェック</span></div>' +
           '<div class="memola-col-type" data-tk="11" data-ic="🔗"><span class="memola-col-type-ic">🔗</span><span>URL</span></div>' +
           '<div class="memola-col-type" data-tk="20" data-ic="👤"><span class="memola-col-type-ic">👤</span><span>担当者</span></div>' +
+          '<div class="memola-col-type" data-tk="relation" data-ic="🔗"><span class="memola-col-type-ic">🔗</span><span>リレーション(他DB)</span></div>' +
           '<div class="memola-col-type" data-tk="lookup"  data-ic="↗"><span class="memola-col-type-ic">↗</span><span>参照(他DB)</span></div>' +
           '<div class="memola-col-type" data-tk="rollup" data-ic="Σ"><span class="memola-col-type-ic">Σ</span><span>ロールアップ</span></div>' +
           '<div class="memola-col-type" data-tk="formula" data-ic="ƒ"><span class="memola-col-type-ic">ƒ</span><span>数式</span></div>' +

@@ -102,7 +102,8 @@ export interface DbLookupDef {
   targetListId: string;    // 対象SPリストのGUID
   targetTitle: string;     // 対象リスト名(表示/フォールバック)
   targetKeyField: string;  // 対象側の照合キー列(InternalName)
-  returnField: string;     // 対象側の返す列(InternalName)
+  returnField: string;     // 対象側の返す列(InternalName)。リレーション時は表示する列(通常Title)
+  asLink?: boolean;        // true: 値ではなく対象行への「リンクチップ」として表示(=リレーション)
 }
 
 // DB「ロールアップ(集計)」列。1対多リレーションの親側に、子DBの関連行をまとめた

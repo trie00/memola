@@ -63,6 +63,14 @@ export function attachColumnModal(): void {
       });
       return;
     }
+    // 「リレーション(他DB)」= asLink 付きの参照列(クリックで相手行へ)。
+    if (typeTk === 'relation') {
+      g('col-md').classList.remove('on');
+      const r = (g('col-ok') as HTMLElement).getBoundingClientRect();
+      const m = await import('./db-lookups');
+      m.openNewRelation(r.left, r.bottom + 4);
+      return;
+    }
     // 「ロールアップ(集計)」もクライアント側の集計列 → 集計エディタ。
     if (typeTk === 'rollup') {
       g('col-md').classList.remove('on');

@@ -322,8 +322,8 @@ export function renderDbTable(): void {
     th.dataset.lookupId = def.id;
     const span = document.createElement('span');
     span.className = 'memola-th-label';
-    span.textContent = '↗ ' + def.name;
-    span.title = '参照: ' + def.targetTitle;
+    span.textContent = (def.asLink ? '🔗 ' : '↗ ') + def.name;
+    span.title = (def.asLink ? 'リレーション: ' : '参照: ') + def.targetTitle;
     span.addEventListener('click', (e) => {
       e.stopPropagation();
       const r = span.getBoundingClientRect();
@@ -715,10 +715,23 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
     _renderLookups.forEach((def) => {
       const td = document.createElement('td');
       td.className = 'memola-td-formula';
-      const span = document.createElement('span');
-      span.className = 'memola-dc memola-dc-formula';
-      span.textContent = getLookupValue(def.id, item[def.keyField]);
-      td.appendChild(span);
+      const val = getLookupValue(def.id, item[def.keyField]);
+      if (def.asLink && val) {
+        // リレーション: 値ではなく対象行へのリンクチップ。クリックで相手行を開く。
+        const chip = document.createElement('span');
+        chip.className = 'memola-rel-chip';
+        chip.textContent = val;
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation();
+          void import('./db-lookups').then((m) => m.openLookupTarget(def, item[def.keyField]));
+        });
+        td.appendChild(chip);
+      } else {
+        const span = document.createElement('span');
+        span.className = 'memola-dc memola-dc-formula';
+        span.textContent = val;
+        td.appendChild(span);
+      }
       tr.appendChild(td);
     });
   }

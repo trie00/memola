@@ -3233,6 +3233,14 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
 }
 #memola-overlay .memola-qs-snippet mark { background: var(--accent-soft, #fde68a); color: inherit; border-radius: 2px; padding: 0 1px; }
+/* リレーション(他DB)のリンクチップ */
+#memola-overlay .memola-rel-chip {
+  display: inline-block; max-width: 100%; padding: 1px 8px; border-radius: 10px;
+  background: var(--paper-3, #eef0ee); color: var(--accent, #4a6fa5);
+  font-size: var(--fs-sm); cursor: pointer; border: 1px solid var(--paper-3, #e2e5e2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#memola-overlay .memola-rel-chip:hover { background: var(--accent-soft, #e7eefb); text-decoration: underline; }
 #memola-overlay .memola-qs-empty { padding: 20px; text-align: center; color: var(--ink-3); font-size: 14px; }
 #memola-overlay .memola-qs-section {
   padding: 8px 10px 4px; font-size: 11px; font-weight: 600;

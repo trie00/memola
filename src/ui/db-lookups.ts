@@ -12,6 +12,7 @@ import { setLoad, toast } from './ui-helpers';
 // 定義キャッシュ(現在開いている DB ごと)と、対象データの照合マップ(def.id → key→value)。
 const _defs = new Map<string, DbLookupDef[]>();
 const _data = new Map<string, Map<string, string>>();
+const _idData = new Map<string, Map<string, number>>();   // def.id → key値 → 対象行のItemId(リレーションのリンク先)
 
 function newId(): string { return 'lk' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36); }
 function val2str(v: unknown): string {
@@ -24,6 +25,23 @@ export function listLookups(listTitle: string): DbLookupDef[] { return _defs.get
 export function getLookupValue(defId: string, keyValue: unknown): string {
   return _data.get(defId)?.get(val2str(keyValue)) ?? '';
 }
+/** リレーション(asLink)時のリンク先: 対象行の ItemId。無ければ null。 */
+export function getLookupTargetId(defId: string, keyValue: unknown): number | null {
+  const id = _idData.get(defId)?.get(val2str(keyValue));
+  return typeof id === 'number' ? id : null;
+}
+/** クリックされたリレーションチップから対象行ページを開く。 */
+export async function openLookupTarget(def: DbLookupDef, keyValue: unknown): Promise<void> {
+  const itemId = getLookupTargetId(def.id, keyValue);
+  if (!itemId) return;
+  const title = (await resolveListTitleById(def.targetListId)) || def.targetTitle;
+  if (!title) return;
+  const dbPage = S.meta.pages.find((p) => p.type === 'database' && p.list === title);
+  if (!dbPage) { toast('対象DBがツリーに見つかりません', 'err'); return; }
+  const { getListItemById } = await import('../api/sp-list');
+  const item = await getListItemById(title, itemId);
+  if (item) { const { openRowAsPage } = await import('./row-page'); await openRowAsPage(dbPage.id, item); }
+}
 
 /** 1つの参照定義について、対象DBを引いて key→value マップを作る。 */
 async function buildData(def: DbLookupDef): Promise<void> {
@@ -32,13 +50,17 @@ async function buildData(def: DbLookupDef): Promise<void> {
     if (!title) { _data.set(def.id, new Map()); return; }
     const items = await getListItems(title);
     const map = new Map<string, string>();
+    const idMap = new Map<string, number>();
     for (const it of items) {
-      const k = val2str((it as Record<string, unknown>)[def.targetKeyField]);
+      const rec = it as Record<string, unknown>;
+      const k = val2str(rec[def.targetKeyField]);
       if (k === '' || map.has(k)) continue;               // 先頭一致を採用
-      map.set(k, val2str((it as Record<string, unknown>)[def.returnField]));
+      map.set(k, val2str(rec[def.returnField]));
+      const id = rec.Id; if (typeof id === 'number') idMap.set(k, id);
     }
     _data.set(def.id, map);
-  } catch { _data.set(def.id, new Map()); }
+    _idData.set(def.id, idMap);
+  } catch { _data.set(def.id, new Map()); _idData.set(def.id, new Map()); }
 }
 
 /** DB を開いた時に呼ぶ: 共有設定から参照定義を読み込み、対象データを取得。 */
@@ -121,9 +143,15 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
   targetSel.addEventListener('change', () => { void fillTargetFields(targetSel.value); });
   if (def?.targetTitle) void fillTargetFields(def.targetTitle);
 
+  // リレーション表示(値ではなく対象行へのリンクチップ)
+  const linkWrap = document.createElement('label');
+  linkWrap.style.cssText = 'display:flex;align-items:center;gap:6px;margin:4px 0;font-size:var(--fs-sm);cursor:pointer';
+  const linkChk = document.createElement('input'); linkChk.type = 'checkbox'; linkChk.checked = !!def?.asLink;
+  linkWrap.append(linkChk, document.createTextNode('リンクとして表示(リレーション=クリックで相手行を開く)'));
+
   const help = document.createElement('div');
   help.className = 'memola-formula-help';
-  help.textContent = '自DBの「キー列」の値を、対象DBの「キー列」から探して「返す列」の値を表示します(先頭一致)。対象DBは改名・移動しても追従します。';
+  help.textContent = '自DBの「キー列」の値を、対象DBの「キー列」から探して「返す列」の値を表示します(先頭一致)。「リンクとして表示」をオンにすると、値の代わりに相手行へのリンク(リレーション)になります。対象DBは改名・移動しても追従します。';
 
   const acts = document.createElement('div');
   acts.className = 'memola-formula-acts';
@@ -143,6 +171,7 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
           id: def?.id || newId(), name,
           keyField: keySel.value, targetListId, targetTitle,
           targetKeyField: tKeySel.value, returnField: tRetSel.value,
+          asLink: linkChk.checked,
         };
         const idx = defs.findIndex((d) => d.id === next.id);
         if (idx >= 0) defs[idx] = next; else defs.push(next);
@@ -162,14 +191,14 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
     delBtn.addEventListener('click', () => {
       if (!confirm(`参照列「${def.name}」を削除しますか？`)) return;
       _defs.set(listTitle, listLookups(listTitle).filter((d) => d.id !== def.id));
-      _data.delete(def.id);
+      _data.delete(def.id); _idData.delete(def.id);
       void persist(listTitle).then(() => { closeLookupEditor(); reload(); });
     });
     acts.appendChild(delBtn);
   }
 
   pop.append(nameInp, labelled('自DBのキー列', keySel), labelled('対象DB', targetSel),
-    labelled('対象のキー列', tKeySel), labelled('返す列', tRetSel), help, acts);
+    labelled('対象のキー列', tKeySel), labelled('返す列(リンク時は表示する列)', tRetSel), linkWrap, help, acts);
   overlay.appendChild(pop);
   const r = pop.getBoundingClientRect();
   if (r.bottom > window.innerHeight - 8) pop.style.top = Math.max(8, window.innerHeight - r.height - 8) + 'px';
@@ -183,6 +212,16 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
 /** 新規参照列エディタを開く(S.dbList 対象)。 */
 export function openNewLookup(x: number, y: number): void {
   openLookupEditor(S.dbList, null, x, y, () => {
+    void import('./views-table').then((m) => {
+      m.renderDbTable();
+      const w = document.getElementById('memola-dt-wrap'); if (w) w.scrollLeft = w.scrollWidth;
+    });
+  });
+}
+
+/** 新規リレーション列エディタ(asLink 既定オン)を開く。 */
+export function openNewRelation(x: number, y: number): void {
+  openLookupEditor(S.dbList, { asLink: true } as DbLookupDef, x, y, () => {
     void import('./views-table').then((m) => {
       m.renderDbTable();
       const w = document.getElementById('memola-dt-wrap'); if (w) w.scrollLeft = w.scrollWidth;
