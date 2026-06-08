@@ -16,7 +16,7 @@
 
 import {
   insertText, insertBr, deleteRange, splitBlock, mergeWithPrev,
-  paragraph, inlineLength, sliceInline, outdentListItem,
+  paragraph, inlineLength, sliceInline, outdentListItem, findBlockPath,
   type EditorState,
 } from './editor-state';
 import type { Block } from '../../lib/blocks';
@@ -86,6 +86,16 @@ export function handleBeforeInput(
         if (!after.cursor) return { next: state, preventDefault: false };
         const next = splitBlock(after.state, after.cursor.blockId, after.cursor.offset);
         return { next, preventDefault: true };
+      }
+      // Notion流のステップアウト: 空の箇条書き項目で Enter を押すと、
+      //   - 入れ子なら 1レベル外側へ outdent(段落化はしない)、
+      //   - 最外レベルなら通常段落へ脱出(enterEscapeContainer)。
+      // まず「空 かつ 入れ子リスト項目」なら outdent を試す。outdent が効けば
+      // (state が変われば)そこで確定。最外項目は outdent 不発 → 下の escape へ。
+      const fp = findBlockPath(state, sel.blockId);
+      if (fp && 'inline' in fp.block && inlineLength(fp.block.inline) === 0) {
+        const outdent = outdentListItem(state, sel.blockId);
+        if (outdent !== state) return { next: outdent, preventDefault: true };
       }
       // Special case: Enter at end of EMPTY block inside a list item /
       // callout / quote → exit the container into a fresh paragraph
