@@ -507,6 +507,26 @@ function backspaceRemoveEmptyInner(state: EditorState, innerId: string): EditorS
   return null;
 }
 
+/** 与えられたブロック列の「最後の実テキスト行(inline を持つブロック)」を、
+ *  ネストした子リスト / quote / callout の内部まで降りて末尾から探す。
+ *  Backspace でひとつ上の“見た目の行”にキャレットを戻すのに使う。 */
+function lastInlineLeaf(blocks: Block[]): { id: string; len: number } | null {
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const b = blocks[i];
+    if ('inline' in b) return { id: b.id, len: inlineLength(b.inline) };
+    if (b.kind === 'list') {
+      for (let it = b.items.length - 1; it >= 0; it--) {
+        const r = lastInlineLeaf(b.items[it]);
+        if (r) return r;
+      }
+    } else if (b.kind === 'quote' || b.kind === 'callout') {
+      const r = lastInlineLeaf(b.children);
+      if (r) return r;
+    }
+  }
+  return null;
+}
+
 function removeFromList(
   state: EditorState,
   list: Extract<Block, { kind: 'list' }>,
@@ -548,12 +568,14 @@ function removeFromList(
     }
     blocks[listIdx] = { ...list, items: newItems } as Block;
     if (j > 0) {
-      const prevItem = newItems[j - 1];
-      const prevBlock = prevItem[prevItem.length - 1];
-      if ('inline' in prevBlock) {
+      // 直前項目の「最後の実テキスト行」にキャレットを置く。末尾がネストした
+      // 子リスト等(非inline)の場合でも、その最深・最後の行まで降りて拾う。
+      // これをしないと「リスト先頭(offset 0)」へ飛び、一番上に戻ってしまう。
+      const leaf = lastInlineLeaf(newItems[j - 1]);
+      if (leaf) {
         return {
           ...state, blocks,
-          selection: { kind: 'caret', blockId: prevBlock.id, offset: inlineLength(prevBlock.inline) },
+          selection: { kind: 'caret', blockId: leaf.id, offset: leaf.len },
         };
       }
     }
