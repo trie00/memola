@@ -13,7 +13,7 @@
 // the open row reference) is kept in sync so the table view reflects updates
 // when the user navigates back.
 
-import { type ListField, type ListItem } from '../state';
+import { S, type ListField, type ListItem } from '../state';
 import { apiUpdateDbRow } from '../api/db';
 import { toast } from './ui-helpers';
 import { formatDateJST, parseFlexibleDate } from '../lib/date-utils';
@@ -41,6 +41,15 @@ async function commit(
     await apiUpdateDbRow(listTitle, itemId, { [fieldKey]: newValue });
     item[field.InternalName] = newValue;
     recordCellChange(listTitle, itemId, field.InternalName, field.Title, oldValue, newValue);
+    // この行が今ページとして開かれている(本文がセーバで保存対象)なら、プロパティ
+    // 書き込みで進んだ SP 版をセーバへ同期する。これをしないと、次の本文保存が古い
+    // etag で 412(=競合)になり、一人でも 3way マージ画面が出てしまう。
+    if (S.currentRow && S.currentRow.listTitle === listTitle && S.currentRow.itemId === itemId) {
+      const { mintPageId, apiLoadFileMeta } = await import('../api/pages');
+      const pid = mintPageId(listTitle, itemId);
+      const meta = await apiLoadFileMeta(pid).catch(() => null);
+      if (meta?.etag) { const { saver } = await import('../lib/saver'); saver.noteExternalEtag(pid, meta.etag, meta.modified); }
+    }
   } catch (e) {
     toast('保存失敗: ' + (e as Error).message, 'err');
   }

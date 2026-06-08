@@ -236,6 +236,22 @@ class Saver {
     this._set({ kind: 'unloaded' });
   }
 
+  /** 別の LOCAL 書き込み経路(例: DB行のプロパティ編集 = apiUpdateDbRow)が、
+   *  いまロード中の「同じレコード」の SP 版(etag)を進めた、と通知する。
+   *  ベースライン etag を新版に同期し、次回の本文保存が古い etag で誤って
+   *  412(=競合)になるのを防ぐ。本文/タイトル/ dirty 状態は維持。
+   *  別ページ読込中・保存中(in-flight)・競合中は何もしない(保存完了時に
+   *  result.etag へ rebase されるため)。 */
+  noteExternalEtag(pageId: string, etag: string, modified?: string): void {
+    if (!etag) return;
+    const s = this._state;
+    if (s.kind === 'idle' && s.base.pageId === pageId) {
+      this._set({ kind: 'idle', base: { ...s.base, etag, modified: modified || s.base.modified } });
+    } else if (s.kind === 'dirty' && s.base.pageId === pageId) {
+      this._set({ kind: 'dirty', base: { ...s.base, etag, modified: modified || s.base.modified }, body: s.body, title: s.title });
+    }
+  }
+
   /** Advance the baseline onto a freshly-observed remote version after a
    *  live poll-merge (C). `theirs` is SP's current snapshot; `editorBody`
    *  is what the editor now shows (= the merge of my unsaved edits + the
