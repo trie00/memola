@@ -1,9 +1,8 @@
-// Quick search overlay — local title search across pages/DBs + action palette.
+// Quick search overlay — title search across pages/DBs + action palette +
+// SharePoint-Search-backed full-text (本文/DB行の値) search.
 //
-// Body (full-text) search is intentionally not provided: the previous SP-Search
-// path indexed markdown files in a document library, but pages now live as rows
-// in the memola-pages list. Searching list bodies via SP REST is left as future
-// work; until then this overlay is title + action only.
+// タイトル一致は即時(ローカル)。全文は SP Search API を非同期(デバウンス)で叩き、
+// ヒットが返ったら「全文検索」セクションを下に追加する。
 
 import { S, type Page } from '../state';
 import { g } from './dom';
@@ -11,14 +10,18 @@ import { ancs } from './tree';
 import { doSelect } from './views';
 import { escHtml } from '../lib/search-utils';
 import { metaById } from '../lib/page-store';
+import type { SearchHit } from '../api/search';
 
 interface CmdAction { id: string; label: string; icon: string; key: string; run: () => void; }
 
 let _qsSel = 0;
-let _qsItems: Array<{ kind: 'page' | 'action'; page?: Page; action?: CmdAction }> = [];
+let _qsItems: Array<{ kind: 'page' | 'action' | 'ft'; page?: Page; action?: CmdAction; hit?: SearchHit }> = [];
 let _qsTitleItems: Page[] = [];
 let _qsDbItems: Page[] = [];
 let _qsActions: CmdAction[] = [];
+let _qsFtItems: SearchHit[] = [];     // 全文検索ヒット(非同期で更新)
+let _ftTimer: ReturnType<typeof setTimeout> | null = null;
+let _ftSeq = 0;                       // 古い検索結果を無視するための世代
 
 export function setCommandActions(actions: CmdAction[]): void {
   _qsActions = actions;
@@ -28,6 +31,7 @@ export function openSearch(): void {
   g('qs').classList.add('on');
   (g('qs-inp') as HTMLInputElement).value = '';
   _qsSel = 0;
+  _qsFtItems = [];
   renderQs('');
   g('qs-inp').focus();
 }
@@ -51,6 +55,26 @@ export function renderQs(q: string): void {
   _qsTitleItems = matchedPages.filter((p) => p.Type !== 'database').slice(0, 15);
   _qsDbItems = matchedPages.filter((p) => p.Type === 'database').slice(0, 8);
   rebuildQsDom();
+  scheduleFullText(q);
+}
+
+/** SP Search による全文検索をデバウンス実行。結果が返ったら(入力が変わって
+ *  いなければ)全文検索セクションを追加して再描画する。 */
+function scheduleFullText(q: string): void {
+  if (_ftTimer) { clearTimeout(_ftTimer); _ftTimer = null; }
+  const query = q.trim();
+  // アクションモード(>)や短すぎるクエリは全文検索しない。
+  if (query.startsWith('>') || query.length < 2) { _qsFtItems = []; return; }
+  const seq = ++_ftSeq;
+  _ftTimer = setTimeout(() => {
+    void import('../api/search').then(async (m) => {
+      const hits = await m.spSearch(query, 20).catch(() => [] as SearchHit[]);
+      if (seq !== _ftSeq) return;                       // 入力が変わった → 破棄
+      if ((g('qs-inp') as HTMLInputElement).value.trim() !== query) return;
+      _qsFtItems = hits;
+      rebuildQsDom();
+    });
+  }, 350);
 }
 
 export function rebuildQsDom(): void {
@@ -82,6 +106,18 @@ export function rebuildQsDom(): void {
     _qsDbItems.forEach((p) => {
       _qsItems.push({ kind: 'page', page: p });
       res.appendChild(buildQsPageItem(p, _qsItems.length - 1));
+    });
+  }
+
+  // ── 全文検索(SP Search) ──
+  if (!isActionMode && _qsFtItems.length > 0) {
+    const hd = document.createElement('div');
+    hd.className = 'memola-qs-section';
+    hd.textContent = '全文検索';
+    res.appendChild(hd);
+    _qsFtItems.forEach((h) => {
+      _qsItems.push({ kind: 'ft', hit: h });
+      res.appendChild(buildQsFtItem(h, _qsItems.length - 1));
     });
   }
 
@@ -144,6 +180,56 @@ export function buildQsPageItem(p: Page, idx: number): HTMLDivElement {
   return div;
 }
 
+/** HitHighlightedSummary(<c0>…</c0> / <ddd/>)を安全な HTML に変換。
+ *  マーカーをプレースホルダに退避→HTMLエスケープ→<mark>/…へ復元。 */
+function formatSnippet(summary: string): string {
+  const tmp = (summary || '')
+    .replace(/<c\d+>/g, '').replace(/<\/c\d+>/g, '')
+    .replace(/<ddd\s*\/?>/g, '');
+  return escHtml(tmp)
+    .replace(//g, '<mark>').replace(//g, '</mark>')
+    .replace(//g, '…');
+}
+
+export function buildQsFtItem(h: SearchHit, idx: number): HTMLDivElement {
+  const div = document.createElement('div');
+  div.className = 'memola-qs-item' + (idx === _qsSel ? ' sel' : '');
+  div.innerHTML =
+    '<span class="memola-qs-ic">🔎</span>' +
+    '<div style="flex:1;min-width:0">' +
+      '<div class="memola-qs-title">' + escHtml(h.title || '無題') + '</div>' +
+      (h.summary ? '<div class="memola-qs-snippet">' + formatSnippet(h.summary) + '</div>' : '') +
+    '</div>';
+  div.addEventListener('click', () => { closeSearch(); void openSearchHit(h); });
+  return div;
+}
+
+/** 全文検索ヒット(listId, itemId)を memola のページ/行に解決して開く。 */
+async function openSearchHit(h: SearchHit): Promise<void> {
+  try {
+    const { resolveListTitleById, getListItemById } = await import('../api/sp-list');
+    const { mintPageId } = await import('../api/pages');
+    const listTitle = await resolveListTitleById(h.listId).catch(() => '');
+    if (!listTitle) { toastMiss(); return; }
+    // ページ系リスト(memola-pages / memola-user-*-pages)→ 通常ページ。
+    if (listTitle === 'memola-pages' || /^memola-user-\d+-pages$/.test(listTitle)) {
+      doSelect(mintPageId(listTitle, h.itemId));
+      return;
+    }
+    // それ以外は DB リスト → 行ページ。親DBページを探して openRowAsPage。
+    const dbPage = S.pages.find((p) => p.Type === 'database' && metaById(p.Id)?.list === listTitle);
+    if (!dbPage) { toastMiss(); return; }
+    const item = await getListItemById(listTitle, h.itemId);
+    if (!item) { toastMiss(); return; }
+    const { openRowAsPage } = await import('./row-page');
+    await openRowAsPage(dbPage.Id, item);
+  } catch { toastMiss(); }
+}
+
+function toastMiss(): void {
+  void import('./ui-helpers').then((m) => m.toast('対象を開けませんでした(削除/権限の可能性)', 'err'));
+}
+
 export function buildQsActionItem(a: CmdAction, idx: number): HTMLDivElement {
   const div = document.createElement('div');
   div.className = 'memola-qs-item' + (idx === _qsSel ? ' sel' : '');
@@ -174,6 +260,9 @@ export function qsConfirm(): void {
   if (item.kind === 'page' && item.page) {
     closeSearch();
     doSelect(item.page.Id);
+  } else if (item.kind === 'ft' && item.hit) {
+    closeSearch();
+    void openSearchHit(item.hit);
   } else if (item.kind === 'action' && item.action) {
     closeSearch();
     item.action.run();
