@@ -63,6 +63,18 @@ export function attachColumnModal(): void {
       });
       return;
     }
+    // 「ロールアップ(集計)」もクライアント側の集計列 → 集計エディタ。
+    if (typeTk === 'rollup') {
+      g('col-md').classList.remove('on');
+      const r = (g('col-ok') as HTMLElement).getBoundingClientRect();
+      const m = await import('./db-rollups');
+      m.openRollupEditor(S.dbList, null, r.left, r.bottom + 4, () => {
+        renderDbTable();
+        const w = document.getElementById('memola-dt-wrap');
+        if (w) w.scrollLeft = w.scrollWidth;
+      });
+      return;
+    }
     let choices: string[] = [];
     if (typeKind === 6 || typeKind === 15) {
       const raw = (g('col-choices') as HTMLTextAreaElement).value.trim();

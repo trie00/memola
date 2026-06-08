@@ -24,8 +24,9 @@ import { getView } from './db-views-model';
 import { resolveTagColor } from './tag-colors';
 import { listFormulas } from './db-formulas';
 import { listLookups, getLookupValue } from './db-lookups';
+import { listRollups, getRollupValue } from './db-rollups';
 import { evalFormula, formatFormulaValue } from '../lib/formula';
-import type { DbColorRule, DbFormulaDef, DbLookupDef } from '../lib/prefs';
+import type { DbColorRule, DbFormulaDef, DbLookupDef, DbRollupDef } from '../lib/prefs';
 import type { DbColorMap } from '../lib/prefs';
 
 /** View-level colour overlay for the current render pass. Set at the top of
@@ -34,11 +35,12 @@ let _renderColors: DbColorMap = {};
 let _renderRules: DbColorRule[] = [];
 let _renderFormulas: DbFormulaDef[] = [];
 let _renderLookups: DbLookupDef[] = [];
+let _renderRollups: DbRollupDef[] = [];
 
-/** セル値が変わった後に呼ぶ: 数式/参照列があれば再描画して再計算する。
+/** セル値が変わった後に呼ぶ: 数式/参照/集計列があれば再描画して再計算する。
  *  計算列が無ければ何もしない(無駄な再描画を避ける)。 */
 function recalcComputed(): void {
-  if (_renderFormulas.length || _renderLookups.length) renderDbTable();
+  if (_renderFormulas.length || _renderLookups.length || _renderRollups.length) renderDbTable();
 }
 
 export function getDbFields(): ListField[] {
@@ -143,6 +145,7 @@ export function renderDbTable(): void {
   _renderRules = getView(S.dbList, S.dbViewId).rules || [];
   _renderFormulas = listFormulas(S.dbList);
   _renderLookups = listLookups(S.dbList);
+  _renderRollups = listRollups(S.dbList);
 
   // Reflect "any-selected" mode on the table so CSS can switch to always-show
   const dt = g('dt');
@@ -330,6 +333,24 @@ export function renderDbTable(): void {
     thead.appendChild(th);
   });
 
+  // ロールアップ(集計)列ヘッダ(読み取り専用)。クリックで集計エディタ。
+  _renderRollups.forEach((def) => {
+    const th = document.createElement('th');
+    th.className = 'memola-th-formula';
+    th.dataset.rollupId = def.id;
+    const span = document.createElement('span');
+    span.className = 'memola-th-label';
+    span.textContent = 'Σ ' + def.name;
+    span.title = '集計: ' + def.childTitle;
+    span.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const r = span.getBoundingClientRect();
+      void import('./db-rollups').then((m) => m.openRollupEditor(S.dbList, def, r.left, r.bottom + 4, () => renderDbTable()));
+    });
+    th.appendChild(span);
+    thead.appendChild(th);
+  });
+
   // Delete column header (icon column)
   const thDel = document.createElement('th'); thDel.className = 'memola-th-del'; thead.appendChild(thDel);
   // "+" column right after the data columns
@@ -363,7 +384,7 @@ export function renderDbTable(): void {
   // 狭い時は 100% に伸びて spacer が余白を吸収。
   const CB_W = 24, DEL_W = 32, ADD_W = 36, DEF_COL_W = 160;
   const fieldsW = fields.reduce((s, f) => s + (S.dbColumnWidths[f.InternalName] || DEF_COL_W), 0)
-    + (_renderFormulas.length + _renderLookups.length) * DEF_COL_W;
+    + (_renderFormulas.length + _renderLookups.length + _renderRollups.length) * DEF_COL_W;
   dt.style.width = (CB_W + DEL_W + ADD_W + fieldsW) + 'px';
 }
 
@@ -697,6 +718,19 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
       const span = document.createElement('span');
       span.className = 'memola-dc memola-dc-formula';
       span.textContent = getLookupValue(def.id, item[def.keyField]);
+      td.appendChild(span);
+      tr.appendChild(td);
+    });
+  }
+
+  // ロールアップ(集計)列セル(読み取り専用)。親キー→子DBの集計値。
+  if (_renderRollups.length) {
+    _renderRollups.forEach((def) => {
+      const td = document.createElement('td');
+      td.className = 'memola-td-formula';
+      const span = document.createElement('span');
+      span.className = 'memola-dc memola-dc-formula';
+      span.textContent = getRollupValue(def.id, item[def.parentKeyField]);
       td.appendChild(span);
       tr.appendChild(td);
     });

@@ -105,6 +105,21 @@ export interface DbLookupDef {
   returnField: string;     // 対象側の返す列(InternalName)
 }
 
+// DB「ロールアップ(集計)」列。1対多リレーションの親側に、子DBの関連行をまとめた
+// 集計値を表示する。値は保存せず描画時に算出。子DBは GUID(childListId)で参照。
+//   親の parentKeyField の値 == 子の childForeignField の値 でグルーピングし、
+//   子の targetField を agg(count/sum/avg/min/max/join)で集計する。
+export interface DbRollupDef {
+  id: string;
+  name: string;
+  parentKeyField: string;   // 親(自)DBのキー列(InternalName)
+  childListId: string;      // 子SPリストのGUID
+  childTitle: string;       // 子リスト名(表示/フォールバック)
+  childForeignField: string;// 子側の「親キー」を持つ列(InternalName)
+  targetField: string;      // 集計対象の子列(InternalName)。count では空でも可
+  agg: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'join';
+}
+
 // ── AI ────────────────────────────────────────────────────────────────
 // (The body of these prefs is wrapped by api/ai-settings.ts which adds
 //  per-pref validation. UI code should prefer api/ai-settings exports.)
