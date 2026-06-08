@@ -9,7 +9,9 @@
 import { S, type ListItem } from '../state';
 import { g, getEd } from './dom';
 import { setSavedAt, toast, autoR, setLoad } from './ui-helpers';
-import { getListItems } from '../api/sp-list';
+import { getListItems, getListFields } from '../api/sp-list';
+import { stripInternalDbFields } from '../api/db';
+import { metaById } from '../lib/page-store';
 import { apiLoadContentMeta, mintPageId, registerPageSourceList } from '../api/pages';
 import { saver } from '../lib/saver';
 import { startWatching, stopWatching } from './sync-watch';
@@ -24,11 +26,24 @@ const _convertPromptedRows = new Set<number>();
 
 /** Open a DB row as a full page editor. dbId = parent db page id, item = the row */
 export async function openRowAsPage(dbId: string, item: ListItem): Promise<void> {
-  const listTitle = S.dbList;
+  // 行が属するリストは dbId のメタから導く(S.dbList に依存しない=自己完結)。
+  // これにより、呼び出し側は事前に doSelectDb する必要がなく、DB一覧タブを
+  // 作らず・DB一覧を一瞬表示せずに行ページへ直接入れる(デイリーノートで余計な
+  // DBタブが生成され「いつの間にかDBタブに切替」と見えていた問題の解消)。
+  const listTitle = metaById(dbId)?.list || S.dbList;
   if (!listTitle || !item) return;
 
   // 直前のページ/行の保留保存を確定してから対象を切り替える(取りこぼし防止)。
   try { const { flushPendingSave } = await import('./save-control'); await flushPendingSave(); } catch { /* ignore */ }
+
+  // S.dbList/S.dbFields をこの行のリストに合わせる(プロパティ欄の描画に必要)。
+  // 別DBから来た/未ロードの時だけ列定義を取り直す(同一DBの表からのオープンは再取得しない)。
+  const needFields = S.dbList !== listTitle || !S.dbFields || S.dbFields.length === 0;
+  S.dbList = listTitle;
+  if (needFields) {
+    try { S.dbFields = stripInternalDbFields(await getListFields(listTitle)); } catch { /* keep */ }
+    S.dbItems = [item];   // 別DBの行は持ち越さない(この行だけ即参照可能にする)
+  }
 
   // 行 pageId を採番し、そのDBリストへのルーティングを登録(通常ページと同じ
   // apiLoadContentMeta / apiSavePageBlocks がこの行を読み書きできるように)。

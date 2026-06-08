@@ -160,19 +160,13 @@ export async function activateTab(tabId: string): Promise<void> {
     const rowDbId = tab.rowDbId;
     const rowId = tab.rowId;
     if (rowDbId && rowId != null) {
-      const meta = metaById(rowDbId);
-      const listTitle = meta?.list;
+      const listTitle = metaById(rowDbId)?.list;
       if (listTitle) {
         try {
-          S.currentId = rowDbId;          // パンくず/サイドバーは親DBに固定
-          S.dbList = listTitle;
-          const { getListFields, getListItemById } = await import('../api/sp-list');
-          const { stripInternalDbFields } = await import('../api/db');
-          const [fields, item] = await Promise.all([
-            getListFields(listTitle),
-            getListItemById(listTitle, rowId),
-          ]);
-          S.dbFields = stripInternalDbFields(fields);
+          // 行だけ取得して直接開く。S.dbList/S.dbFields の用意は openRowAsPage が
+          // 自前で行う(列定義の二重取得を避ける)。
+          const { getListItemById } = await import('../api/sp-list');
+          const item = await getListItemById(listTitle, rowId);
           if (item) {
             const rp = await import('./row-page');
             await rp.openRowAsPage(rowDbId, item);   // 内部で openRowInActiveTab → 既存行タブを再利用(複製しない)

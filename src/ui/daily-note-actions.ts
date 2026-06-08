@@ -51,9 +51,10 @@ export async function openDailyNoteForDate(
     }
     const dbPage = S.pages.find((p) => p.Id === ref.dbPageId);
     if (!dbPage) { toast('デイリー DB が見つかりません', 'err'); return; }
-    const v = await import('./views');
-    await v.doSelectDb(ref.dbPageId, dbPage);
-    const item = S.dbItems.find((i) => i.Id === ref.rowId);
+    // DB一覧は開かず、その行だけ取得して直接開く(余計なデイリーDBタブを作らない)。
+    const listTitle = metaById(ref.dbPageId)?.list;
+    const { getListItemById } = await import('../api/sp-list');
+    const item = listTitle ? await getListItemById(listTitle, ref.rowId) : null;
     if (item) {
       const r = await import('./row-page');
       await r.openRowAsPage(ref.dbPageId, item);
@@ -85,15 +86,12 @@ export async function restoreToDailyNote(): Promise<void> {
     await apiGetPages();
     renderTree();
     const dailyDb = await daily.ensureDailyDb();
-    const dbPage = S.pages.find((p) => p.Id === dailyDb.dbPageId);
-    if (dbPage) {
-      const v = await import('./views');
-      await v.doSelectDb(dailyDb.dbPageId, dbPage);
-      const item = S.dbItems.find((i) => i.Id === rowId);
-      if (item) {
-        const r = await import('./row-page');
-        await r.openRowAsPage(dailyDb.dbPageId, item);
-      }
+    const listTitle = metaById(dailyDb.dbPageId)?.list;
+    const { getListItemById } = await import('../api/sp-list');
+    const item = listTitle ? await getListItemById(listTitle, rowId) : null;
+    if (item) {
+      const r = await import('./row-page');
+      await r.openRowAsPage(dailyDb.dbPageId, item);
     }
     toast('デイリーノート (' + date + ') に戻しました');
   } catch (e) {
