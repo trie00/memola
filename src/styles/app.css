@@ -3308,6 +3308,9 @@
 #memola-dv-hd, #memola-db-views, #memola-db-tb, #memola-filter-bar {
   width: 100%;
 }
+/* 全幅表示: 中央寄せ・1200px上限をやめ、横いっぱいに使う(列を多く見せる)。 */
+#memola-overlay #memola-dv.db-fullwidth #memola-dv-inner { max-width: none; padding-left: 20px; padding-right: 20px; }
+#memola-overlay #memola-db-fullwidth.on { color: var(--accent, #4a6fa5); background: var(--accent-soft, #e7eefb); }
 /* DB view header: same layout as page header (icon LEFT, add-icon ABOVE). */
 #memola-dv-hd {
   position: relative; margin-bottom: 24px; flex-shrink: 0;

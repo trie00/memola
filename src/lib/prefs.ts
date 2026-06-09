@@ -89,6 +89,9 @@ export const prefDbViews = jsonPref<Record<string, DbViewsState>>('memola.dbView
 // DB 列幅(リスト単位・端末ローカル)。{ [listTitle]: { internalName: px } }。
 export const prefDbColumnWidths = jsonPref<Record<string, Record<string, number>>>('memola.dbColWidths', {});
 
+// DB一覧の「全幅(横いっぱい)表示」(端末ローカル)。既定 false=中央寄せ。
+export const prefDbFullWidth = jsonPref<boolean>('memola.dbFullWidth', false);
+
 // DB「数式」列(リスト単位)。値は保存せず描画時に各行で評価する読み取り専用列。
 export interface DbFormulaDef { id: string; name: string; expr: string }
 export const prefDbFormulas = jsonPref<Record<string, DbFormulaDef[]>>('memola.dbFormulas', {});

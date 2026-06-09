@@ -8,9 +8,16 @@ import { renderKanban } from './views';
 import { exportCsv, importCsv } from './csv-io';
 import { doNewDbRow } from './actions';
 import { renderDbTable } from './views-table';
-import type { DbViewType } from '../lib/prefs';
+import { prefDbFullWidth, type DbViewType } from '../lib/prefs';
 
 let _attached = false;
+
+/** 全幅(横いっぱい)表示の適用。DBビューを開いた時/トグル時に呼ぶ。 */
+export function applyDbFullWidth(): void {
+  const on = prefDbFullWidth.get();
+  document.getElementById('memola-dv')?.classList.toggle('db-fullwidth', on);
+  document.getElementById('memola-db-fullwidth')?.classList.toggle('on', on);
+}
 
 /** 指定タイプのビューを表示(コンテナの出し分け + 描画)。 */
 export function applyViewType(type: DbViewType): void {
@@ -31,6 +38,10 @@ export function attachDbToolbar(): void {
 
   g('db-csv-export').addEventListener('click', exportCsv);
   g('db-csv-import').addEventListener('click', importCsv);
+  document.getElementById('memola-db-fullwidth')?.addEventListener('click', () => {
+    prefDbFullWidth.set(!prefDbFullWidth.get());
+    applyDbFullWidth();
+  });
   document.getElementById('memola-db-new-row')?.addEventListener('click', doNewDbRow);
   document.getElementById('memola-db-add-formula')?.addEventListener('click', (e) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();

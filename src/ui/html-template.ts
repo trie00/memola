@@ -189,6 +189,7 @@ export function buildHtml(): string {
             // ＋フィルター/ソート/グループは廃止 → 列ヘッダのクリックメニューに集約。
             '<button class="memola-db-new-btn" id="memola-db-new-row">＋ 新規</button>' +
             '<div class="memola-db-tb-spacer"></div>' +
+            '<button class="memola-db-chip subtle" id="memola-db-fullwidth" title="全幅表示の切替（横いっぱいに表示）"><span>⇔ 全幅</span></button>' +
             '<button class="memola-db-chip subtle" id="memola-db-add-formula" title="数式列を追加"><span>ƒ 数式</span></button>' +
             '<button class="memola-db-chip subtle" id="memola-db-csv-export">' + ICONS.download + '<span>CSV</span></button>' +
             '<button class="memola-db-chip subtle" id="memola-db-csv-import">' + ICONS.copy + '<span>取込</span></button>' +

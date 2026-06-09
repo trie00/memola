@@ -387,6 +387,7 @@ export async function doSelectDb(id: string, page: Page): Promise<void> {
   const meta = metaById(id);
   if (!meta || !meta.list) { toast('DBメタ情報が見つかりません', 'err'); return; }
   showView('db');
+  void import('./db-toolbar').then((m) => m.applyDbFullWidth());
   g('dv-ttl').textContent = page.Title || '無題';
 
   const dvIcon = g('dv-pg-icon');
