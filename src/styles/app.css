@@ -3311,6 +3311,13 @@
 /* 全幅表示: 中央寄せ・1200px上限をやめ、横いっぱいに使う(列を多く見せる)。 */
 #memola-overlay #memola-dv.db-fullwidth #memola-dv-inner { max-width: none; padding-left: 20px; padding-right: 20px; }
 #memola-overlay #memola-db-fullwidth.on { color: var(--accent, #4a6fa5); background: var(--accent-soft, #e7eefb); }
+/* 全文表示: セルを列幅で折り返して全文を見せる(行高さは内容に応じて伸びる)。 */
+#memola-overlay #memola-dv.db-wrap .memola-dc {
+  white-space: pre-wrap; word-break: break-word; overflow: visible;
+  height: auto; min-height: 40px; line-height: 1.5; padding-top: 11px; padding-bottom: 11px;
+}
+#memola-overlay #memola-dv.db-wrap .memola-rel-chip { white-space: normal; }
+#memola-overlay #memola-db-wraptext.on { color: var(--accent, #4a6fa5); background: var(--accent-soft, #e7eefb); }
 /* DB view header: same layout as page header (icon LEFT, add-icon ABOVE). */
 #memola-dv-hd {
   position: relative; margin-bottom: 24px; flex-shrink: 0;
