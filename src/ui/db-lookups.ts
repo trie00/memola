@@ -25,6 +25,18 @@ export function listLookups(listTitle: string): DbLookupDef[] { return _defs.get
 export function getLookupValue(defId: string, keyValue: unknown): string {
   return _data.get(defId)?.get(val2str(keyValue)) ?? '';
 }
+/** リレーション(asLink)の選択肢 = 相手DBの照合キー列の値一覧(ロード済みデータから)。
+ *  セルのピッカーが「相手DBの行から選ぶ」ために使う。 */
+export function getRelationOptions(defId: string): string[] {
+  const m = _data.get(defId);
+  return m ? [...m.keys()] : [];
+}
+
+/** 指定列(keyField)をピッカー対象にしているリレーション定義を返す(無ければ null)。 */
+export function relationForKeyField(listTitle: string, internalName: string): DbLookupDef | null {
+  return (listLookups(listTitle).find((d) => d.asLink && d.keyField === internalName)) || null;
+}
+
 /** リレーション(asLink)時のリンク先: 対象行の ItemId。無ければ null。 */
 export function getLookupTargetId(defId: string, keyValue: unknown): number | null {
   const id = _idData.get(defId)?.get(val2str(keyValue));

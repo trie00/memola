@@ -487,6 +487,59 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
     const _ovBg = cellOverlay(_renderColors, item.Id, f.InternalName) || _ruleBg;
     if (_ovBg) td.style.background = _ovBg;
 
+    // この列がリレーションの照合キー(keyField)なら、手入力ではなく
+    // 「相手DBの行(照合キー列の値)から選ぶ」ピッカーにする。
+    // マスターに行が増えれば選択肢にも自動で反映される(choice列のような手メンテ不要)。
+    const relDef = _renderLookups.find((d) => d.asLink && d.keyField === f.InternalName);
+    if (relDef && f.FieldTypeKind !== 4 && f.FieldTypeKind !== 8) {
+      const wrapper = document.createElement('div');
+      wrapper.style.padding = '4px 12px';
+      const apply = (nv: string): void => {
+        const oldVal = (item[f.InternalName] as string) || '';
+        if (nv === oldVal) return;
+        const data: Record<string, unknown> = {};
+        data[f.Title || f.InternalName] = nv;
+        item[f.InternalName] = nv;
+        apiUpdateDbRow(S.dbList, item.Id, data)
+          .then(() => {
+            renderVal(nv);
+            recordCellChange(S.dbList, item.Id, f.InternalName, f.Title, oldVal, nv);
+            recalcComputed();
+          })
+          .catch((e: Error) => { toast(e.message, 'err'); });
+      };
+      const openPicker = (anchor: HTMLElement): void => {
+        const cur = (item[f.InternalName] as string) || '';
+        void import('./db-lookups').then((m) => {
+          const opts = m.getRelationOptions(relDef.id);
+          const items2 = [
+            { value: '', label: '—' },
+            ...opts.map((v) => ({ value: v, label: v })),
+          ];
+          void import('./choice-popover').then((cp) => cp.openChoicePopover(anchor, items2, cur, apply));
+        });
+      };
+      const renderVal = (val: string): void => {
+        wrapper.innerHTML = '';
+        const chip = document.createElement('span');
+        if (val) {
+          chip.className = 'memola-rel-chip';
+          chip.textContent = val;
+        } else {
+          chip.textContent = '—';
+          chip.style.color = 'var(--ink-4)';
+          chip.style.cursor = 'pointer';
+        }
+        chip.title = relDef.targetTitle + ' から選択';
+        chip.addEventListener('click', (e) => { e.stopPropagation(); openPicker(chip); });
+        wrapper.appendChild(chip);
+      };
+      renderVal((item[f.InternalName] as string) || '');
+      td.appendChild(wrapper);
+      tr.appendChild(td);
+      return;
+    }
+
     if (f.FieldTypeKind === 4) {
       // ── Date cell (JST display, JST 0時 → UTC ISO で保存) ──
       const wrapper = document.createElement('div');

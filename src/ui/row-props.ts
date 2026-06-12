@@ -19,6 +19,7 @@ import { toast } from './ui-helpers';
 import { formatDateJST, parseFlexibleDate } from '../lib/date-utils';
 import { recordCellChange } from './db-history';
 import { openChoicePopover } from './choice-popover';
+import { relationForKeyField } from './db-lookups';
 import { resolveTagColor } from './tag-colors';
 
 /** Commit a single-cell change, capturing the previous value for undo. */
@@ -61,6 +62,34 @@ function buildEditor(
   listTitle: string,
 ): HTMLElement {
   const value = item[field.InternalName];
+  // この列がリレーションの照合キーなら、相手DBの行から選ぶピッカーにする(テーブルと同じ)。
+  {
+    const relDef = relationForKeyField(listTitle, field.InternalName);
+    if (relDef && field.FieldTypeKind !== 4 && field.FieldTypeKind !== 8) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'memola-rp-input memola-rp-choice';
+      btn.title = relDef.targetTitle + ' から選択';
+      const renderLabel = (): void => {
+        const v = (item[field.InternalName] as string) || '';
+        btn.innerHTML = v
+          ? '<span class="memola-rel-chip">' + v.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</span>'
+          : '<span class="memola-rp-placeholder">—</span>';
+      };
+      renderLabel();
+      btn.addEventListener('click', () => {
+        void import('./db-lookups').then((m) => {
+          const opts = m.getRelationOptions(relDef.id);
+          const items2 = [{ value: '', label: '—' }, ...opts.map((v) => ({ value: v, label: v }))];
+          const cur = (item[field.InternalName] as string) || '';
+          openChoicePopover(btn, items2, cur, (nv) => {
+            void commit(listTitle, item.Id, field, nv, item).then(renderLabel);
+          });
+        });
+      });
+      return btn;
+    }
+  }
   switch (field.FieldTypeKind) {
     case 4: { // Date — flexible text input + native calendar picker.
               // Text accepts YYYYMMDD / YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD.
