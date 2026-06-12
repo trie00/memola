@@ -93,6 +93,10 @@ export function attachAll(): void {
   g('reload-btn').addEventListener('click', () => void doReload());
   // 右上のログイン中ユーザーアイコン(AD プロフィール画像)
   void import('./user-avatar').then((m) => m.attachUserAvatar());
+  // 使い方ヘルプ(歯車の隣の「?」)
+  document.getElementById('memola-help-btn')?.addEventListener('click', () => {
+    void import('./help-modal').then((m) => m.openHelpModal());
+  });
 
   // Sidebar / nav-history / daily-notes / empty-state CTAs
   attachSidebarWiring({ openTodayDailyNote, showDailyPicker, doNewDb });

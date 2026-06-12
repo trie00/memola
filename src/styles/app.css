@@ -3241,6 +3241,32 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 #memola-overlay .memola-rel-chip:hover { background: var(--accent-soft, #e7eefb); text-decoration: underline; }
+/* 使い方ヘルプ モーダル */
+#memola-overlay .memola-help-md {
+  position: fixed; inset: 0; z-index: 2147483646; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.35);
+}
+#memola-overlay .memola-help-card {
+  background: var(--paper, #fff); color: var(--ink); border-radius: 12px;
+  width: min(720px, calc(100% - 48px)); max-height: 84vh; display: flex; flex-direction: column;
+  box-shadow: 0 10px 40px rgba(0,0,0,.25);
+}
+#memola-overlay .memola-help-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px; border-bottom: 1px solid var(--paper-3);
+}
+#memola-overlay .memola-help-hd h2 { margin: 0; font-size: 17px; }
+#memola-overlay .memola-help-x {
+  border: none; background: transparent; cursor: pointer; font-size: 18px; color: var(--ink-3);
+  width: 30px; height: 30px; border-radius: 6px;
+}
+#memola-overlay .memola-help-x:hover { background: var(--paper-2); color: var(--ink); }
+#memola-overlay .memola-help-body { overflow-y: auto; padding: 8px 20px 20px; }
+#memola-overlay .memola-help-sec { margin-top: 16px; }
+#memola-overlay .memola-help-sec h3 { margin: 0 0 6px; font-size: 14px; color: var(--ink); }
+#memola-overlay .memola-help-sec ul { margin: 0; padding-left: 20px; }
+#memola-overlay .memola-help-sec li { font-size: var(--fs-sm); line-height: 1.7; color: var(--ink-2); margin: 2px 0; }
+#memola-overlay .memola-help-sec li b { color: var(--ink); }
 /* AIスキャフォールドのプレビュー */
 #memola-overlay .memola-sf-list { max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
 #memola-overlay .memola-sf-db { border: 1px solid var(--paper-3); border-radius: 8px; padding: 8px 10px; }
