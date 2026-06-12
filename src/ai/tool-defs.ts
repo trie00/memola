@@ -217,7 +217,11 @@ type に指定できる値:
 
 ※ リレーション(他DBへのリンク)/ロールアップ(集計)/参照 は SP の素の列タイプでは
 なくクライアント側の計算列。これらは add_db_field ではなく専用ツール
-add_relation_column / add_rollup_column を使うこと(既存DBに後付けも可能)。`,
+add_relation_column / add_rollup_column を使うこと(既存DBに後付けも可能)。
+
+※ unique:true で「重複禁止(ユニーク)」列にできる(text/number/date 向け。内部で
+インデックスも自動設定)。マスターDBのキー列(例: プロジェクト名)に指定すると、
+同名の重複行を防げ、XLOOKUP参照の「対象のキー列」としても選択可能になる。`,
     input_schema: {
       type: 'object',
       properties: {
@@ -231,6 +235,10 @@ add_relation_column / add_rollup_column を使うこと(既存DBに後付けも�
           type: 'array',
           items: { type: 'string' },
           description: 'type=choice の場合の選択肢リスト',
+        },
+        unique: {
+          type: 'boolean',
+          description: 'true で重複禁止(ユニーク)列にする。マスターのキー列に推奨',
         },
       },
       required: ['db_id', 'name', 'type'],

@@ -196,7 +196,7 @@ const TYPE_TO_KIND: Record<string, number> = {
 };
 
 export async function handleAddDbField(input: {
-  db_id: string; name: string; type: string; choices?: string[];
+  db_id: string; name: string; type: string; choices?: string[]; unique?: boolean;
 }): Promise<ToolResult> {
   const db = lookupDb(input.db_id);
   if (!db) return err('db_not_found');
@@ -212,6 +212,24 @@ export async function handleAddDbField(input: {
     return err('field_already_exists: ' + input.name);
   }
   await addListField(db.listTitle, input.name, kind, input.choices);
+  // unique=true なら重複禁止(EnforceUniqueValues+Indexed)を設定。text/number/date 向け。
+  // XLOOKUP参照の「対象のキー列」はユニーク列のみ選択可なので、マスターのキー列に有効。
+  let uniqueApplied = false;
+  if (input.unique) {
+    try {
+      const fields = await getListFields(db.listTitle);
+      const f = fields.find((x) => x.Title === input.name || x.InternalName === input.name);
+      if (f) {
+        const { setFieldUnique } = await import('../api/sp-list');
+        await setFieldUnique(db.listTitle, f.InternalName, true);
+        uniqueApplied = true;
+      }
+    } catch (e) {
+      // 列自体は作成済みなので致命にしない(ユニーク化だけ失敗を返す)。
+      return ok({ db_id: input.db_id, name: input.name, type: input.type,
+        unique: false, unique_error: (e as Error).message });
+    }
+  }
   // If the user is currently viewing this DB, refresh its schema cache so the
   // new column shows up without reload.
   if (S.dbList === db.listTitle) {
@@ -219,7 +237,7 @@ export async function handleAddDbField(input: {
     S.dbFields = stripInternalDbFields(await getListFields(db.listTitle));
     void import('../ui/views').then((m) => m.renderDbTable());
   }
-  return ok({ db_id: input.db_id, name: input.name, type: input.type });
+  return ok({ db_id: input.db_id, name: input.name, type: input.type, ...(input.unique ? { unique: uniqueApplied } : {}) });
 }
 
 /** 表示名 → InternalName を解決(日本語列名対応)。見つからなければそのまま返す。 */
