@@ -222,6 +222,56 @@ export async function handleAddDbField(input: {
   return ok({ db_id: input.db_id, name: input.name, type: input.type });
 }
 
+/** 表示名 → InternalName を解決(日本語列名対応)。見つからなければそのまま返す。 */
+async function toInternal(listTitle: string, display: string): Promise<string> {
+  try {
+    const fields = await getListFields(listTitle);
+    const f = fields.find((x) => x.Title === display || x.InternalName === display);
+    return f?.InternalName || display;
+  } catch { return display; }
+}
+
+/** 既存DBに「リレーション列」(クリックで相手行へ飛ぶリンクチップ)を追加する。
+ *  自DBの key_field の値を、相手DBの Title(既定)で照合してリンクする。 */
+export async function handleAddRelationColumn(input: {
+  db_id: string; name: string; key_field: string; target_db_id: string;
+  target_key_field?: string; display_field?: string;
+}): Promise<ToolResult> {
+  const db = lookupDb(input.db_id); if (!db) return err('db_not_found');
+  const target = lookupDb(input.target_db_id); if (!target) return err('target_db_not_found');
+  const keyField = await toInternal(db.listTitle, input.key_field);
+  const targetKeyField = await toInternal(target.listTitle, input.target_key_field || 'Title');
+  const returnField = await toInternal(target.listTitle, input.display_field || 'Title');
+  const { addLookupSpec } = await import('../ui/db-lookups');
+  await addLookupSpec(db.listTitle, {
+    name: input.name, keyField, targetTitle: target.listTitle,
+    targetKeyField, returnField, asLink: true,
+  });
+  if (S.dbList === db.listTitle) void import('../ui/views').then((m) => m.renderDbTable());
+  return ok({ db_id: input.db_id, name: input.name, target_db: target.title });
+}
+
+/** 既存DBに「ロールアップ(集計)列」を追加する。子DBの child_foreign_field が、
+ *  この(親)DBの Title と一致する行をまとめ、target_field を agg で集計する。 */
+export async function handleAddRollupColumn(input: {
+  db_id: string; name: string; child_db_id: string; child_foreign_field: string;
+  agg: string; target_field?: string;
+}): Promise<ToolResult> {
+  const db = lookupDb(input.db_id); if (!db) return err('db_not_found');
+  const child = lookupDb(input.child_db_id); if (!child) return err('child_db_not_found');
+  const AGGS = ['count', 'sum', 'avg', 'min', 'max', 'join'];
+  const agg = AGGS.includes(input.agg) ? input.agg : 'count';
+  const childForeignField = await toInternal(child.listTitle, input.child_foreign_field);
+  const targetField = input.target_field ? await toInternal(child.listTitle, input.target_field) : '';
+  const { addRollupSpec } = await import('../ui/db-rollups');
+  await addRollupSpec(db.listTitle, {
+    name: input.name, parentKeyField: 'Title', childTitle: child.listTitle,
+    childForeignField, targetField, agg: agg as 'count' | 'sum' | 'avg' | 'min' | 'max' | 'join',
+  });
+  if (S.dbList === db.listTitle) void import('../ui/views').then((m) => m.renderDbTable());
+  return ok({ db_id: input.db_id, name: input.name, agg, child_db: child.title });
+}
+
 export async function handleCreateDbRow(input: {
   db_id: string; fields: Record<string, unknown>; body?: string;
 }): Promise<ToolResult> {

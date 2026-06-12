@@ -213,7 +213,11 @@ type に指定できる値:
 （並列 tool_use でも OK）。
 
 ⚠️ 列の追加は SP リストへの即反映で破壊的ではないが、user に作る列名一覧を
-示してから実行するのが望ましい。`,
+示してから実行するのが望ましい。
+
+※ リレーション(他DBへのリンク)/ロールアップ(集計)/参照 は SP の素の列タイプでは
+なくクライアント側の計算列。これらは add_db_field ではなく専用ツール
+add_relation_column / add_rollup_column を使うこと(既存DBに後付けも可能)。`,
     input_schema: {
       type: 'object',
       properties: {
@@ -230,6 +234,49 @@ type に指定できる値:
         },
       },
       required: ['db_id', 'name', 'type'],
+    },
+  },
+
+  {
+    name: 'add_relation_column',
+    description: `既存DBに「リレーション列」(他DBの行へのリンク。クリックで相手行を開く)を追加する。
+仕組み: 自DBの key_field の値を、相手DB(target_db_id)の照合列(target_key_field、既定 Title)で
+探し、相手行へのリンクチップとして表示する。
+使い方の典型: 子DBに「親の名前(Title)」を入れる列(text または choice)を用意し、その列を
+key_field に指定 → 親DBが target_db_id。これで子→親のリンクになる。`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        db_id:        { type: 'string', description: 'この列を足すDB(自DB)のページID' },
+        name:         { type: 'string', description: 'リレーション列の表示名' },
+        key_field:    { type: 'string', description: '自DBの照合キー列(相手のTitle値を持つ列。表示名でOK)' },
+        target_db_id: { type: 'string', description: 'リンク先(相手)DBのページID' },
+        target_key_field: { type: 'string', description: '相手DBの照合列(既定 Title)' },
+        display_field:    { type: 'string', description: 'チップに表示する相手の列(既定 Title)' },
+      },
+      required: ['db_id', 'name', 'key_field', 'target_db_id'],
+    },
+  },
+
+  {
+    name: 'add_rollup_column',
+    description: `既存DB(親)に「ロールアップ(集計)列」を追加する。子DBの関連行をまとめた集計値
+(件数/合計/平均/最小/最大/連結)を親の各行に表示する。
+仕組み: 子DB(child_db_id)の child_foreign_field の値が、親(このDB)の Title と一致する行を集めて、
+target_field を agg で集計する。count 以外は target_field 必須。
+典型: 顧客DBに「請求合計」= child_db_id:請求DB, child_foreign_field:"顧客"(請求側の顧客名列),
+target_field:"金額", agg:"sum"。`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        db_id:               { type: 'string', description: '集計列を足す親DBのページID' },
+        name:                { type: 'string', description: 'ロールアップ列の表示名' },
+        child_db_id:         { type: 'string', description: '集計元(子)DBのページID' },
+        child_foreign_field: { type: 'string', description: '子DB側の「親Titleを持つ列」(表示名でOK)' },
+        agg:                 { type: 'string', enum: ['count', 'sum', 'avg', 'min', 'max', 'join'] },
+        target_field:        { type: 'string', description: '集計対象の子列(count以外は必須)' },
+      },
+      required: ['db_id', 'name', 'child_db_id', 'child_foreign_field', 'agg'],
     },
   },
 

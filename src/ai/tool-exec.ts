@@ -244,6 +244,8 @@ export async function executeTool(name: string, input: Record<string, unknown>):
       case 'read_db_row':    result = await db.handleReadDbRow(input as { db_id: string; row_id: number }); break;
       case 'create_db':      result = await db.handleCreateDb(input as { title: string; parent_id?: string }); break;
       case 'add_db_field':   result = await db.handleAddDbField(input as { db_id: string; name: string; type: string; choices?: string[] }); break;
+      case 'add_relation_column': result = await db.handleAddRelationColumn(input as { db_id: string; name: string; key_field: string; target_db_id: string; target_key_field?: string; display_field?: string }); break;
+      case 'add_rollup_column':   result = await db.handleAddRollupColumn(input as { db_id: string; name: string; child_db_id: string; child_foreign_field: string; agg: string; target_field?: string }); break;
       case 'create_db_row':  result = await db.handleCreateDbRow(input as { db_id: string; fields: Record<string, unknown>; body?: string }); break;
       case 'update_db_row':  result = await db.handleUpdateDbRow(input as { db_id: string; row_id: number; fields?: Record<string, unknown>; body?: string }); break;
       case 'delete_db_row':  result = await db.handleDeleteDbRow(input as { db_id: string; row_id: number }); break;
