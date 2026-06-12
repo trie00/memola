@@ -3647,11 +3647,9 @@
 #memola-overlay #memola-dt th.memola-th-formula { width: 160px; background: var(--paper); }
 #memola-overlay #memola-dt th.memola-th-formula .memola-th-label { color: var(--ink-3); font-style: italic; }
 #memola-overlay #memola-dt td.memola-td-formula { background: var(--paper-2, #f3f1ea); }
-/* リレーション列は他の計算列(数式/参照/集計)と区別: アクセント色のヘッダ＋淡い色帯。 */
-#memola-overlay #memola-dt th.memola-th-relation {
-  background: var(--accent-soft, #e7eefb);
-  box-shadow: inset 0 -2px 0 var(--accent, #4a6fa5);
-}
+/* リレーション列は他の計算列(数式/参照/集計)と区別: ヘッダはアクセント色ラベルのみ
+   (網掛けなし)、セル列に淡い色帯。 */
+#memola-overlay #memola-dt th.memola-th-relation { background: var(--paper); }
 #memola-overlay #memola-dt th.memola-th-relation .memola-th-label {
   color: var(--accent, #4a6fa5); font-style: normal; font-weight: 600;
 }
