@@ -318,7 +318,7 @@ export function renderDbTable(): void {
   // 参照(XLOOKUP)列ヘッダ(読み取り専用)。クリックで参照エディタ。
   _renderLookups.forEach((def) => {
     const th = document.createElement('th');
-    th.className = 'memola-th-formula';
+    th.className = 'memola-th-formula' + (def.asLink ? ' memola-th-relation' : '');
     th.dataset.lookupId = def.id;
     const span = document.createElement('span');
     span.className = 'memola-th-label';
@@ -716,6 +716,7 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
       const td = document.createElement('td');
       td.className = 'memola-td-formula';
       const val = getLookupValue(def.id, item[def.keyField]);
+      if (def.asLink) td.classList.add('memola-td-relation');
       if (def.asLink && val) {
         // リレーション: 値ではなく対象行へのリンクチップ。クリックで相手行を開く。
         const chip = document.createElement('span');
