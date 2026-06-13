@@ -15,7 +15,8 @@ export interface DbConfig {
   formulas?: DbFormulaDef[];
   lookups?: DbLookupDef[];
   rollups?: DbRollupDef[];
-  // 将来: 共有したいビュー/タグ色などをここに追加可能
+  /** タグ(チップ)の色。field内部名 → 選択肢値 → 色。全員共通。 */
+  tagColors?: Record<string, Record<string, string>>;
 }
 
 let _ensured = false;
@@ -36,6 +37,16 @@ export async function loadDbConfig(listKey: string): Promise<DbConfig> {
   const it = await findItem(listKey);
   if (!it?.ConfigJson) return {};
   try { return JSON.parse(it.ConfigJson) as DbConfig; } catch { return {}; }
+}
+
+/** DBの設定行ごと削除(DB本体を完全削除した時の掃除用)。 */
+export async function deleteDbConfig(listKey: string): Promise<void> {
+  await ensure();
+  const it = await findItem(listKey);
+  if (it) {
+    const { deleteListItem } = await import('./sp-list');
+    await deleteListItem(LIST, it.Id).catch(() => undefined);
+  }
 }
 
 /** 設定の部分更新(他キーを保持したままマージ保存)。 */

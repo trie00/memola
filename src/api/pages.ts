@@ -974,6 +974,8 @@ export async function apiDeletePage(id: string): Promise<string[]> {
       const { deleteAllRowEntriesForList } = await import('./page-row-entries');
       await deleteAllRowEntriesForList(dbListToCleanup).catch(() => undefined);
       await deleteList(dbListToCleanup).catch(() => undefined);
+      // 共有設定(数式/リレーション/集計/タグ色)も孤児にならないよう削除。
+      void import('./db-config').then((m) => m.deleteDbConfig(dbListToCleanup)).catch(() => undefined);
     }
   }
   // 成功した id だけを pending-delete-purge に + ローカル除去。reconcile は SP が

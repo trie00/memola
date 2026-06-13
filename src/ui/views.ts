@@ -436,6 +436,7 @@ export async function doSelectDb(id: string, page: Page): Promise<void> {
       import('./db-formulas').then((m) => m.loadFormulas(S.dbList)),
       import('./db-lookups').then((m) => m.loadLookups(S.dbList)),
       import('./db-rollups').then((m) => m.loadRollups(S.dbList)),
+      import('./tag-colors').then((m) => m.loadTagColors(S.dbList)),
     ]).catch(() => undefined);
     // ビュー(リスト単位で複数)を初期化 → active ビューの filters/sort/type を反映。
     const bar = await import('./db-views-bar');
