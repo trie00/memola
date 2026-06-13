@@ -220,6 +220,9 @@ export function attachTableHandlers(editor: Editor, rootEl: HTMLElement): () => 
 
   /** Find which row/column index `td` occupies inside its `<tbody>`. */
   function findCellPos(td: HTMLElement): { tbody: HTMLElement; row: number; col: number } | null {
+    // 本文テーブル(.memola-itbl-wrap)内のセルのみ対象。インラインDB(linkdb)等の
+    // <td> に選択ハンドル/キー操作が誤発動しないようにする。
+    if (!td.closest('.memola-itbl-wrap')) return null;
     const tr = td.parentElement;
     if (!tr || tr.tagName !== 'TR') return null;
     const tbody = tr.parentElement;
