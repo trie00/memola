@@ -103,10 +103,16 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
   pop.style.top = Math.round(y) + 'px';
   _pop = pop;
 
+  // リレーションか参照かでUIを分ける。リレーションは内部実装(キー列)を見せず、
+  // 「列名 / 相手DB / 選択肢にする列」だけのシンプルな設定にする。
+  const relMode = def ? !!def.asLink : !!initialAsLink;
+
   const hdr = document.createElement('div');
   hdr.className = 'memola-colmenu-item';
   hdr.style.cssText = 'font-weight:600;color:var(--ink-3);cursor:default';
-  hdr.textContent = def ? '参照列を編集' : '参照列を追加';
+  hdr.textContent = relMode
+    ? (def ? '🔗 リレーション列を編集' : '🔗 リレーション列を追加')
+    : (def ? '参照列を編集' : '参照列を追加');
   pop.appendChild(hdr);
 
   const nameInp = document.createElement('input');
@@ -122,24 +128,26 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
     w.append(l, el); return w;
   };
 
-  // 自DBのキー列。新規作成時は「➕ 新しい列を作成」も選べる(リレーション/参照の
-  // 実体となるテキスト列をこの列名で作る)。列追加モーダル経由(initialName あり)では
-  // それを既定にする=「列を追加したのに列が増えない」を防ぐ。
+  // 参照(lookup)モードのみ: 自DBのキー列(照合に使う自分の列)。
+  // 「➕ 新しい列を作成」で実体のテキスト列をこの列名で作ることもできる。
+  // リレーションモードではこの配管は見せない(新規=列名で自動作成 / 編集=固定)。
   const NEW_COL = '__new__';
   const keySel = mkSel();
-  if (!def) {
-    const o = document.createElement('option'); o.value = NEW_COL;
-    o.textContent = '➕ 新しい列を作成（上の列名で）';
-    keySel.appendChild(o);
+  if (!relMode) {
+    if (!def) {
+      const o = document.createElement('option'); o.value = NEW_COL;
+      o.textContent = '➕ 新しい列を作成（上の列名で）';
+      keySel.appendChild(o);
+    }
+    const nameMatchesExisting = !!initialName && S.dbFields.some((f) => f.Title === initialName || f.InternalName === initialName);
+    for (const f of S.dbFields) {
+      const o = document.createElement('option'); o.value = f.InternalName; o.textContent = f.Title;
+      if (def ? f.InternalName === def.keyField
+        : (nameMatchesExisting && (f.Title === initialName || f.InternalName === initialName))) o.selected = true;
+      keySel.appendChild(o);
+    }
+    if (!def && initialName && !nameMatchesExisting) keySel.value = NEW_COL;
   }
-  const nameMatchesExisting = !!initialName && S.dbFields.some((f) => f.Title === initialName || f.InternalName === initialName);
-  for (const f of S.dbFields) {
-    const o = document.createElement('option'); o.value = f.InternalName; o.textContent = f.Title;
-    if (def ? f.InternalName === def.keyField
-      : (nameMatchesExisting && (f.Title === initialName || f.InternalName === initialName))) o.selected = true;
-    keySel.appendChild(o);
-  }
-  if (!def && initialName && !nameMatchesExisting) keySel.value = NEW_COL;
 
   // 対象DB(データベースページ一覧)
   const targetSel = mkSel();
@@ -176,30 +184,31 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
   targetSel.addEventListener('change', () => { void fillTargetFields(targetSel.value); });
   if (def?.targetTitle) void fillTargetFields(def.targetTitle);
 
-  // リレーション表示(値ではなく対象行へのリンクチップ)
-  const linkWrap = document.createElement('label');
-  linkWrap.style.cssText = 'display:flex;align-items:center;gap:6px;margin:4px 0;font-size:var(--fs-sm);cursor:pointer';
-  const linkChk = document.createElement('input'); linkChk.type = 'checkbox'; linkChk.checked = def ? !!def.asLink : !!initialAsLink;
-  linkWrap.append(linkChk, document.createTextNode('リンクとして表示(リレーション=クリックで相手行を開く)'));
-
   const help = document.createElement('div');
   help.className = 'memola-formula-help';
-  help.textContent = '自DBの「キー列」の値を、対象DBの「キー列」から探して「返す列」の値を表示します(先頭一致)。「リンクとして表示」をオンにすると、値の代わりに相手行へのリンク(リレーション)になります。対象DBは改名・移動しても追従します。';
+  help.textContent = relMode
+    ? 'セルをクリックすると、相手DBの行(「選択肢にする列」の値)から選べる列になります。'
+      + (def ? '' : '列は上の列名で新しく作成されます。') + '相手DBに行を足せば選択肢にも自動で反映されます。'
+    : '自DBの「キー列」の値を、対象DBの「キー列」から探して「返す列」の値を表示します(先頭一致)。対象DBは改名・移動しても追従します。';
 
   const acts = document.createElement('div');
   acts.className = 'memola-formula-acts';
   const saveBtn = document.createElement('button');
   saveBtn.className = 'memola-btn p'; saveBtn.textContent = '保存';
   saveBtn.addEventListener('click', () => {
-    const name = nameInp.value.trim() || '参照';
+    const name = nameInp.value.trim() || (relMode ? 'リレーション' : '参照');
     const targetTitle = targetSel.value;
-    if (!targetTitle) { toast('対象DBを選択してください', 'err'); return; }
-    if (!tKeySel.value || !tRetSel.value) { toast('対象のキー列と返す列を選択してください', 'err'); return; }
+    if (!targetTitle) { toast('相手DBを選択してください', 'err'); return; }
+    if (!tKeySel.value) { toast(relMode ? '選択肢にする列を選択してください' : '対象のキー列を選択してください', 'err'); return; }
+    if (!relMode && !tRetSel.value) { toast('返す列を選択してください', 'err'); return; }
     void (async () => {
       try {
         setLoad(true, '保存中...');
-        // 「➕ 新しい列を作成」: リレーション/参照のキーとなるテキスト列を列名で作る。
-        let keyField = keySel.value;
+        // 実体のキー列を決める。
+        //  - リレーション新規: 列名で新しいテキスト列を自動作成(配管は見せない)。
+        //  - リレーション編集: 既存の実体列のまま。
+        //  - 参照: キー列セレクト(「➕ 新しい列を作成」を選んだら作成)。
+        let keyField = relMode ? (def?.keyField || NEW_COL) : keySel.value;
         if (keyField === NEW_COL) {
           await addListField(listTitle, name, 2);
           const fields = await getListFields(listTitle);
@@ -215,8 +224,10 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
         const next: DbLookupDef = {
           id: def?.id || newId(), name,
           keyField, targetListId, targetTitle,
-          targetKeyField: tKeySel.value, returnField: tRetSel.value,
-          asLink: linkChk.checked,
+          // リレーションは「選択肢にする列」=照合列=チップ表示列(1つの選択で完結)。
+          targetKeyField: tKeySel.value,
+          returnField: relMode ? tKeySel.value : tRetSel.value,
+          asLink: relMode,
         };
         const idx = defs.findIndex((d) => d.id === next.id);
         if (idx >= 0) defs[idx] = next; else defs.push(next);
@@ -225,7 +236,7 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
         await buildData(next);
         closeLookupEditor();
         reload();
-      } catch (e) { toast('参照列の保存に失敗: ' + (e as Error).message, 'err'); }
+      } catch (e) { toast((relMode ? 'リレーション列' : '参照列') + 'の保存に失敗: ' + (e as Error).message, 'err'); }
       finally { setLoad(false); }
     })();
   });
@@ -234,7 +245,8 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
     const delBtn = document.createElement('button');
     delBtn.className = 'memola-btn ghost'; delBtn.textContent = '削除'; delBtn.style.color = 'var(--danger,#b8534a)';
     delBtn.addEventListener('click', () => {
-      if (!confirm(`参照列「${def.name}」を削除しますか？`)) return;
+      const kindLabel = relMode ? 'リレーション列' : '参照列';
+      if (!confirm(`${kindLabel}「${def.name}」を削除しますか？` + (relMode ? '\n(実体のテキスト列とデータは残ります)' : ''))) return;
       _defs.set(listTitle, listLookups(listTitle).filter((d) => d.id !== def.id));
       _data.delete(def.id); _idData.delete(def.id);
       void persist(listTitle).then(() => { closeLookupEditor(); reload(); });
@@ -242,8 +254,23 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
     acts.appendChild(delBtn);
   }
 
-  pop.append(nameInp, labelled('自DBのキー列', keySel), labelled('対象DB', targetSel),
-    labelled('対象のキー列', tKeySel), labelled('返す列(リンク時は表示する列)', tRetSel), linkWrap, help, acts);
+  if (relMode) {
+    // リレーション: 列名 / 相手DB / 選択肢にする列 のみ(内部のキー列は見せない)。
+    // 編集時は実体列を参考表示。
+    pop.append(nameInp, labelled('相手DB(マスター)', targetSel),
+      labelled('選択肢にする列(相手DB)', tKeySel));
+    if (def) {
+      const bound = S.dbFields.find((f) => f.InternalName === def.keyField);
+      const info = document.createElement('div');
+      info.className = 'memola-formula-help';
+      info.textContent = '実体列: ' + (bound?.Title || def.keyField) + '（この列に選択値が保存されます）';
+      pop.appendChild(info);
+    }
+    pop.append(help, acts);
+  } else {
+    pop.append(nameInp, labelled('自DBのキー列', keySel), labelled('対象DB', targetSel),
+      labelled('対象のキー列', tKeySel), labelled('返す列', tRetSel), help, acts);
+  }
   overlay.appendChild(pop);
   const r = pop.getBoundingClientRect();
   if (r.bottom > window.innerHeight - 8) pop.style.top = Math.max(8, window.innerHeight - r.height - 8) + 'px';
