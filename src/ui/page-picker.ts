@@ -156,14 +156,24 @@ function render(): void {
       el.appendChild(item);
     });
   }
-  // Position
-  const top = opts.anchor.bottom + window.scrollY + 4;
-  let left = opts.anchor.left + window.scrollX;
+  // Position — position:fixed なのでビューポート座標で置く(以前は scrollY を
+  // 加算していたため、スクロールしたページ下部で画面外に出てリストもスクロール
+  // できなかった)。下に収まらない時はアンカーの上側に出す(フリップ)。
+  el.style.display = '';
+  el.style.visibility = 'hidden';            // 高さ計測用に一旦不可視で表示
   const vpW = window.innerWidth;
-  if (left + 320 > vpW) left = vpW - 324;
+  const vpH = window.innerHeight;
+  let left = opts.anchor.left;
+  if (left + 320 > vpW) left = Math.max(8, vpW - 324);
+  const h = el.offsetHeight;
+  let top = opts.anchor.bottom + 4;
+  if (top + h > vpH - 8) {
+    const above = opts.anchor.top - 4 - h;
+    top = above >= 8 ? above : Math.max(8, vpH - 8 - h);
+  }
   el.style.top = top + 'px';
   el.style.left = left + 'px';
-  el.style.display = '';
+  el.style.visibility = '';
 }
 
 function commit(idx: number): void {
