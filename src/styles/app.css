@@ -3671,7 +3671,11 @@
 }
 #memola-overlay .memola-dc-formula { display: block; padding: 0 14px; height: 40px; line-height: 40px; white-space: nowrap; overflow: hidden; font-size: var(--fs-sm); color: var(--ink-2, #4a463f); }
 /* 数式エディタ */
-#memola-overlay .memola-formula-pop { min-width: 340px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+#memola-overlay .memola-formula-pop {
+  width: 360px; max-width: calc(100vw - 32px); box-sizing: border-box;
+  padding: 10px; display: flex; flex-direction: column; gap: 8px;
+}
+#memola-overlay .memola-formula-pop select { max-width: 100%; box-sizing: border-box; }
 #memola-overlay .memola-formula-name {
   border: 1px solid var(--paper-3); border-radius: 6px; padding: 6px 8px; font: inherit; font-size: var(--fs-sm);
   background: var(--paper); color: var(--ink); outline: none;
