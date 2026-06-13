@@ -6,7 +6,7 @@
 import { S } from '../state';
 import type { DbLookupDef } from '../lib/prefs';
 import { loadDbConfig, patchDbConfig } from '../api/db-config';
-import { getListFields, getListItems, resolveListIdByTitle, resolveListTitleById } from '../api/sp-list';
+import { getListFields, getListItems, resolveListIdByTitle, resolveListTitleById, addListField } from '../api/sp-list';
 import { setLoad, toast } from './ui-helpers';
 
 // 定義キャッシュ(現在開いている DB ごと)と、対象データの照合マップ(def.id → key→value)。
@@ -122,9 +122,24 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
     w.append(l, el); return w;
   };
 
-  // 自DBのキー列
+  // 自DBのキー列。新規作成時は「➕ 新しい列を作成」も選べる(リレーション/参照の
+  // 実体となるテキスト列をこの列名で作る)。列追加モーダル経由(initialName あり)では
+  // それを既定にする=「列を追加したのに列が増えない」を防ぐ。
+  const NEW_COL = '__new__';
   const keySel = mkSel();
-  for (const f of S.dbFields) { const o = document.createElement('option'); o.value = f.InternalName; o.textContent = f.Title; if (f.InternalName === def?.keyField) o.selected = true; keySel.appendChild(o); }
+  if (!def) {
+    const o = document.createElement('option'); o.value = NEW_COL;
+    o.textContent = '➕ 新しい列を作成（上の列名で）';
+    keySel.appendChild(o);
+  }
+  const nameMatchesExisting = !!initialName && S.dbFields.some((f) => f.Title === initialName || f.InternalName === initialName);
+  for (const f of S.dbFields) {
+    const o = document.createElement('option'); o.value = f.InternalName; o.textContent = f.Title;
+    if (def ? f.InternalName === def.keyField
+      : (nameMatchesExisting && (f.Title === initialName || f.InternalName === initialName))) o.selected = true;
+    keySel.appendChild(o);
+  }
+  if (!def && initialName && !nameMatchesExisting) keySel.value = NEW_COL;
 
   // 対象DB(データベースページ一覧)
   const targetSel = mkSel();
@@ -183,11 +198,23 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
     void (async () => {
       try {
         setLoad(true, '保存中...');
+        // 「➕ 新しい列を作成」: リレーション/参照のキーとなるテキスト列を列名で作る。
+        let keyField = keySel.value;
+        if (keyField === NEW_COL) {
+          await addListField(listTitle, name, 2);
+          const fields = await getListFields(listTitle);
+          keyField = fields.find((f) => f.Title === name)?.InternalName || name;
+          // 開いているDBのスキーマを更新(再描画で新列が出るように)。
+          if (S.dbList === listTitle) {
+            const { stripInternalDbFields } = await import('../api/db');
+            S.dbFields = stripInternalDbFields(fields);
+          }
+        }
         const targetListId = await resolveListIdByTitle(targetTitle);
         const defs = listLookups(listTitle).slice();
         const next: DbLookupDef = {
           id: def?.id || newId(), name,
-          keyField: keySel.value, targetListId, targetTitle,
+          keyField, targetListId, targetTitle,
           targetKeyField: tKeySel.value, returnField: tRetSel.value,
           asLink: linkChk.checked,
         };
