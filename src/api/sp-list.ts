@@ -310,11 +310,24 @@ export async function ensureList(spec: ListSpec): Promise<boolean> {
   if (!exists) {
     await createList(spec.title);
   }
-  for (const f of spec.fields) {
+  // 既存の列名(表示名/内部名)を取得し、足りない列だけ追加する。以前は全列を
+  // 毎回 add して「既存なら失敗を無視」していたが、毎セッション 409/500 が
+  // コンソールに並んでノイズになる(動作上は無害でも不安を与える)ため変更。
+  let have = new Set<string>();
+  if (exists) {
     try {
-      await addListField(spec.title, f.name, f.kind, f.choices);
-    } catch {
-      /* idempotent: probably already exists, or first save raced. */
+      const d = await spGetD<{ results: Array<{ Title: string; InternalName: string }> }>(
+        spListUrl(spec.title, '/fields?$select=Title,InternalName'));
+      have = new Set((d?.results || []).flatMap((f) => [f.Title, f.InternalName]));
+    } catch { /* 取得失敗時は従来どおり全列try */ }
+  }
+  for (const f of spec.fields) {
+    if (!have.has(f.name)) {
+      try {
+        await addListField(spec.title, f.name, f.kind, f.choices);
+      } catch {
+        /* idempotent: 並行作成とのレースは無視 */
+      }
     }
     if (f.indexed) {
       await setColumnIndexed(spec.title, f.name).catch(() => undefined);
