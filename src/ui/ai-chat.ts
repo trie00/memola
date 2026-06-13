@@ -600,6 +600,13 @@ export async function sendAiMessage(text: string): Promise<void> {
     // and streaming all work uniformly here.
     const result = await runAgent(S.ai.messages, systemPromptBlocks(), onTextDelta, ctrl.signal, updateLoadingActivity);
     S.ai.messages.push(...result.newMessages);
+    // ツール失敗を黙らせない: 失敗があればまとめてトースト表示(詳細はコンソール)。
+    const failed = result.toolTrace.filter((t) => !t.ok);
+    if (failed.length > 0) {
+      const first = failed[0];
+      toast('⚠ AIツール失敗 ' + failed.length + '件: ' + first.name +
+        (first.error ? ' — ' + first.error.slice(0, 120) : ''), 'err');
+    }
   } catch (err) {
     const e = err as Error;
     if (e.name === 'AbortError' || e.message === 'aborted') {

@@ -25,7 +25,7 @@ export interface AgentResult {
   /** Concatenated assistant text from the final turn (for chat bubble). */
   finalText: string;
   /** Trace of tools executed, for UI display. */
-  toolTrace: Array<{ name: string; ok: boolean }>;
+  toolTrace: Array<{ name: string; ok: boolean; error?: string }>;
 }
 
 /**
@@ -87,9 +87,13 @@ export async function runAgent(
       onActivity?.('🔧 ' + tu.name + ' を実行中');
       const result = await executeTool(tu.name, tu.input);
       toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: result });
-      let okFlag = false;
-      try { okFlag = !!(JSON.parse(result) as { ok?: boolean }).ok; } catch { /* ignore */ }
-      toolTrace.push({ name: tu.name, ok: okFlag });
+      let okFlag = false; let errMsg: string | undefined;
+      try {
+        const parsed = JSON.parse(result) as { ok?: boolean; error?: string };
+        okFlag = !!parsed.ok;
+        if (!okFlag) errMsg = parsed.error || result.slice(0, 200);
+      } catch { errMsg = result.slice(0, 200); }
+      toolTrace.push({ name: tu.name, ok: okFlag, error: errMsg });
     }
     const userMsg: ApiMessage = { role: 'user', content: toolResults as ContentBlock[] };
     working.push(userMsg);

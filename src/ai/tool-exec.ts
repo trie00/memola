@@ -257,5 +257,8 @@ export async function executeTool(name: string, input: Record<string, unknown>):
   } finally {
     setLogSource('user');
   }
+  // 結果(成功/失敗とエラー内容)もログする — 入力だけだと失敗が「黙って」見える。
+  // eslint-disable-next-line no-console
+  console.log('[Memola tool]', name, result.ok ? '→ ok' : '→ FAILED', result.ok ? '' : result);
   return JSON.stringify(result);
 }
