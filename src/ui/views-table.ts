@@ -178,9 +178,13 @@ export function renderDbTable(): void {
   fields.forEach((f, idx) => {
     const th = document.createElement('th');
     const isSorted = S.dbSort.field === f.InternalName;
+    // この列がリレーションの照合キーなら 🔗 を付けて分かるようにする
+    // (セルが「相手DBから選ぶ」ピッカーになっている列の目印)。
+    const isRelKey = _renderLookups.some((d) => d.asLink && d.keyField === f.InternalName);
     const headerSpan = document.createElement('span');
     headerSpan.className = 'memola-th-label';
-    headerSpan.innerHTML = f.Title + (isSorted ? '<span class="sort-arrow">' + (S.dbSort.asc ? '▲' : '▼') + '</span>' : '');
+    headerSpan.innerHTML = (isRelKey ? '🔗 ' : '') + f.Title + (isSorted ? '<span class="sort-arrow">' + (S.dbSort.asc ? '▲' : '▼') + '</span>' : '');
+    if (isRelKey) headerSpan.title = 'リレーションの照合キー(セルは相手DBから選択)';
     th.appendChild(headerSpan);
     th.dataset.field = f.InternalName;
     th.dataset.colIdx = String(idx);
