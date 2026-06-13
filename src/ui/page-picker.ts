@@ -14,7 +14,7 @@ interface PickerOptions {
   /** Initial query string (caller can supply one when reopening with input) */
   query?: string;
   /** Anchor rect — the popover positions just below this rect. */
-  anchor: { bottom: number; left: number };
+  anchor: { bottom: number; left: number; top?: number };
   /** Called when the user picks a page. */
   onSelect: (page: Page) => void;
   /** Called when the user dismisses without picking (Esc, blur). */
@@ -168,7 +168,9 @@ function render(): void {
   const h = el.offsetHeight;
   let top = opts.anchor.bottom + 4;
   if (top + h > vpH - 8) {
-    const above = opts.anchor.top - 4 - h;
+    // anchor.top 未指定の呼び出し元は行高ぶんを概算して上側位置を出す。
+    const anchorTop = opts.anchor.top ?? (opts.anchor.bottom - 22);
+    const above = anchorTop - 4 - h;
     top = above >= 8 ? above : Math.max(8, vpH - 8 - h);
   }
   el.style.top = top + 'px';

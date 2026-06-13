@@ -69,13 +69,13 @@ const ITEMS: SlashItem[] = [
 /** Compute a picker anchor from the trigger block's element rect, falling
  *  back to screen center if the element can't be found. Shared by the
  *  inline-DB and page-link pickers. */
-function pickerAnchor(blockId: string): { bottom: number; left: number } {
+function pickerAnchor(blockId: string): { bottom: number; left: number; top?: number } {
   const blockEl = document.querySelector<HTMLElement>(
     '[data-block-id="' + CSS.escape(blockId) + '"]',
   );
   const rect = blockEl?.getBoundingClientRect();
   return rect
-    ? { bottom: rect.bottom, left: rect.left }
+    ? { bottom: rect.bottom, left: rect.left, top: rect.top }
     : { bottom: window.innerHeight / 2, left: window.innerWidth / 2 };
 }
 

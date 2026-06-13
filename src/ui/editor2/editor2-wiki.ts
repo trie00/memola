@@ -58,7 +58,7 @@ export function attachWikiTrigger(editor: Editor, rootEl: HTMLElement): { destro
         active = { blockId: id, startOffset, triggerLength: m[0].length };
         const rect = range.getBoundingClientRect();
         showPagePicker({
-          anchor: { bottom: rect.bottom, left: rect.left },
+          anchor: { bottom: rect.bottom, left: rect.left, top: rect.top },
           query,
           onSelect: (p) => {
             // Replace the `[[query` range with a pagelink inline.
