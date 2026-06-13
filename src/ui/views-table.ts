@@ -35,7 +35,39 @@ let _renderColors: DbColorMap = {};
 let _renderRules: DbColorRule[] = [];
 let _renderFormulas: DbFormulaDef[] = [];
 let _renderLookups: DbLookupDef[] = [];
+// 独立した列として描画する参照列(非リレーション)。リレーション(asLink)は
+// 照合キー列に統合表示するため、別列としては描画しない。
+let _renderLookupCols: DbLookupDef[] = [];
 let _renderRollups: DbRollupDef[] = [];
+
+/** 計算列のソート/フィルタ用キー(#f:/#l:/#r: + 定義id)。 */
+export function isComputedKey(k: string | null | undefined): boolean {
+  return !!k && (k.startsWith('#f:') || k.startsWith('#l:') || k.startsWith('#r:'));
+}
+
+/** 計算列(数式/参照/集計)の表示値を行から算出する。ソート/フィルタが使う。 */
+export function computedCellValue(key: string, item: ListItem): string {
+  const id = key.slice(3);
+  if (key.startsWith('#f:')) {
+    const def = listFormulas(S.dbList).find((d) => d.id === id);
+    if (!def) return '';
+    const propFn = (name: string): unknown => {
+      const f = S.dbFields.find((x) => x.Title === name || x.InternalName === name);
+      return f ? item[f.InternalName] : null;
+    };
+    const { value, error } = evalFormula(def.expr, propFn);
+    return error ? '' : formatFormulaValue(value);
+  }
+  if (key.startsWith('#l:')) {
+    const def = listLookups(S.dbList).find((d) => d.id === id);
+    return def ? getLookupValue(def.id, item[def.keyField]) : '';
+  }
+  if (key.startsWith('#r:')) {
+    const def = listRollups(S.dbList).find((d) => d.id === id);
+    return def ? getRollupValue(def.id, item[def.parentKeyField]) : '';
+  }
+  return '';
+}
 
 /** セル値が変わった後に呼ぶ: 数式/参照/集計列があれば再描画して再計算する。
  *  計算列が無ければ何もしない(無駄な再描画を避ける)。 */
@@ -58,8 +90,10 @@ export function getSortedFilteredItems(): ListItem[] {
     items = items.filter((item) => {
       for (const flt of S.dbFilters) {
         if (!flt.value && flt.op !== 'empty' && flt.op !== 'not_empty') continue;
-        const raw = item[flt.field];
-        const s = raw == null ? '' : String(raw);
+        // 計算列(#f:/#l:/#r:)は表示値を算出して比較する。
+        const s = isComputedKey(flt.field)
+          ? computedCellValue(flt.field, item)
+          : (item[flt.field] == null ? '' : String(item[flt.field]));
         if (flt.op === 'equals') {
           if (s !== flt.value) return false;
         } else if (flt.op === 'not_empty') {
@@ -76,9 +110,16 @@ export function getSortedFilteredItems(): ListItem[] {
   if (S.dbSort.field) {
     const field = S.dbSort.field;
     const asc = S.dbSort.asc;
+    const computed = isComputedKey(field);
+    const val = (it: ListItem): string =>
+      computed ? computedCellValue(field, it) : (it[field] != null ? String(it[field]) : '');
     items.sort((a, b) => {
-      const av = a[field] != null ? String(a[field]) : '';
-      const bv = b[field] != null ? String(b[field]) : '';
+      const av = val(a); const bv = val(b);
+      // 数値として読める場合は数値で比較(集計/数式列で 2 < 10 を正しく)。
+      const an = parseFloat(av); const bn = parseFloat(bv);
+      if (isFinite(an) && isFinite(bn) && av !== '' && bv !== '') {
+        return asc ? an - bn : bn - an;
+      }
       if (av < bv) return asc ? -1 : 1;
       if (av > bv) return asc ? 1 : -1;
       return 0;
@@ -145,6 +186,7 @@ export function renderDbTable(): void {
   _renderRules = getView(S.dbList, S.dbViewId).rules || [];
   _renderFormulas = listFormulas(S.dbList);
   _renderLookups = listLookups(S.dbList);
+  _renderLookupCols = _renderLookups.filter((d) => !d.asLink);
   _renderRollups = listRollups(S.dbList);
 
   // Reflect "any-selected" mode on the table so CSS can switch to always-show
@@ -281,12 +323,13 @@ export function renderDbTable(): void {
     th.draggable = true;
     const span = document.createElement('span');
     span.className = 'memola-th-label';
-    span.textContent = 'ƒ ' + def.name;
+    const fSorted = S.dbSort.field === '#f:' + def.id;
+    span.textContent = 'ƒ ' + def.name + (fSorted ? (S.dbSort.asc ? ' ▲' : ' ▼') : '');
     span.title = def.expr;
     span.addEventListener('click', (e) => {
       e.stopPropagation();
       const r = span.getBoundingClientRect();
-      void import('./db-formulas').then((m) => m.openFormulaEditor(S.dbList, def, r.left, r.bottom + 4, () => renderDbTable()));
+      void import('./col-menu').then((m) => m.openComputedColumnMenu('formula', def, r.left, r.bottom + 4));
     });
     th.addEventListener('dragstart', (e) => {
       if (!e.dataTransfer) return;
@@ -319,37 +362,40 @@ export function renderDbTable(): void {
     thead.appendChild(th);
   });
 
-  // 参照(XLOOKUP)列ヘッダ(読み取り専用)。クリックで参照エディタ。
-  _renderLookups.forEach((def) => {
+  // 参照(XLOOKUP)列ヘッダ(読み取り専用)。リレーション(asLink)は照合キー列に
+  // 統合表示するため、ここでは非リレーションの参照列のみ別列として描画する。
+  _renderLookupCols.forEach((def) => {
     const th = document.createElement('th');
-    th.className = 'memola-th-formula' + (def.asLink ? ' memola-th-relation' : '');
+    th.className = 'memola-th-formula';
     th.dataset.lookupId = def.id;
     const span = document.createElement('span');
     span.className = 'memola-th-label';
-    span.textContent = (def.asLink ? '🔗 ' : '↗ ') + def.name;
-    span.title = (def.asLink ? 'リレーション: ' : '参照: ') + def.targetTitle;
+    const lSorted = S.dbSort.field === '#l:' + def.id;
+    span.textContent = '↗ ' + def.name + (lSorted ? (S.dbSort.asc ? ' ▲' : ' ▼') : '');
+    span.title = '参照: ' + def.targetTitle;
     span.addEventListener('click', (e) => {
       e.stopPropagation();
       const r = span.getBoundingClientRect();
-      void import('./db-lookups').then((m) => m.openLookupEditor(S.dbList, def, r.left, r.bottom + 4, () => renderDbTable()));
+      void import('./col-menu').then((m) => m.openComputedColumnMenu('lookup', def, r.left, r.bottom + 4));
     });
     th.appendChild(span);
     thead.appendChild(th);
   });
 
-  // ロールアップ(集計)列ヘッダ(読み取り専用)。クリックで集計エディタ。
+  // ロールアップ(集計)列ヘッダ(読み取り専用)。クリックで列メニュー。
   _renderRollups.forEach((def) => {
     const th = document.createElement('th');
     th.className = 'memola-th-formula';
     th.dataset.rollupId = def.id;
     const span = document.createElement('span');
     span.className = 'memola-th-label';
-    span.textContent = 'Σ ' + def.name;
+    const rSorted = S.dbSort.field === '#r:' + def.id;
+    span.textContent = 'Σ ' + def.name + (rSorted ? (S.dbSort.asc ? ' ▲' : ' ▼') : '');
     span.title = '集計: ' + def.childTitle;
     span.addEventListener('click', (e) => {
       e.stopPropagation();
       const r = span.getBoundingClientRect();
-      void import('./db-rollups').then((m) => m.openRollupEditor(S.dbList, def, r.left, r.bottom + 4, () => renderDbTable()));
+      void import('./col-menu').then((m) => m.openComputedColumnMenu('rollup', def, r.left, r.bottom + 4));
     });
     th.appendChild(span);
     thead.appendChild(th);
@@ -388,7 +434,7 @@ export function renderDbTable(): void {
   // 狭い時は 100% に伸びて spacer が余白を吸収。
   const CB_W = 24, DEL_W = 32, ADD_W = 36, DEF_COL_W = 160;
   const fieldsW = fields.reduce((s, f) => s + (S.dbColumnWidths[f.InternalName] || DEF_COL_W), 0)
-    + (_renderFormulas.length + _renderLookups.length + _renderRollups.length) * DEF_COL_W;
+    + (_renderFormulas.length + _renderLookupCols.length + _renderRollups.length) * DEF_COL_W;
   dt.style.width = (CB_W + DEL_W + ADD_W + fieldsW) + 'px';
 }
 
@@ -529,6 +575,16 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
         if (val) {
           chip.className = 'memola-rel-chip';
           chip.textContent = val;
+          // ↗ = 相手の行ページを開く(チップ本体クリックは選び直しピッカー)。
+          const jump = document.createElement('span');
+          jump.className = 'memola-rel-jump';
+          jump.textContent = '↗';
+          jump.title = '相手の行を開く';
+          jump.addEventListener('click', (e) => {
+            e.stopPropagation();
+            void import('./db-lookups').then((m) => m.openLookupTarget(relDef, item[f.InternalName]));
+          });
+          chip.appendChild(jump);
         } else {
           chip.textContent = '—';
           chip.style.color = 'var(--ink-4)';
@@ -768,28 +824,15 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
   }
 
   // 参照(XLOOKUP)列セル(読み取り専用)。自列キー→対象DBの返す列。
-  if (_renderLookups.length) {
-    _renderLookups.forEach((def) => {
+  // ※リレーション(asLink)は照合キー列に統合表示するため、ここには出ない。
+  if (_renderLookupCols.length) {
+    _renderLookupCols.forEach((def) => {
       const td = document.createElement('td');
       td.className = 'memola-td-formula';
-      const val = getLookupValue(def.id, item[def.keyField]);
-      if (def.asLink) td.classList.add('memola-td-relation');
-      if (def.asLink && val) {
-        // リレーション: 値ではなく対象行へのリンクチップ。クリックで相手行を開く。
-        const chip = document.createElement('span');
-        chip.className = 'memola-rel-chip';
-        chip.textContent = val;
-        chip.addEventListener('click', (e) => {
-          e.stopPropagation();
-          void import('./db-lookups').then((m) => m.openLookupTarget(def, item[def.keyField]));
-        });
-        td.appendChild(chip);
-      } else {
-        const span = document.createElement('span');
-        span.className = 'memola-dc memola-dc-formula';
-        span.textContent = val;
-        td.appendChild(span);
-      }
+      const span = document.createElement('span');
+      span.className = 'memola-dc memola-dc-formula';
+      span.textContent = getLookupValue(def.id, item[def.keyField]);
+      td.appendChild(span);
       tr.appendChild(td);
     });
   }

@@ -219,6 +219,13 @@ export function openRollupEditor(listTitle: string, def: DbRollupDef | null, x: 
   setTimeout(() => document.addEventListener('mousedown', onOut, true), 0);
 }
 
+/** ロールアップ列の定義を削除(共有設定にも反映)。 */
+export async function deleteRollup(listTitle: string, id: string): Promise<void> {
+  _defs.set(listTitle, listRollups(listTitle).filter((d) => d.id !== id));
+  _data.delete(id);
+  await persist(listTitle);
+}
+
 /** プログラム(AIスキャフォールド等)からロールアップ列を追加する。childTitle から
  *  GUID を解決して定義を保存し、集計データを構築する。 */
 export async function addRollupSpec(listTitle: string, p: {

@@ -233,6 +233,13 @@ export function openNewLookup(x: number, y: number): void {
   });
 }
 
+/** リレーション/参照列の定義を削除(共有設定にも反映)。 */
+export async function deleteLookup(listTitle: string, id: string): Promise<void> {
+  _defs.set(listTitle, listLookups(listTitle).filter((d) => d.id !== id));
+  _data.delete(id); _idData.delete(id);
+  await persist(listTitle);
+}
+
 /** プログラム(AIスキャフォールド等)からリレーション/参照列を追加する。 */
 export async function addLookupSpec(listTitle: string, p: {
   name: string; keyField: string; targetTitle: string;

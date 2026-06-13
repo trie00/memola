@@ -72,9 +72,24 @@ function buildEditor(
       btn.title = relDef.targetTitle + ' から選択';
       const renderLabel = (): void => {
         const v = (item[field.InternalName] as string) || '';
-        btn.innerHTML = v
-          ? '<span class="memola-rel-chip">' + v.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</span>'
-          : '<span class="memola-rp-placeholder">—</span>';
+        btn.innerHTML = '';
+        if (v) {
+          const chip = document.createElement('span');
+          chip.className = 'memola-rel-chip';
+          chip.textContent = v;
+          const jump = document.createElement('span');
+          jump.className = 'memola-rel-jump';
+          jump.textContent = '↗';
+          jump.title = '相手の行を開く';
+          jump.addEventListener('click', (e) => {
+            e.stopPropagation();
+            void import('./db-lookups').then((m) => m.openLookupTarget(relDef, item[field.InternalName]));
+          });
+          chip.appendChild(jump);
+          btn.appendChild(chip);
+        } else {
+          btn.innerHTML = '<span class="memola-rp-placeholder">—</span>';
+        }
       };
       renderLabel();
       btn.addEventListener('click', () => {

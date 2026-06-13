@@ -6,6 +6,9 @@
 import { S, type ListField } from '../state';
 import { renderDbTable } from './views';
 import { patchView } from './db-views-model';
+import { listFormulas } from './db-formulas';
+import { listLookups } from './db-lookups';
+import { listRollups } from './db-rollups';
 
 function getEl<T extends HTMLElement = HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null;
@@ -16,12 +19,26 @@ function persistFilters(): void {
   if (S.dbList) patchView(S.dbList, S.dbViewId, { filters: S.dbFilters.map((f) => ({ ...f })) });
 }
 
+/** 計算列キー('#f:'/'#l:'/'#r:'+id)を、チップ表示用の擬似フィールドに解決する。
+ *  値の比較は views-table.computedCellValue が行うため、ここではラベルと
+ *  テキスト入力(FieldTypeKind=2 扱い)が出れば十分。定義が消えていたら null。 */
+function computedFieldFor(key: string): ListField | null {
+  if (!key.startsWith('#')) return null;
+  const id = key.slice(3);
+  const name = key.startsWith('#f:') ? listFormulas(S.dbList).find((d) => d.id === id)?.name
+    : key.startsWith('#l:') ? listLookups(S.dbList).find((d) => d.id === id)?.name
+    : key.startsWith('#r:') ? listRollups(S.dbList).find((d) => d.id === id)?.name
+    : undefined;
+  if (!name) return null;
+  return { Title: name, InternalName: key, FieldTypeKind: 2 } as ListField;
+}
+
 export function renderFilterChips(): void {
   const wrap = getEl('memola-filter-chips');
   if (!wrap) return;
   wrap.innerHTML = '';
   S.dbFilters.forEach((flt, idx) => {
-    const field = S.dbFields.find((f) => f.InternalName === flt.field);
+    const field = S.dbFields.find((f) => f.InternalName === flt.field) || computedFieldFor(flt.field);
     if (!field) return;
     const chip = document.createElement('div');
     chip.className = 'memola-flt-chip';

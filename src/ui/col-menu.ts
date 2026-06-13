@@ -115,6 +115,89 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
   _menu = menu;
 }
 
+// ── 計算列(数式/参照/集計)の列メニュー ──
+// 通常列と同じ操作感(並べ替え/フィルター/削除)+「編集」で各エディタを開く。
+// ソート/フィルタのキーは '#f:'/'#l:'/'#r:' + 定義id(views-table が値を算出)。
+import type { DbFormulaDef, DbLookupDef, DbRollupDef } from '../lib/prefs';
+export type ComputedColKind = 'formula' | 'lookup' | 'rollup';
+
+export function openComputedColumnMenu(
+  kind: ComputedColKind,
+  def: DbFormulaDef | DbLookupDef | DbRollupDef,
+  x: number, y: number,
+): void {
+  closeColumnMenu();
+  const overlay = document.getElementById('memola-overlay');
+  if (!overlay) return;
+  const key = (kind === 'formula' ? '#f:' : kind === 'lookup' ? '#l:' : '#r:') + def.id;
+  const menu = document.createElement('div');
+  menu.className = 'memola-colmenu';
+  menu.style.left = Math.round(x) + 'px';
+  menu.style.top = Math.round(y) + 'px';
+
+  const item = (label: string, onClick: () => void, opts: { danger?: boolean } = {}): HTMLElement => {
+    const el = document.createElement('div');
+    el.className = 'memola-colmenu-item' + (opts.danger ? ' danger' : '');
+    el.textContent = label;
+    el.addEventListener('click', () => { closeColumnMenu(); onClick(); });
+    return el;
+  };
+  const sep = (): HTMLElement => { const s = document.createElement('div'); s.className = 'memola-colmenu-sep'; return s; };
+
+  const sortBy = (asc: boolean): void => {
+    S.dbSort.field = key; S.dbSort.asc = asc;
+    void import('./db-views-model').then((m) => m.patchView(S.dbList, S.dbViewId, { sort: { field: key, asc } }));
+    void reRender();
+  };
+  const openEditor = (): void => {
+    if (kind === 'formula') {
+      void import('./db-formulas').then((m) => m.openFormulaEditor(S.dbList, def as DbFormulaDef, x, y, () => void reRender()));
+    } else if (kind === 'lookup') {
+      void import('./db-lookups').then((m) => m.openLookupEditor(S.dbList, def as DbLookupDef, x, y, () => void reRender()));
+    } else {
+      void import('./db-rollups').then((m) => m.openRollupEditor(S.dbList, def as DbRollupDef, x, y, () => void reRender()));
+    }
+  };
+
+  menu.append(
+    item('✏️ 編集', openEditor),
+    sep(),
+    item('↑ 昇順で並べ替え', () => sortBy(true)),
+    item('↓ 降順で並べ替え', () => sortBy(false)),
+    item('フィルター', () => { void import('./filter-ui').then((m) => m.addFilterForField(key)); }),
+    sep(),
+    item('🗑 列を削除', () => {
+      if (!confirm(`列「${def.name}」を削除しますか？(定義のみ削除。元データは消えません)`)) return;
+      void (async () => {
+        try {
+          setLoad(true, '列を削除中...');
+          if (kind === 'formula') {
+            const m = await import('./db-formulas'); m.deleteFormula(S.dbList, def.id);
+          } else if (kind === 'lookup') {
+            const m = await import('./db-lookups'); await m.deleteLookup(S.dbList, def.id);
+          } else {
+            const m = await import('./db-rollups'); await m.deleteRollup(S.dbList, def.id);
+          }
+          // この列でソート/フィルタ中なら解除しておく(幽霊キー防止)。
+          if (S.dbSort.field === key) S.dbSort.field = null;
+          S.dbFilters = S.dbFilters.filter((f) => f.field !== key);
+          await reRender();
+          toast('列を削除しました', 'ok');
+        } catch (e) { toast('列の削除に失敗: ' + (e as Error).message, 'err'); }
+        finally { setLoad(false); }
+      })();
+    }, { danger: true }),
+  );
+
+  overlay.appendChild(menu);
+  const r = menu.getBoundingClientRect();
+  if (r.right > window.innerWidth - 8) menu.style.left = Math.max(8, window.innerWidth - r.width - 8) + 'px';
+  if (r.bottom > window.innerHeight - 8) menu.style.top = Math.max(8, y - r.height) + 'px';
+  _outside = (e: MouseEvent): void => { if (_menu && !_menu.contains(e.target as Node)) closeColumnMenu(); };
+  setTimeout(() => { if (_outside) document.addEventListener('mousedown', _outside, true); }, 0);
+  _menu = menu;
+}
+
 const KIND_LABEL: Record<number, string> = {
   2: 'テキスト', 3: '複数行テキスト', 4: '日付', 6: '選択肢', 8: 'チェック', 9: '数値', 20: '担当者',
 };
