@@ -21,6 +21,7 @@ const MIME = {
 };
 
 (async () => {
+  const SRC = path.join(DEV_DIR, '..', 'src');
   const ctx = await esbuild.context({
     entryPoints: [path.join(DEV_DIR, 'main.ts')],
     bundle: true,
@@ -30,6 +31,15 @@ const MIME = {
     target: 'es2020',
     sourcemap: 'inline',
     logLevel: 'info',
+    // 本番 build.js と同様、@kenjiuno/msgreader が引っ張る Node 専用モジュールを
+    // ブラウザ用の空スタブへ差し替える。これが無いと dev ビルドが
+    // "Could not resolve buffer/string_decoder" で失敗し、古いバンドルを配信し続ける。
+    alias: {
+      'iconv-lite':     path.join(SRC, 'lib/_browser-shims.ts'),
+      'safer-buffer':   path.join(SRC, 'lib/_browser-shims.ts'),
+      'buffer':         path.join(SRC, 'lib/_browser-shims.ts'),
+      'string_decoder': path.join(SRC, 'lib/_browser-shims.ts'),
+    },
     define: {
       '__BUILD_ID__': JSON.stringify('dev-' + new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')),
     },
