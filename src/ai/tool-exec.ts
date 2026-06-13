@@ -47,6 +47,7 @@ function handleListPages(input: { include_trashed?: boolean }): ToolResult {
       title: p.title,
       parent_id: p.parent || '',
       type: p.type || 'page',
+      scope: p.scope === 'org' ? 'org' : 'user',   // org=組織共有 / user=個人(プライベート)
       ...(p.trashed ? { trashed: true } : {}),
     }));
   return ok({ pages: items });
@@ -63,6 +64,7 @@ function handleSearchPages(input: { query: string }): ToolResult {
       title: p.Title,
       parent_id: p.ParentId || '',
       type: p.Type || 'page',
+      scope: metaById(p.Id)?.scope === 'org' ? 'org' : 'user',
     }));
   return ok({ pages: hits });
 }
@@ -76,7 +78,7 @@ async function handleReadPage(input: { id: string }): Promise<ToolResult> {
   return ok({ id, title: page.Title || '', body });
 }
 
-async function handleCreatePage(input: { title: string; parent_id?: string; body?: string }): Promise<ToolResult> {
+async function handleCreatePage(input: { title: string; parent_id?: string; body?: string; scope?: string }): Promise<ToolResult> {
   const title = (input.title || '').trim();
   if (!title) return err('title_required');
   const parentId = input.parent_id || '';
@@ -89,7 +91,11 @@ async function handleCreatePage(input: { title: string; parent_id?: string; body
   //   2. その後にタイトル・本文を「更新」する(手動編集と同じ経路)。
   // 以前は apiCreatePage(title, parent) に scope を渡さず常に 'user' で作り、直後に
   // apiSavePageMd を重ねていた。これがスコープ取り違え/行取り違えの温床だった。
-  const scope = parentId ? (metaById(parentId)?.scope || 'user') : 'user';
+  // スコープ: 親があれば親に従う(子は親のスコープを継承する仕様)。トップレベルは
+  // input.scope('user'=個人プライベート / 'org'=組織共有)、未指定なら 'user'。
+  const scope = parentId
+    ? (metaById(parentId)?.scope || 'user')
+    : (input.scope === 'org' ? 'org' : 'user');
   const page = await apiCreatePage('無題', parentId, scope);
   addPage(page);
 

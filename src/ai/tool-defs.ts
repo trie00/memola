@@ -14,8 +14,13 @@ const TOOL_DEFS_RAW: ToolDef[] = [
   {
     name: 'list_pages',
     description: `Memola のすべてのページとデータベースの一覧を返す。
-タイトル / ID / 親 ID / 種類のみ返し本文は含まない（軽量）。
-AI が作業前に全体像を把握する用途。include_trashed=true でゴミ箱内も含める。`,
+タイトル / ID / 親 ID / 種類 / scope のみ返し本文は含まない（軽量）。
+AI が作業前に全体像を把握する用途。include_trashed=true でゴミ箱内も含める。
+
+scope はページの公開範囲:
+- "user" = 個人ページ（プライベート。今のユーザーにしか見えない）
+- "org"  = 組織ページ（組織の全員に見える共有ページ）
+ユーザーが「個人/プライベート/自分用」「組織/共有/みんなの」と言ったらこの区別を指す。`,
     input_schema: {
       type: 'object',
       properties: {
@@ -67,6 +72,12 @@ update_page で修正する前に必ず読むこと。`,
 2. 重複があれば user に確認
 3. parent_id を省略するとルートに作られる。場所が曖昧なら user に質問
 
+スコープ(公開範囲):
+- scope="user"(既定) = 個人ページ(プライベート、本人のみ)。"org" = 組織共有ページ。
+- 親ページ(parent_id)があるときは親のスコープを必ず継承する(scope 指定は無視される)。
+- ユーザーが「組織に」「みんなに共有」と言ったら scope="org"、「個人で」「プライベートに」
+  なら scope="user"。どちらか不明でトップレベルに作る場合は user に確認するのが望ましい。
+
 ⚠️ body の重要ルール:
 - user が内容（「○○について」「△△を要約」「内容は…」など）を指定した場合、
   必ず本文 markdown を body 引数に渡すこと。会話メッセージで内容を説明するだけ
@@ -81,6 +92,11 @@ update_page で修正する前に必ず読むこと。`,
         body:      {
           type: 'string',
           description: '本文の完全な markdown。user が内容を指定した場合は必ず指定する。',
+        },
+        scope: {
+          type: 'string',
+          enum: ['user', 'org'],
+          description: 'トップレベル作成時の公開範囲。user=個人(既定)/org=組織共有。親があれば親を継承',
         },
       },
       required: ['title'],
