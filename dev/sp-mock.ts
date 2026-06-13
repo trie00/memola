@@ -20,7 +20,7 @@ interface MockList {
   Id: string;
   Title: string;
   HasUniqueRoleAssignments?: boolean;
-  Fields?: { results: Array<{ Title: string; InternalName?: string; FieldTypeKind?: number }> };
+  Fields?: { results: Array<{ Title: string; InternalName?: string; FieldTypeKind?: number; Choices?: { results: string[] } }> };
   Items?: MockListItem[];
 }
 
@@ -100,6 +100,16 @@ async function handle(input: RequestInfo | URL, init?: RequestInit): Promise<Res
   if (url.includes('/_api/web/currentuser')) {
     return verbose({ Id: 1, Title: 'Dev User', LoginName: 'i:0#.f|membership|dev@local' });
   }
+  // List by GUID — resolveListTitleById が使う(ロールアップの子DB解決)。未対応だと
+  // 例外で集計が空になる。Id 一致のリストの Title を返す。
+  const byId = url.match(/\/_api\/web\/lists\(guid'([^']+)'\)/);
+  if (byId) {
+    const wantId = decodeURIComponent(byId[1]);
+    for (const l of STATE.lists.values()) {
+      if (l.Id === wantId) return verbose({ Id: l.Id, Title: l.Title });
+    }
+    return new Response('', { status: 404 });
+  }
   // Role definitions (PS3 path uses RoleTypeKind)
   if (url.includes('/_api/web/roledefinitions')) {
     return verbose({ results: [
@@ -114,7 +124,9 @@ async function handle(input: RequestInfo | URL, init?: RequestInit): Promise<Res
       STATE.lists.set(title, {
         Id: 'list-' + title,
         Title: title,
-        Fields: { results: [] },
+        // 実 SP のリストは必ず既定の Title 列を持つ。これが無いと scaffold 生成 DB に
+        // タイトル列が無く「unknown」列+空タイトルになる。
+        Fields: { results: [{ Title: 'タイトル', InternalName: 'Title', FieldTypeKind: 2 }] },
         Items: [],
       });
     }
@@ -128,10 +140,15 @@ async function handle(input: RequestInfo | URL, init?: RequestInit): Promise<Res
       const list = STATE.lists.get(decodeURIComponent(m[1]));
       if (list) {
         const body = init?.body ? JSON.parse(init.body as string) : {};
-        const title = body.Title || body.parameters?.Title || 'unknown';
+        const title = body.Title || body.parameters?.Title || '';
         list.Fields = list.Fields ?? { results: [] };
-        if (!list.Fields.results.some((f) => f.Title === title)) {
-          list.Fields.results.push({ Title: title, InternalName: title });
+        if (title && !list.Fields.results.some((f) => f.Title === title)) {
+          // FieldTypeKind / Choices も保持しないと、DB表が型不明の列を落として
+          // 「列が出ない」状態になる(scaffold で作った DB が空に見える原因)。
+          const fld: { Title: string; InternalName: string; FieldTypeKind?: number; Choices?: { results: string[] } } =
+            { Title: title, InternalName: title, FieldTypeKind: body.FieldTypeKind ?? 2 };
+          if (body.Choices?.results) fld.Choices = { results: body.Choices.results };
+          list.Fields.results.push(fld);
         }
       }
     }
@@ -205,6 +222,23 @@ async function handle(input: RequestInfo | URL, init?: RequestInit): Promise<Res
       };
       fresh.Items = (fresh.Items ?? []).concat(item);
       return verbose(item, 201);
+    }
+    // validateUpdateListItem — 表示名/内部名どちらの FieldName でも値を反映する
+    // 本番経路(updateListItem)。これが無いと DB セル編集 / スキャフォールドの初期行が
+    // 「Title だけ入って他フィールドが空」になる。
+    const vMatch = listMatch.suffix.match(/^\/items\((\d+)\)\/validateupdatelistitem/i);
+    if (vMatch && method === 'POST') {
+      const id = parseInt(vMatch[1], 10);
+      const items = fresh.Items ?? [];
+      const idx = items.findIndex((it) => it.Id === id);
+      if (idx < 0) return new Response('', { status: 404 });
+      const body = init?.body ? JSON.parse(init.body as string) : {};
+      const fvs: Array<{ FieldName: string; FieldValue: unknown }> = body.formValues || [];
+      for (const fv of fvs) items[idx][fv.FieldName] = fv.FieldValue;
+      STATE.etag++;
+      items[idx].__metadata = { etag: '"' + STATE.etag + '"' };
+      items[idx].Modified = new Date().toISOString();
+      return verbose({ ValidateUpdateListItem: { results: fvs.map((fv) => ({ FieldName: fv.FieldName, ErrorMessage: null, HasException: false })) } });
     }
     // POST to /items(123) with X-HTTP-Method header = update / delete
     const itemIdMatch = listMatch.suffix.match(/^\/items\((\d+)\)/);
