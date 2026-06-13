@@ -39,6 +39,9 @@ function onState(s: SaverState): void {
     _modal.close();
     return;
   }
+  // 同じリモート更新に反応した「🔔更新されました」バナーが既に出ていたら消す
+  // (このモーダルが上位の通知。二重表示を防ぐ)。
+  document.getElementById('memola-sync-banner')?.classList.remove('on');
   render(s.conflict.pageId, s.conflict.ours.title);
 }
 

@@ -266,7 +266,8 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
             + '</td>';
         }
         const f = c.field as ListField;
-        return '<td>' + escapeHtml(fmtCell(it[c.key], f)) + '</td>';
+        return '<td class="memola-linkdb-cell" data-rid="' + it.Id + '" data-f="'
+          + escapeHtml(c.key) + '">' + escapeHtml(fmtCell(it[c.key], f)) + '</td>';
       }).join('');
       return '<tr data-row-id="' + (it.Id) + '">' + cells + '</tr>';
     }).join('')
@@ -345,6 +346,86 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
     chip.addEventListener('click', (e) => {
       e.preventDefault(); e.stopPropagation();
       showFilterEditor(blockEl, filterBtn || chip, filterableFields, filters);
+    });
+  });
+
+  // 1c) セル編集(非タイトル列)。型に応じて テキスト/数値/日付=インライン入力、
+  //     選択肢=ピッカー、チェック=トグル。コミットは apiUpdateDbRow(本体DBと同経路)。
+  const commitCell = (td: HTMLElement, f: ListField, it: ListItem, nv: unknown): void => {
+    const old = it[f.InternalName];
+    if (String(old ?? '') === String(nv ?? '')) { td.textContent = fmtCell(old, f); return; }
+    const data: Record<string, unknown> = {};
+    data[f.Title || f.InternalName] = nv;
+    void import('../api/db').then((m) => m.apiUpdateDbRow(listTitle, it.Id, data))
+      .then(() => {
+        it[f.InternalName] = nv;
+        td.textContent = fmtCell(nv, f);
+        void import('./db-history')
+          .then((h) => h.recordCellChange(listTitle, it.Id, f.InternalName, f.Title, old, nv))
+          .catch(() => undefined);
+      })
+      .catch((err: Error) => {
+        td.textContent = fmtCell(old, f);
+        void import('./ui-helpers').then((u) => u.toast('保存失敗: ' + err.message, 'err'));
+      });
+  };
+  blockEl.querySelectorAll<HTMLElement>('td.memola-linkdb-cell').forEach((td) => {
+    td.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      if (td.querySelector('input')) return;        // 既に編集中
+      const rid = parseInt(td.dataset.rid || '0', 10);
+      const fkey = td.dataset.f || '';
+      const it = items.find((x) => x.Id === rid);
+      const col = cols.find((c) => c.key === fkey);
+      const f = col?.field;
+      if (!it || !f) return;
+      if (f.FieldTypeKind === 8) {                  // チェック: クリックでトグル
+        commitCell(td, f, it, it[f.InternalName] ? '0' : '1');
+        return;
+      }
+      if (f.FieldTypeKind === 6 && f.Choices) {     // 選択肢: ピッカー(色付き)
+        void Promise.all([import('./choice-popover'), import('./tag-colors')]).then(([cp, tc]) => {
+          const choices = f.Choices || [];
+          const itemsP = [
+            { value: '', label: '—' },
+            ...choices.map((c) => ({ value: c, label: c, color: tc.resolveTagColor(listTitle, f.InternalName, c, choices) })),
+          ];
+          cp.openChoicePopover(td, itemsP, String(it[f.InternalName] ?? ''), (nv) => commitCell(td, f, it, nv));
+        });
+        return;
+      }
+      // テキスト/複数行/数値/日付: インライン入力
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.className = 'memola-linkdb-cellinp';
+      inp.value = f.FieldTypeKind === 4 ? fmtCell(it[f.InternalName], f) : String(it[f.InternalName] ?? '');
+      if (f.FieldTypeKind === 4) inp.placeholder = 'YYYY-MM-DD';
+      td.textContent = '';
+      td.appendChild(inp);
+      inp.focus(); inp.select();
+      let done = false;
+      const finish = (commit: boolean): void => {
+        if (done) return; done = true;
+        const raw = inp.value.trim();
+        if (!commit) { td.textContent = fmtCell(it[f.InternalName], f); return; }
+        if (f.FieldTypeKind === 4 && raw) {
+          void import('../lib/date-utils').then((d) => {
+            const norm = d.parseFlexibleDate(raw);
+            if (!norm) {
+              void import('./ui-helpers').then((u) => u.toast('日付形式が無効です: ' + raw, 'err'));
+              td.textContent = fmtCell(it[f.InternalName], f);
+            } else commitCell(td, f, it, norm);
+          });
+          return;
+        }
+        commitCell(td, f, it, raw);
+      };
+      inp.addEventListener('blur', () => finish(true));
+      inp.addEventListener('keydown', (ke) => {
+        ke.stopPropagation();
+        if (ke.key === 'Enter') { ke.preventDefault(); finish(true); }
+        if (ke.key === 'Escape') { finish(false); }
+      });
     });
   });
 

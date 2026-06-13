@@ -469,6 +469,9 @@ export function buildHtml(): string {
             '<div class="memola-set-row"><label>外部ベクトルフォルダ</label>' +
               '<input id="memola-set-rag-extVec-folder" type="text" placeholder="例: Shared Documents/vectors (空欄=無効)">' +
             '</div>' +
+            '<div class="memola-set-row"><label></label>' +
+              '<div class="memola-set-hint" id="memola-set-rag-paths"></div>' +
+            '</div>' +
             '<div class="memola-set-row"><label>検索対象の種類</label>' +
               '<div class="memola-set-hint" style="display:flex;flex-wrap:wrap;gap:10px 16px">' +
                 '<label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="memola-set-rag-extVec-mail">メール</label>' +

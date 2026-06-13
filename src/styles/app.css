@@ -1824,6 +1824,14 @@
   background: rgba(55, 53, 47, 0.06);
   color: var(--ink);
 }
+/* インラインDBのセル編集 */
+#memola-overlay .memola-linkdb-cell { cursor: text; }
+#memola-overlay .memola-linkdb-cell:hover { background: rgba(55, 53, 47, 0.04); }
+#memola-overlay .memola-linkdb-cellinp {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--accent, #4a6fa5);
+  border-radius: 3px; padding: 1px 6px; font: inherit; background: var(--paper); color: var(--ink);
+  outline: none;
+}
 /* Filter chip strip below the header — read-only summary of active filters */
 #memola-overlay .memola-linkdb-filterchips {
   display: flex; flex-wrap: wrap; gap: 4px;

@@ -187,6 +187,20 @@ export function attachSettingsModal(): void {
         // ExtVec 連携: フォルダ + kind トグル
         const tf = document.getElementById('memola-set-rag-extVec-folder') as HTMLInputElement | null;
         if (tf) tf.value = prefRagExtVecFolder.get();
+        // 現在のベクトル保存先を表示(memola自身のインデックスは固定パス)。
+        {
+          const paths = document.getElementById('memola-set-rag-paths');
+          if (paths) {
+            const ext = prefRagExtVecFolder.get().trim();
+            void import('../config').then((c) => {
+              paths.innerHTML =
+                'Memola 自身のベクトル: <code>' + c.SITE + '/Shared Documents/memola-rag</code>（固定）<br>' +
+                '外部ベクトル: ' + (ext
+                  ? '<code>' + c.SITE + '/' + ext.replace(/^\/+/, '') + '</code>'
+                  : '<i>未設定（無効）</i>');
+            });
+          }
+        }
         {
           const enabled = new Set(prefRagExtVecKinds.get().split(',').map((s) => s.trim()));
           for (const k of EXTVEC_KIND_LIST) {

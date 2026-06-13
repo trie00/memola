@@ -234,6 +234,10 @@ async function tryLiveSync(
 }
 
 function showStaleBanner(editor: string, modified: string, pageId: string, sameUser = false): void {
+  // 競合モーダル(統合/上書き/相手の版)が出ている間は重複通知になるので出さない。
+  // 同じリモート更新イベントに2系統(ポーリング通知とセーバ412)が反応するため、
+  // モーダルが主・バナーは従とする。
+  if (saver.state().kind === 'conflict' || saver.state().kind === 'merging') return;
   let bn = document.getElementById('memola-sync-banner');
   if (!bn) {
     bn = document.createElement('div');
