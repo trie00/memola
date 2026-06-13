@@ -13,6 +13,8 @@ import { toast } from './ui-helpers';
 import { schedSave } from './save-control';
 import { escapeHtml } from '../lib/html-escape';
 import { metaById } from '../lib/page-store';
+import { resolveTagColor } from './tag-colors';
+import { relationForKeyField } from './db-lookups';
 
 const MAX_ROWS_INLINE = 50;     // hard cap so embedding a huge DB stays usable
 const VISIBLE_COLS = 4;         // Title + first 3 user columns
@@ -174,6 +176,20 @@ function fmtCell(value: unknown, field: ListField): string {
   return String(value);
 }
 
+/** セルの表示HTML。選択肢列/リレーションのキー列は本体DBと同じ色付きチップ、
+ *  それ以外はプレーンテキスト(escape済み)。 */
+function cellInnerHtml(value: unknown, field: ListField, listTitle: string): string {
+  const txt = fmtCell(value, field);
+  if (!txt) return '';
+  const isChip = field.FieldTypeKind === 6 || !!relationForKeyField(listTitle, field.InternalName);
+  if (isChip) {
+    const color = resolveTagColor(listTitle, field.InternalName, txt, field.Choices || []);
+    return '<span class="memola-select-chip" style="background:' + color + ';color:#2a2a26">'
+      + escapeHtml(txt) + '</span>';
+  }
+  return escapeHtml(txt);
+}
+
 async function renderOne(blockEl: HTMLElement): Promise<void> {
   const dbId = blockEl.getAttribute('data-db-id') || '';
   const meta = metaById(dbId);
@@ -203,6 +219,11 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
     fields = stripInternalDbFields(fields);
     // ゴミ箱(ソフト削除)行も除外。
     allItems = allItems.filter((it) => !(typeof it.Trashed === 'number' && it.Trashed > 0));
+    // タグ色(全員共通)とリレーション定義を読み込み、チップを本体DBと同じ色で表示。
+    await Promise.all([
+      import('./tag-colors').then((m) => m.loadTagColors(listTitle)),
+      import('./db-lookups').then((m) => m.loadLookups(listTitle)),
+    ]).catch(() => undefined);
   } catch (e) {
     blockEl.innerHTML =
       '<div class="memola-linkdb-error">読み込み失敗: '
@@ -267,7 +288,7 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
         }
         const f = c.field as ListField;
         return '<td class="memola-linkdb-cell" data-rid="' + it.Id + '" data-f="'
-          + escapeHtml(c.key) + '">' + escapeHtml(fmtCell(it[c.key], f)) + '</td>';
+          + escapeHtml(c.key) + '">' + cellInnerHtml(it[c.key], f, listTitle) + '</td>';
       }).join('');
       return '<tr data-row-id="' + (it.Id) + '">' + cells + '</tr>';
     }).join('')
@@ -353,19 +374,19 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
   //     選択肢=ピッカー、チェック=トグル。コミットは apiUpdateDbRow(本体DBと同経路)。
   const commitCell = (td: HTMLElement, f: ListField, it: ListItem, nv: unknown): void => {
     const old = it[f.InternalName];
-    if (String(old ?? '') === String(nv ?? '')) { td.textContent = fmtCell(old, f); return; }
+    if (String(old ?? '') === String(nv ?? '')) { td.innerHTML = cellInnerHtml(old, f, listTitle); return; }
     const data: Record<string, unknown> = {};
     data[f.Title || f.InternalName] = nv;
     void import('../api/db').then((m) => m.apiUpdateDbRow(listTitle, it.Id, data))
       .then(() => {
         it[f.InternalName] = nv;
-        td.textContent = fmtCell(nv, f);
+        td.innerHTML = cellInnerHtml(nv, f, listTitle);
         void import('./db-history')
           .then((h) => h.recordCellChange(listTitle, it.Id, f.InternalName, f.Title, old, nv))
           .catch(() => undefined);
       })
       .catch((err: Error) => {
-        td.textContent = fmtCell(old, f);
+        td.innerHTML = cellInnerHtml(old, f, listTitle);
         void import('./ui-helpers').then((u) => u.toast('保存失敗: ' + err.message, 'err'));
       });
   };
@@ -407,13 +428,13 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
       const finish = (commit: boolean): void => {
         if (done) return; done = true;
         const raw = inp.value.trim();
-        if (!commit) { td.textContent = fmtCell(it[f.InternalName], f); return; }
+        if (!commit) { td.innerHTML = cellInnerHtml(it[f.InternalName], f, listTitle); return; }
         if (f.FieldTypeKind === 4 && raw) {
           void import('../lib/date-utils').then((d) => {
             const norm = d.parseFlexibleDate(raw);
             if (!norm) {
               void import('./ui-helpers').then((u) => u.toast('日付形式が無効です: ' + raw, 'err'));
-              td.textContent = fmtCell(it[f.InternalName], f);
+              td.innerHTML = cellInnerHtml(it[f.InternalName], f, listTitle);
             } else commitCell(td, f, it, norm);
           });
           return;
