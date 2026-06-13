@@ -46,7 +46,7 @@ export async function runAgent(
   const working: ApiMessage[] = history.slice();
   // Track only the new messages added during this run
   const newMessages: ApiMessage[] = [];
-  const toolTrace: Array<{ name: string; ok: boolean }> = [];
+  const toolTrace: Array<{ name: string; ok: boolean; error?: string }> = [];
   const finalTexts: string[] = [];
 
   for (let step = 0; step < MAX_STEPS; step++) {
