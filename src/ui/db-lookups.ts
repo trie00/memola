@@ -293,6 +293,12 @@ export function openNewLookup(x: number, y: number, name?: string): void {
   openLookupEditor(S.dbList, null, x, y, reloadTable, name, false);
 }
 
+/** リレーション/参照列の名前(定義名)を変更。 */
+export async function renameLookup(listTitle: string, id: string, name: string): Promise<void> {
+  _defs.set(listTitle, listLookups(listTitle).map((d) => (d.id === id ? { ...d, name } : d)));
+  await persist(listTitle);
+}
+
 /** リレーション/参照列の定義を削除(共有設定にも反映)。 */
 export async function deleteLookup(listTitle: string, id: string): Promise<void> {
   _defs.set(listTitle, listLookups(listTitle).filter((d) => d.id !== id));

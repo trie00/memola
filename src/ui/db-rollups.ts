@@ -219,6 +219,12 @@ export function openRollupEditor(listTitle: string, def: DbRollupDef | null, x: 
   setTimeout(() => document.addEventListener('mousedown', onOut, true), 0);
 }
 
+/** ロールアップ列の名前(定義名)を変更。 */
+export async function renameRollup(listTitle: string, id: string, name: string): Promise<void> {
+  _defs.set(listTitle, listRollups(listTitle).map((d) => (d.id === id ? { ...d, name } : d)));
+  await persist(listTitle);
+}
+
 /** ロールアップ列の定義を削除(共有設定にも反映)。 */
 export async function deleteRollup(listTitle: string, id: string): Promise<void> {
   _defs.set(listTitle, listRollups(listTitle).filter((d) => d.id !== id));

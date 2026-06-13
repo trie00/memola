@@ -70,14 +70,14 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
     item('フィルター', () => { void import('./filter-ui').then((m) => m.addFilterForField(field.InternalName)); }),
   );
 
-  // Choice 列: 選択肢の編集(追加/改名/削除/色)を1つのエディタに集約。
+  // 型ごとの設定(共通テンプレートの同じ位置にまとめる):
+  //   選択肢列=選択肢を編集 / 対応型=ユニーク / リレーションキー列=編集・解除
+  const typeItems: HTMLElement[] = [];
   if (field.FieldTypeKind === 6) {
-    menu.append(item('選択肢を編集', () => openOptionsEditor(field, x, y)));
+    typeItems.push(item('選択肢を編集', () => openOptionsEditor(field, x, y)));
   }
-
-  // ユニーク(重複禁止)トグル — 対応型のみ(テキスト/日付/選択単一/数値)。
   if ([2, 4, 6, 9].includes(field.FieldTypeKind)) {
-    menu.append(item((field.Unique ? '☑' : '☐') + ' ユニーク（重複禁止）', () => {
+    typeItems.push(item((field.Unique ? '☑' : '☐') + ' ユニーク（重複禁止）', () => {
       void (async () => {
         try {
           setLoad(true, 'ユニーク設定を変更中...');
@@ -90,22 +90,19 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
       })();
     }));
   }
-
-  // リレーションのキー列: 編集/解除の入り口(統合後はここが唯一の編集経路)。
-  {
-    const relDef = relationForKeyField(S.dbList, field.InternalName);
-    if (relDef) {
-      menu.append(sep(),
-        item('🔗 リレーションを編集', () => {
-          openLookupEditor(S.dbList, relDef, x, y, () => { void reRender(); });
-        }),
-        item('🔗 リレーションを解除', () => {
-          if (!confirm(`列「${field.Title}」のリレーションを解除しますか？\n(列と入力済みの値は残り、ただのテキスト列に戻ります)`)) return;
-          void deleteLookup(S.dbList, relDef.id).then(() => { void reRender(); });
-        }, { danger: true }),
-      );
-    }
+  const relDef = relationForKeyField(S.dbList, field.InternalName);
+  if (relDef) {
+    typeItems.push(
+      item('🔗 リレーションを編集', () => {
+        openLookupEditor(S.dbList, relDef, x, y, () => { void reRender(); });
+      }),
+      item('🔗 リレーションを解除', () => {
+        if (!confirm(`列「${field.Title}」のリレーションを解除しますか？\n(列と入力済みの値は残り、ただのテキスト列に戻ります)`)) return;
+        void deleteLookup(S.dbList, relDef.id).then(() => { void reRender(); });
+      }, { danger: true }),
+    );
   }
+  if (typeItems.length > 0) menu.append(sep(), ...typeItems);
 
   menu.append(sep(), item('🗑 列を削除', () => {
     if (!confirm(`列「${field.Title}」を削除しますか？(この列の値も失われます)`)) return;
@@ -176,12 +173,25 @@ export function openComputedColumnMenu(
     }
   };
 
+  // 通常列と同じ並び: プロパティ/列名を変更/コメント | 並べ替え/フィルター |
+  // 型ごとの設定(=設定を編集) | 削除。
   menu.append(
-    item('✏️ 編集', openEditor),
+    item('ℹ️ プロパティ', () => { void showComputedProps(kind, def, x, y); }),
+    item('列名を変更', () => startComputedRename(kind, def)),
+    item('💬 コメント', () => {
+      void (async () => {
+        const { metaById } = await import('../lib/page-store');
+        const scope = metaById(S.currentId)?.scope === 'org' ? 'org' : 'user';
+        const m = await import('./comments-ui');
+        await m.openColumnComment(S.dbList, scope, key, def.name);
+      })();
+    }),
     sep(),
     item('↑ 昇順で並べ替え', () => sortBy(true)),
     item('↓ 降順で並べ替え', () => sortBy(false)),
     item('フィルター', () => { void import('./filter-ui').then((m) => m.addFilterForField(key)); }),
+    sep(),
+    item('⚙️ 設定を編集', openEditor),
     sep(),
     item('🗑 列を削除', () => {
       if (!confirm(`列「${def.name}」を削除しますか？(定義のみ削除。元データは消えません)`)) return;
@@ -218,6 +228,111 @@ export function openComputedColumnMenu(
 const KIND_LABEL: Record<number, string> = {
   2: 'テキスト', 3: '複数行テキスト', 4: '日付', 6: '選択肢', 8: 'チェック', 9: '数値', 20: '担当者',
 };
+
+const COMPUTED_KIND_LABEL: Record<ComputedColKind, string> = {
+  formula: '数式 (ƒ)', lookup: '参照 (↗)', rollup: 'ロールアップ (Σ)',
+};
+
+/** 計算列のプロパティ表示(通常列の「ℹ️ プロパティ」と同形式)。 */
+async function showComputedProps(
+  kind: ComputedColKind,
+  def: DbFormulaDef | DbLookupDef | DbRollupDef,
+  x: number, y: number,
+): Promise<void> {
+  const overlay = document.getElementById('memola-overlay') || document.body;
+  document.getElementById('memola-colprops')?.remove();
+  const pop = document.createElement('div');
+  pop.id = 'memola-colprops';
+  pop.className = 'memola-colmenu memola-colprops';
+  pop.style.left = Math.round(x) + 'px';
+  pop.style.top = Math.round(y) + 'px';
+  const row = (label: string, value: string): HTMLElement => {
+    const r = document.createElement('div');
+    r.className = 'memola-colprops-row';
+    const l = document.createElement('span'); l.className = 'memola-colprops-k'; l.textContent = label;
+    const v = document.createElement('span'); v.className = 'memola-colprops-v'; v.textContent = value;
+    r.append(l, v); return r;
+  };
+  const hdr = document.createElement('div');
+  hdr.className = 'memola-colmenu-item';
+  hdr.style.cssText = 'font-weight:600;color:var(--ink-3);cursor:default';
+  hdr.textContent = 'ℹ️ 列のプロパティ';
+  pop.appendChild(hdr);
+  pop.appendChild(row('列名', def.name));
+  pop.appendChild(row('型', COMPUTED_KIND_LABEL[kind]));
+  try {
+    if (kind === 'formula') {
+      pop.appendChild(row('式', (def as DbFormulaDef).expr));
+    } else if (kind === 'lookup') {
+      const d = def as DbLookupDef;
+      const dbPage = S.meta.pages.find((p) => p.type === 'database' && p.list === d.targetTitle);
+      pop.appendChild(row('対象DB', dbPage?.title || d.targetTitle));
+      const { getListFields } = await import('../api/sp-list');
+      const tf = await getListFields(d.targetTitle).catch(() => []);
+      const disp = (internal: string): string => tf.find((f) => f.InternalName === internal)?.Title || internal;
+      pop.appendChild(row('対象のキー列', disp(d.targetKeyField)));
+      pop.appendChild(row('返す列', disp(d.returnField)));
+      const keyDisp = S.dbFields.find((f) => f.InternalName === d.keyField)?.Title || d.keyField;
+      pop.appendChild(row('自DBのキー列', keyDisp));
+    } else {
+      const d = def as DbRollupDef;
+      const dbPage = S.meta.pages.find((p) => p.type === 'database' && p.list === d.childTitle);
+      pop.appendChild(row('子DB', dbPage?.title || d.childTitle));
+      const { getListFields } = await import('../api/sp-list');
+      const cf = await getListFields(d.childTitle).catch(() => []);
+      const disp = (internal: string): string => cf.find((f) => f.InternalName === internal)?.Title || internal;
+      pop.appendChild(row('子側の親キー列', disp(d.childForeignField)));
+      if (d.targetField) pop.appendChild(row('集計対象の列', disp(d.targetField)));
+      pop.appendChild(row('集計方法', d.agg));
+    }
+  } catch { /* 解決失敗分は省略 */ }
+  overlay.appendChild(pop);
+  const r = pop.getBoundingClientRect();
+  if (r.right > window.innerWidth - 8) pop.style.left = Math.max(8, window.innerWidth - r.width - 8) + 'px';
+  if (r.bottom > window.innerHeight - 8) pop.style.top = Math.max(8, window.innerHeight - r.height - 8) + 'px';
+  const onOut = (e: MouseEvent): void => {
+    if (!pop.contains(e.target as Node)) { pop.remove(); document.removeEventListener('mousedown', onOut, true); }
+  };
+  setTimeout(() => document.addEventListener('mousedown', onOut, true), 0);
+}
+
+/** 計算列ヘッダのインライン列名変更(通常列の startColRename と同じ操作感)。 */
+function startComputedRename(kind: ComputedColKind, def: DbFormulaDef | DbLookupDef | DbRollupDef): void {
+  const attr = kind === 'formula' ? 'data-formula-id' : kind === 'lookup' ? 'data-lookup-id' : 'data-rollup-id';
+  const th = document.querySelector<HTMLElement>('#memola-dt th[' + attr + '="' + CSS.escape(def.id) + '"]');
+  if (!th) return;
+  const inp = document.createElement('input');
+  inp.className = 'memola-colrename-inp';
+  inp.value = def.name;
+  th.innerHTML = '';
+  th.appendChild(inp);
+  inp.focus(); inp.select();
+  let done = false;
+  const commit = (): void => {
+    if (done) return; done = true;
+    const name = inp.value.trim();
+    void (async () => {
+      try {
+        if (name && name !== def.name) {
+          if (kind === 'formula') {
+            const m = await import('./db-formulas'); m.updateFormula(S.dbList, def.id, { name });
+          } else if (kind === 'lookup') {
+            const m = await import('./db-lookups'); await m.renameLookup(S.dbList, def.id, name);
+          } else {
+            const m = await import('./db-rollups'); await m.renameRollup(S.dbList, def.id, name);
+          }
+        }
+      } catch (e) { toast('列名の変更に失敗: ' + (e as Error).message, 'err'); }
+      finally { void reRender(); }
+    })();
+  };
+  inp.addEventListener('blur', commit);
+  inp.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { done = true; void reRender(); }
+  });
+}
 
 /** 列のプロパティ(型/ユニーク/選択肢/リレーション参照先など)を表示する読み取り専用パネル。 */
 async function showColumnProps(field: ListField, x: number, y: number): Promise<void> {
