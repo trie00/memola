@@ -52,15 +52,12 @@ export function attachColumnModal(): void {
       return;
     }
     // 「参照(他DB)」も SP 列ではなくクライアント側の XLOOKUP 参照列 → 参照エディタ。
+    // 入力済みの列名(name)をエディタへ引き継ぐ(二度入力を防ぐ)。
     if (typeTk === 'lookup') {
       g('col-md').classList.remove('on');
       const r = (g('col-ok') as HTMLElement).getBoundingClientRect();
       const m = await import('./db-lookups');
-      m.openLookupEditor(S.dbList, null, r.left, r.bottom + 4, () => {
-        renderDbTable();
-        const w = document.getElementById('memola-dt-wrap');
-        if (w) w.scrollLeft = w.scrollWidth;
-      });
+      m.openNewLookup(r.left, r.bottom + 4, name);
       return;
     }
     // 「リレーション(他DB)」= asLink 付きの参照列(クリックで相手行へ)。
@@ -68,7 +65,7 @@ export function attachColumnModal(): void {
       g('col-md').classList.remove('on');
       const r = (g('col-ok') as HTMLElement).getBoundingClientRect();
       const m = await import('./db-lookups');
-      m.openNewRelation(r.left, r.bottom + 4);
+      m.openNewRelation(r.left, r.bottom + 4, name);
       return;
     }
     // 「ロールアップ(集計)」もクライアント側の集計列 → 集計エディタ。
@@ -76,11 +73,7 @@ export function attachColumnModal(): void {
       g('col-md').classList.remove('on');
       const r = (g('col-ok') as HTMLElement).getBoundingClientRect();
       const m = await import('./db-rollups');
-      m.openRollupEditor(S.dbList, null, r.left, r.bottom + 4, () => {
-        renderDbTable();
-        const w = document.getElementById('memola-dt-wrap');
-        if (w) w.scrollLeft = w.scrollWidth;
-      });
+      m.openNewRollup(r.left, r.bottom + 4, name);
       return;
     }
     let choices: string[] = [];

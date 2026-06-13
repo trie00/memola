@@ -95,7 +95,7 @@ const AGG_LABEL: Record<DbRollupDef['agg'], string> = {
 let _pop: HTMLElement | null = null;
 export function closeRollupEditor(): void { if (_pop) { _pop.remove(); _pop = null; } }
 
-export function openRollupEditor(listTitle: string, def: DbRollupDef | null, x: number, y: number, reload: () => void): void {
+export function openRollupEditor(listTitle: string, def: DbRollupDef | null, x: number, y: number, reload: () => void, initialName?: string): void {
   closeRollupEditor();
   const overlay = document.getElementById('memola-overlay') || document.body;
   const pop = document.createElement('div');
@@ -113,7 +113,7 @@ export function openRollupEditor(listTitle: string, def: DbRollupDef | null, x: 
   const nameInp = document.createElement('input');
   nameInp.className = 'memola-formula-name';
   nameInp.placeholder = '列名';
-  nameInp.value = def?.name || '';
+  nameInp.value = def?.name || initialName || '';
   nameInp.addEventListener('keydown', (e) => e.stopPropagation());
 
   const mkSel = (): HTMLSelectElement => { const s = document.createElement('select'); s.className = 'memola-rule-f'; s.style.maxWidth = 'none'; s.style.width = '100%'; return s; };
@@ -244,11 +244,11 @@ export async function addRollupSpec(listTitle: string, p: {
   await buildData(def);
 }
 
-export function openNewRollup(x: number, y: number): void {
+export function openNewRollup(x: number, y: number, name?: string): void {
   openRollupEditor(S.dbList, null, x, y, () => {
     void import('./views-table').then((m) => {
       m.renderDbTable();
       const w = document.getElementById('memola-dt-wrap'); if (w) w.scrollLeft = w.scrollWidth;
     });
-  });
+  }, name);
 }

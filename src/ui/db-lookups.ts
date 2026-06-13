@@ -92,8 +92,9 @@ async function persist(listTitle: string): Promise<void> {
 let _pop: HTMLElement | null = null;
 export function closeLookupEditor(): void { if (_pop) { _pop.remove(); _pop = null; } }
 
-/** 参照列の作成/編集。def=null で新規。保存/削除後に reload を呼ぶ。 */
-export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: number, y: number, reload: () => void): void {
+/** 参照列の作成/編集。def=null で新規。保存/削除後に reload を呼ぶ。
+ *  initialName/initialAsLink は新規時の初期値(列追加モーダルで入力済みの列名を引き継ぐ)。 */
+export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: number, y: number, reload: () => void, initialName?: string, initialAsLink?: boolean): void {
   closeLookupEditor();
   const overlay = document.getElementById('memola-overlay') || document.body;
   const pop = document.createElement('div');
@@ -111,7 +112,7 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
   const nameInp = document.createElement('input');
   nameInp.className = 'memola-formula-name';
   nameInp.placeholder = '列名';
-  nameInp.value = def?.name || '';
+  nameInp.value = def?.name || initialName || '';
   nameInp.addEventListener('keydown', (e) => e.stopPropagation());
 
   const mkSel = (): HTMLSelectElement => { const s = document.createElement('select'); s.className = 'memola-rule-f'; s.style.maxWidth = 'none'; s.style.width = '100%'; return s; };
@@ -141,13 +142,16 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
       // 管理用の内部列(Trashed/TrashedBy/Body_blocks)は候補に出さない。
       const { stripInternalDbFields } = await import('../api/db');
       const fields = stripInternalDbFields(await getListFields(title));
-      // 対象のキー列はユニーク(重複禁止)の列のみ選択可 → 一意に引けることを保証。
-      const uniqueFields = fields.filter((f) => f.Unique);
-      if (uniqueFields.length === 0) {
-        const o = document.createElement('option'); o.value = ''; o.textContent = '— ユニークな列がありません —'; o.disabled = true; o.selected = true; tKeySel.appendChild(o);
-      }
-      for (const f of uniqueFields) {
-        const a = document.createElement('option'); a.value = f.InternalName; a.textContent = f.Title; if (f.InternalName === def?.targetKeyField) a.selected = true; tKeySel.appendChild(a);
+      // 対象のキー列: 全列から選べる(同値が複数あれば先頭一致)。ユニーク(重複禁止)
+      // 列には★印を付けて推奨を示す(以前はユニーク限定だったが、制約未設定の
+      // マスターで選べず詰まるため緩和)。ユニーク列を先頭に並べる。
+      const sorted = [...fields].sort((a, b) => Number(!!b.Unique) - Number(!!a.Unique));
+      for (const f of sorted) {
+        const a = document.createElement('option');
+        a.value = f.InternalName;
+        a.textContent = (f.Unique ? '★ ' : '') + f.Title + (f.Unique ? '（ユニーク）' : '');
+        if (f.InternalName === def?.targetKeyField) a.selected = true;
+        tKeySel.appendChild(a);
       }
       for (const f of fields) {
         const b = document.createElement('option'); b.value = f.InternalName; b.textContent = f.Title; if (f.InternalName === def?.returnField) b.selected = true; tRetSel.appendChild(b);
@@ -160,7 +164,7 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
   // リレーション表示(値ではなく対象行へのリンクチップ)
   const linkWrap = document.createElement('label');
   linkWrap.style.cssText = 'display:flex;align-items:center;gap:6px;margin:4px 0;font-size:var(--fs-sm);cursor:pointer';
-  const linkChk = document.createElement('input'); linkChk.type = 'checkbox'; linkChk.checked = !!def?.asLink;
+  const linkChk = document.createElement('input'); linkChk.type = 'checkbox'; linkChk.checked = def ? !!def.asLink : !!initialAsLink;
   linkWrap.append(linkChk, document.createTextNode('リンクとして表示(リレーション=クリックで相手行を開く)'));
 
   const help = document.createElement('div');
@@ -223,14 +227,16 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
   setTimeout(() => document.addEventListener('mousedown', onOut, true), 0);
 }
 
-/** 新規参照列エディタを開く(S.dbList 対象)。 */
-export function openNewLookup(x: number, y: number): void {
-  openLookupEditor(S.dbList, null, x, y, () => {
-    void import('./views-table').then((m) => {
-      m.renderDbTable();
-      const w = document.getElementById('memola-dt-wrap'); if (w) w.scrollLeft = w.scrollWidth;
-    });
+function reloadTable(): void {
+  void import('./views-table').then((m) => {
+    m.renderDbTable();
+    const w = document.getElementById('memola-dt-wrap'); if (w) w.scrollLeft = w.scrollWidth;
   });
+}
+
+/** 新規参照列エディタを開く(S.dbList 対象)。name=列追加モーダルで入力済みの列名。 */
+export function openNewLookup(x: number, y: number, name?: string): void {
+  openLookupEditor(S.dbList, null, x, y, reloadTable, name, false);
 }
 
 /** リレーション/参照列の定義を削除(共有設定にも反映)。 */
@@ -257,12 +263,7 @@ export async function addLookupSpec(listTitle: string, p: {
   await buildData(def);
 }
 
-/** 新規リレーション列エディタ(asLink 既定オン)を開く。 */
-export function openNewRelation(x: number, y: number): void {
-  openLookupEditor(S.dbList, { asLink: true } as DbLookupDef, x, y, () => {
-    void import('./views-table').then((m) => {
-      m.renderDbTable();
-      const w = document.getElementById('memola-dt-wrap'); if (w) w.scrollLeft = w.scrollWidth;
-    });
-  });
+/** 新規リレーション列エディタ(asLink 既定オン)を開く。name=列追加モーダルの列名。 */
+export function openNewRelation(x: number, y: number, name?: string): void {
+  openLookupEditor(S.dbList, null, x, y, reloadTable, name, true);
 }
