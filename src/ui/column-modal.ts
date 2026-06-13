@@ -39,41 +39,28 @@ export function attachColumnModal(): void {
   g('col-ok').addEventListener('click', async () => {
     const name = (g('col-name') as HTMLInputElement).value.trim();
     if (!name) { g('col-name').focus(); return; }
-    // 「数式」は SP 列ではなくクライアント側の数式列 → 数式エディタを開く。
-    if (typeTk === 'formula') {
-      g('col-md').classList.remove('on');
+    // 計算列(数式/参照/リレーション/集計)は SP 列ではなく各エディタへ。位置は
+    // 「モーダルを閉じる前」に取得する(閉じた後だと rect が 0,0 になり左上に出る)。
+    if (typeTk === 'formula' || typeTk === 'lookup' || typeTk === 'relation' || typeTk === 'rollup') {
       const r = (g('col-ok') as HTMLElement).getBoundingClientRect();
-      const m = await import('./db-formulas');
-      m.openFormulaEditor(S.dbList, null, r.left, r.bottom + 4, () => {
-        renderDbTable();
-        const w = document.getElementById('memola-dt-wrap');
-        if (w) w.scrollLeft = w.scrollWidth;
-      }, name);
-      return;
-    }
-    // 「参照(他DB)」も SP 列ではなくクライアント側の XLOOKUP 参照列 → 参照エディタ。
-    // 入力済みの列名(name)をエディタへ引き継ぐ(二度入力を防ぐ)。
-    if (typeTk === 'lookup') {
       g('col-md').classList.remove('on');
-      const r = (g('col-ok') as HTMLElement).getBoundingClientRect();
-      const m = await import('./db-lookups');
-      m.openNewLookup(r.left, r.bottom + 4, name);
-      return;
-    }
-    // 「リレーション(他DB)」= asLink 付きの参照列(クリックで相手行へ)。
-    if (typeTk === 'relation') {
-      g('col-md').classList.remove('on');
-      const r = (g('col-ok') as HTMLElement).getBoundingClientRect();
-      const m = await import('./db-lookups');
-      m.openNewRelation(r.left, r.bottom + 4, name);
-      return;
-    }
-    // 「ロールアップ(集計)」もクライアント側の集計列 → 集計エディタ。
-    if (typeTk === 'rollup') {
-      g('col-md').classList.remove('on');
-      const r = (g('col-ok') as HTMLElement).getBoundingClientRect();
-      const m = await import('./db-rollups');
-      m.openNewRollup(r.left, r.bottom + 4, name);
+      if (typeTk === 'formula') {
+        const m = await import('./db-formulas');
+        m.openFormulaEditor(S.dbList, null, r.left, r.bottom + 4, () => {
+          renderDbTable();
+          const w = document.getElementById('memola-dt-wrap');
+          if (w) w.scrollLeft = w.scrollWidth;
+        }, name);
+      } else if (typeTk === 'lookup') {
+        const m = await import('./db-lookups');
+        m.openNewLookup(r.left, r.bottom + 4, name);
+      } else if (typeTk === 'relation') {
+        const m = await import('./db-lookups');
+        m.openNewRelation(r.left, r.bottom + 4, name);
+      } else {
+        const m = await import('./db-rollups');
+        m.openNewRollup(r.left, r.bottom + 4, name);
+      }
       return;
     }
     let choices: string[] = [];
