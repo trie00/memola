@@ -140,7 +140,9 @@ export function openRollupEditor(listTitle: string, def: DbRollupDef | null, x: 
     fkSel.innerHTML = ''; targetSel.innerHTML = '';
     if (!title) return;
     try {
-      const fields = await getListFields(title);
+      // 管理用の内部列(Trashed/TrashedBy/Body_blocks)は候補に出さない。
+      const { stripInternalDbFields } = await import('../api/db');
+      const fields = stripInternalDbFields(await getListFields(title));
       for (const f of fields) {
         const a = document.createElement('option'); a.value = f.InternalName; a.textContent = f.Title; if (f.InternalName === def?.childForeignField) a.selected = true; fkSel.appendChild(a);
         const b = document.createElement('option'); b.value = f.InternalName; b.textContent = f.Title; if (f.InternalName === def?.targetField) b.selected = true; targetSel.appendChild(b);

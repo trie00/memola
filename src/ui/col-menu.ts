@@ -53,6 +53,7 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
     void reRender();
   };
   menu.append(
+    item('ℹ️ プロパティ', () => { void showColumnProps(field, x, y); }),
     item('列名を変更', () => startColRename(field)),
     item('💬 コメント', () => {
       void (async () => {
@@ -112,6 +113,72 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
   _outside = (e: MouseEvent): void => { if (_menu && !_menu.contains(e.target as Node)) closeColumnMenu(); };
   setTimeout(() => { if (_outside) document.addEventListener('mousedown', _outside, true); }, 0);
   _menu = menu;
+}
+
+const KIND_LABEL: Record<number, string> = {
+  2: 'テキスト', 3: '複数行テキスト', 4: '日付', 6: '選択肢', 8: 'チェック', 9: '数値', 20: '担当者',
+};
+
+/** 列のプロパティ(型/ユニーク/選択肢/リレーション参照先など)を表示する読み取り専用パネル。 */
+async function showColumnProps(field: ListField, x: number, y: number): Promise<void> {
+  const overlay = document.getElementById('memola-overlay') || document.body;
+  document.getElementById('memola-colprops')?.remove();
+  const pop = document.createElement('div');
+  pop.id = 'memola-colprops';
+  pop.className = 'memola-colmenu memola-colprops';
+  pop.style.left = Math.round(x) + 'px';
+  pop.style.top = Math.round(y) + 'px';
+
+  const row = (label: string, value: string): HTMLElement => {
+    const r = document.createElement('div');
+    r.className = 'memola-colprops-row';
+    const l = document.createElement('span'); l.className = 'memola-colprops-k'; l.textContent = label;
+    const v = document.createElement('span'); v.className = 'memola-colprops-v'; v.textContent = value;
+    r.append(l, v); return r;
+  };
+
+  const hdr = document.createElement('div');
+  hdr.className = 'memola-colmenu-item';
+  hdr.style.cssText = 'font-weight:600;color:var(--ink-3);cursor:default';
+  hdr.textContent = 'ℹ️ 列のプロパティ';
+  pop.appendChild(hdr);
+
+  pop.appendChild(row('列名', field.Title));
+  pop.appendChild(row('型', KIND_LABEL[field.FieldTypeKind] || ('種別 ' + field.FieldTypeKind)));
+  if ([2, 4, 6, 9].includes(field.FieldTypeKind)) {
+    pop.appendChild(row('ユニーク', field.Unique ? 'あり（重複禁止）' : 'なし'));
+  }
+  if (field.FieldTypeKind === 6 && field.Choices) {
+    pop.appendChild(row('選択肢', field.Choices.join(' / ')));
+  }
+
+  // この列がリレーションの照合キーなら、参照先の情報も表示。
+  try {
+    const { relationForKeyField } = await import('./db-lookups');
+    const rel = relationForKeyField(S.dbList, field.InternalName);
+    if (rel) {
+      const dbPage = S.meta.pages.find((p) => p.type === 'database' && p.list === rel.targetTitle);
+      pop.appendChild(row('リレーション', '🔗 ' + rel.name));
+      pop.appendChild(row('参照先DB', dbPage?.title || rel.targetTitle));
+      // 参照先の列は表示名に解決して見せる(内部名は日本語列だと読めないため)。
+      try {
+        const { getListFields } = await import('../api/sp-list');
+        const tFields = await getListFields(rel.targetTitle);
+        const disp = (internal: string): string => tFields.find((f) => f.InternalName === internal)?.Title || internal;
+        pop.appendChild(row('照合列(相手)', disp(rel.targetKeyField)));
+        pop.appendChild(row('表示列(相手)', disp(rel.returnField)));
+      } catch { /* 解決できなければ省略 */ }
+    }
+  } catch { /* ignore */ }
+
+  overlay.appendChild(pop);
+  const r = pop.getBoundingClientRect();
+  if (r.right > window.innerWidth - 8) pop.style.left = Math.max(8, window.innerWidth - r.width - 8) + 'px';
+  if (r.bottom > window.innerHeight - 8) pop.style.top = Math.max(8, window.innerHeight - r.height - 8) + 'px';
+  const onOut = (e: MouseEvent): void => {
+    if (!pop.contains(e.target as Node)) { pop.remove(); document.removeEventListener('mousedown', onOut, true); }
+  };
+  setTimeout(() => document.addEventListener('mousedown', onOut, true), 0);
 }
 
 /** 列ヘッダをその場でインライン編集して列名(表示名)を変更。タイトル列も可。 */

@@ -138,7 +138,9 @@ export function openLookupEditor(listTitle: string, def: DbLookupDef | null, x: 
     tKeySel.innerHTML = ''; tRetSel.innerHTML = '';
     if (!title) return;
     try {
-      const fields = await getListFields(title);
+      // 管理用の内部列(Trashed/TrashedBy/Body_blocks)は候補に出さない。
+      const { stripInternalDbFields } = await import('../api/db');
+      const fields = stripInternalDbFields(await getListFields(title));
       // 対象のキー列はユニーク(重複禁止)の列のみ選択可 → 一意に引けることを保証。
       const uniqueFields = fields.filter((f) => f.Unique);
       if (uniqueFields.length === 0) {
