@@ -1806,7 +1806,8 @@
   color: var(--ink);
 }
 /* Filter button — same shape as ↗ open button */
-#memola-overlay .memola-linkdb-filter {
+#memola-overlay .memola-linkdb-filter,
+#memola-overlay .memola-linkdb-cols {
   border: 1px solid var(--paper-3);
   background: var(--paper);
   color: var(--ink-2);
@@ -1818,7 +1819,8 @@
   flex-shrink: 0;
   transition: background 0.12s, color 0.12s;
 }
-#memola-overlay .memola-linkdb-filter:hover {
+#memola-overlay .memola-linkdb-filter:hover,
+#memola-overlay .memola-linkdb-cols:hover {
   background: rgba(55, 53, 47, 0.06);
   color: var(--ink);
 }

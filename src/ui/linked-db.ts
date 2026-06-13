@@ -60,6 +60,19 @@ function applyFilters(items: ListItem[], filters: LinkedDbFilter[]): ListItem[] 
   });
 }
 
+/** この linkdb の編集 state 上のブロックid。 */
+function linkdbBlockId(block: HTMLElement): string | null {
+  return block.closest<HTMLElement>('[data-block-id]')?.dataset.blockId || null;
+}
+
+/** DOM属性の変更を編集 state にも反映する。保存は state(getBlocks)から行われる
+ *  ため、属性だけ変えてもページに永続しない(リロードで消える)。 */
+function syncBlockState(block: HTMLElement, patch: { filter?: string; cols?: string }): void {
+  const id = linkdbBlockId(block);
+  if (!id) return;
+  void import('./editor2/editor2-bridge').then((m) => m.updateLinkdbProps(id, patch));
+}
+
 /** Update the block's `data-filter` attribute and trigger an autosave so
  *  the new filter persists into the page Markdown. Re-renders the block. */
 function persistFilters(block: HTMLElement, filters: LinkedDbFilter[]): void {
@@ -68,10 +81,75 @@ function persistFilters(block: HTMLElement, filters: LinkedDbFilter[]): void {
   } else {
     block.setAttribute('data-filter', JSON.stringify(filters));
   }
+  // 編集 state にも反映(これが無いと保存されずリロードで元に戻る)。
+  syncBlockState(block, { filter: filters.length === 0 ? '' : JSON.stringify(filters) });
   schedSave();
   // Defer to next tick so the DOM mutation observer in the editor has
   // flushed before we re-render.
   setTimeout(() => { void renderOne(block); }, 0);
+}
+
+/** 表示列の選択を保存して再描画。names=InternalName配列(空=非表示なし=既定)。 */
+function persistCols(block: HTMLElement, names: string[]): void {
+  const v = names.length === 0 ? '-' : names.join(',');   // '-' = ユーザー列なし(タイトルのみ)
+  block.setAttribute('data-cols', v);
+  syncBlockState(block, { cols: v });
+  schedSave();
+  setTimeout(() => { void renderOne(block); }, 0);
+}
+
+/** 表示列の選択ポップオーバー。チェックの増減が即保存・即反映される。
+ *  ポップはオーバーレイ直下に置くので、テーブル再描画でも消えない。 */
+function showColsEditor(
+  block: HTMLElement,
+  anchor: HTMLElement,
+  allFields: ListField[],
+  current: string[],
+): void {
+  document.getElementById('memola-linkdb-cols-pop')?.remove();
+  const overlay = document.getElementById('memola-overlay') || document.body;
+  const pop = document.createElement('div');
+  pop.id = 'memola-linkdb-cols-pop';
+  pop.className = 'memola-colmenu memola-colprops';
+  const r0 = anchor.getBoundingClientRect();
+  pop.style.left = Math.round(r0.left) + 'px';
+  pop.style.top = Math.round(r0.bottom + 4) + 'px';
+  const hdr = document.createElement('div');
+  hdr.className = 'memola-colmenu-item';
+  hdr.style.cssText = 'font-weight:600;color:var(--ink-3);cursor:default';
+  hdr.textContent = '⚙ 表示する列';
+  pop.appendChild(hdr);
+  const checked = new Set(current);
+  const fixed = document.createElement('label');
+  fixed.className = 'memola-colprops-row';
+  fixed.style.cssText = 'align-items:center;opacity:.6;cursor:default';
+  fixed.innerHTML = '<input type="checkbox" checked disabled> <span>タイトル（固定）</span>';
+  pop.appendChild(fixed);
+  for (const f of allFields) {
+    const row = document.createElement('label');
+    row.className = 'memola-colprops-row';
+    row.style.cssText = 'align-items:center;cursor:pointer;gap:8px';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = checked.has(f.InternalName);
+    cb.addEventListener('change', () => {
+      if (cb.checked) checked.add(f.InternalName); else checked.delete(f.InternalName);
+      // allFields の並び順を保って保存(チェック順に並ばないように)。
+      persistCols(block, allFields.filter((x) => checked.has(x.InternalName)).map((x) => x.InternalName));
+    });
+    const lb = document.createElement('span');
+    lb.textContent = f.Title;
+    row.append(cb, lb);
+    pop.appendChild(row);
+  }
+  overlay.appendChild(pop);
+  const r = pop.getBoundingClientRect();
+  if (r.right > window.innerWidth - 8) pop.style.left = Math.max(8, window.innerWidth - r.width - 8) + 'px';
+  if (r.bottom > window.innerHeight - 8) pop.style.top = Math.max(8, r0.top - r.height - 4) + 'px';
+  const onOut = (e: MouseEvent): void => {
+    if (!pop.contains(e.target as Node)) { pop.remove(); document.removeEventListener('mousedown', onOut, true); }
+  };
+  setTimeout(() => document.addEventListener('mousedown', onOut, true), 0);
 }
 
 /** Format a single cell value for display. Mirrors a subset of the main DB
@@ -148,9 +226,18 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
     { internal: 'Title', title: 'タイトル' },
     ...userFields.map((f) => ({ internal: f.InternalName, title: f.Title })),
   ];
+  // 表示列: data-cols(InternalNameカンマ区切り)があればそれに従う。
+  // '-' はユーザー列なし(タイトルのみ)。未指定は既定(先頭N列)。
+  const colsAttr = (blockEl.getAttribute('data-cols') || '').trim();
+  const selectedFields = colsAttr === '-' ? []
+    : colsAttr
+      ? colsAttr.split(',').map((s) => s.trim()).filter(Boolean)
+          .map((n) => userFields.find((f) => f.InternalName === n))
+          .filter((f): f is ListField => !!f)
+      : userFields.slice(0, VISIBLE_COLS - 1);
   const cols: Array<{ field: ListField | null; label: string; key: string }> = [
     { field: null, label: 'タイトル', key: 'Title' },
-    ...userFields.slice(0, VISIBLE_COLS - 1).map((f) => ({
+    ...selectedFields.map((f) => ({
       field: f, label: f.Title, key: f.InternalName,
     })),
   ];
@@ -199,6 +286,7 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
     + '<span class="memola-linkdb-count">' + countText
     + (truncated ? ' (上位 ' + shown + ' 件を表示)' : '')
     + '</span>'
+    + '<button class="memola-linkdb-cols" type="button" title="表示する列を選択">⚙ 列</button>'
     + '<button class="memola-linkdb-filter" type="button" title="フィルタ条件を編集">'
     + escapeHtml(filterBtnLabel) + '</button>'
     + '<button class="memola-linkdb-open" type="button" title="DB を開く">↗ 開く</button>'
@@ -237,6 +325,13 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
   openBtn?.addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation();
     void import('./views').then((m) => m.doSelect(dbId));
+  });
+
+  // 1a) ⚙ 列 button → 表示列の選択ポップオーバー
+  const colsBtn = blockEl.querySelector<HTMLElement>('.memola-linkdb-cols');
+  colsBtn?.addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    showColsEditor(blockEl, colsBtn, userFields, selectedFields.map((f) => f.InternalName));
   });
 
   // 1b) 🔎 filter button → open inline filter editor popover

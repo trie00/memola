@@ -143,6 +143,7 @@ export interface LinkedDbBlock extends BlockBase {
   view: 'table' | 'board' | 'list' | 'gallery' | 'calendar' | 'gantt';
   filter: string;       // serialized filter expression
   sort: string;         // serialized sort spec
+  cols?: string;        // 表示する列(InternalName のカンマ区切り)。空/未指定=全列
 }
 
 /** AI block — prompt + last result. Currently lost on save in the

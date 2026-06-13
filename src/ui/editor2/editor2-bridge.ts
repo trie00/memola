@@ -245,6 +245,25 @@ export function getBlocks(): Block[] {
   return _editor ? _editor.getBlocks() : [];
 }
 
+/** linkdb ブロックの設定(filter/sort/cols)を編集 state に反映する。
+ *  linked-db.ts は DOM 属性で描画するが、保存は state(getBlocks)から行われるため、
+ *  state を更新しないと変更がページに永続しない(リロードで消える)。 */
+export function updateLinkdbProps(
+  blockId: string,
+  patch: { filter?: string; sort?: string; cols?: string },
+): void {
+  if (!_editor) return;
+  _editor.applyMutation((s) => {
+    const map = (blocks: Block[]): Block[] => blocks.map((b) => {
+      if (b.id === blockId && b.kind === 'linkdb') return { ...b, ...patch };
+      if (b.kind === 'list') return { ...b, items: b.items.map(map) } as Block;
+      if (b.kind === 'quote' || b.kind === 'callout') return { ...b, children: map(b.children) } as Block;
+      return b;
+    });
+    return { ...s, blocks: map(s.blocks) };
+  }, 'linkdb-props');
+}
+
 /** Tear down the active editor2 instance. */
 export function destroyEditor2(): void {
   // Codex review E5: bump the generation BEFORE running cleanup so any

@@ -270,6 +270,7 @@ function paintBlockContent(el: HTMLElement, b: Block): void {
       inner.dataset.view = b.view;
       if (b.filter) inner.dataset.filter = b.filter;
       if (b.sort) inner.dataset.sort = b.sort;
+      if (b.cols) inner.dataset.cols = b.cols;
       el.appendChild(inner);
       // Defer live data population to the existing renderer.
       void import('../linked-db').then((m) => m.renderAllLinkedDbs(el));
