@@ -91,9 +91,18 @@ async function checkOnce(): Promise<void> {
     if (etagSame || modifiedSame) return;
     // Foreign edit detected. Try to fold it into the live editor
     // block-by-block (C). Only a same-block clash (or a non-structural
-    // body) falls through to the manual banner.
+    // body) falls through.
     const applied = await tryLiveSync(id, meta.etag, meta.modified);
     if (applied) return;
+    // 編集中(dirty)の同一ブロック衝突: どうせ自動保存(≦10秒)が412→競合モーダルに
+    // なるので、バナーで予告せず保存フローを前倒しして即モーダルを出す
+    // (バナー→数秒後モーダルの二段通知をなくす)。
+    if (saver.isDirty(id)) {
+      const { flushPendingSave } = await import('./save-control');
+      await flushPendingSave().catch(() => undefined);   // 412 → saver が conflict 状態に遷移しモーダル表示
+      return;
+    }
+    // 編集していないのに自動反映できない稀なケースのみ、お知らせバナー。
     const editor = await getListItemEditor(id).catch(() => '');
     const me = await getCurrentUser().catch(() => '');
     if (S.currentId !== id) return;        // and again before painting
@@ -342,6 +351,13 @@ export function attachCrossTabSync(): void {
       const applied = await tryLiveSync(msg.pageId, msg.etag, msg.modified);
       if (applied) return;
       if (S.currentId !== msg.pageId) return;
+      // ポーリング経路と同じ: 編集中なら保存フローを前倒しして即競合モーダルへ
+      // (バナー→すぐモーダルの二段通知を避ける)。
+      if (saver.isDirty(msg.pageId)) {
+        const { flushPendingSave } = await import('./save-control');
+        await flushPendingSave().catch(() => undefined);
+        return;
+      }
       showStaleBanner('', msg.modified, msg.pageId, /*sameUser*/ true);
     })();
   });
