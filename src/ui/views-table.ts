@@ -40,6 +40,13 @@ let _renderLookups: DbLookupDef[] = [];
 let _renderLookupCols: DbLookupDef[] = [];
 let _renderRollups: DbRollupDef[] = [];
 
+// 行のキーワード検索(ツールバーの🔎)。一時状態(ビュー/端末に保存しない)。
+let _searchQ = '';
+export function setDbSearchQuery(q: string, rerender = true): void {
+  _searchQ = q.trim().toLowerCase();
+  if (rerender) renderDbTable();
+}
+
 /** 計算列のソート/フィルタ用キー(#f:/#l:/#r: + 定義id)。 */
 export function isComputedKey(k: string | null | undefined): boolean {
   return !!k && (k.startsWith('#f:') || k.startsWith('#l:') || k.startsWith('#r:'));
@@ -106,6 +113,14 @@ export function getSortedFilteredItems(): ListItem[] {
       }
       return true;
     });
+  }
+  // 行のキーワード検索(全データ列を横断して contains)。フィルターとAND。
+  if (_searchQ) {
+    items = items.filter((item) =>
+      S.dbFields.some((f) => {
+        const v = item[f.InternalName];
+        return v != null && String(v).toLowerCase().includes(_searchQ);
+      }));
   }
   if (S.dbSort.field) {
     const field = S.dbSort.field;
