@@ -114,7 +114,15 @@ export function openRollupEditor(listTitle: string, def: DbRollupDef | null, x: 
   nameInp.className = 'memola-formula-name';
   nameInp.placeholder = '列名';
   nameInp.value = def?.name || initialName || '';
-  nameInp.addEventListener('keydown', (e) => e.stopPropagation());
+  // stopPropagation でグローバルESCに届かなくなるため、ここで自前で閉じる。
+  nameInp.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Escape') closeRollupEditor();
+  });
+  pop.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Escape') closeRollupEditor();
+  });
 
   const mkSel = (): HTMLSelectElement => { const s = document.createElement('select'); s.className = 'memola-rule-f'; s.style.maxWidth = 'none'; s.style.width = '100%'; return s; };
   const labelled = (text: string, el: HTMLElement): HTMLElement => {

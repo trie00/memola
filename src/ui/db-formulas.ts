@@ -106,8 +106,13 @@ export function openFormulaEditor(listTitle: string, def: DbFormulaDef | null, x
     return !e;
   };
   exprTa.addEventListener('input', validate);
-  exprTa.addEventListener('keydown', (e) => { e.stopPropagation(); });   // ESC等をグローバルに伝播させない
-  nameInp.addEventListener('keydown', (e) => { e.stopPropagation(); });
+  // stopPropagation でグローバルESCに届かなくなるため、ESCはここで自前で閉じる。
+  const onKeyClose = (e: KeyboardEvent): void => {
+    e.stopPropagation();
+    if (e.key === 'Escape') closeFormulaEditor();
+  };
+  exprTa.addEventListener('keydown', onKeyClose);
+  nameInp.addEventListener('keydown', onKeyClose);
 
   // カーソル位置に挿入(関数は () 内にキャレットを置く)。
   const insertAtCaret = (text: string, caretBack = 0): void => {
@@ -126,7 +131,7 @@ export function openFormulaEditor(listTitle: string, def: DbFormulaDef | null, x
   const search = document.createElement('input');
   search.className = 'memola-formula-search';
   search.placeholder = '列・関数を挿入（検索）…';
-  search.addEventListener('keydown', (e) => e.stopPropagation());
+  search.addEventListener('keydown', onKeyClose);
   const listEl = document.createElement('div');
   listEl.className = 'memola-formula-list';
   const addHeader = (text: string): void => {
