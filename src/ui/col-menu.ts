@@ -7,6 +7,7 @@
 
 import { S, type ListField } from '../state';
 import { setLoad, toast } from './ui-helpers';
+import { relationForKeyField, deleteLookup, openLookupEditor } from './db-lookups';
 
 let _menu: HTMLElement | null = null;
 let _outside: ((e: MouseEvent) => void) | null = null;
@@ -88,6 +89,22 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
         finally { setLoad(false); }
       })();
     }));
+  }
+
+  // リレーションのキー列: 編集/解除の入り口(統合後はここが唯一の編集経路)。
+  {
+    const relDef = relationForKeyField(S.dbList, field.InternalName);
+    if (relDef) {
+      menu.append(sep(),
+        item('🔗 リレーションを編集', () => {
+          openLookupEditor(S.dbList, relDef, x, y, () => { void reRender(); });
+        }),
+        item('🔗 リレーションを解除', () => {
+          if (!confirm(`列「${field.Title}」のリレーションを解除しますか？\n(列と入力済みの値は残り、ただのテキスト列に戻ります)`)) return;
+          void deleteLookup(S.dbList, relDef.id).then(() => { void reRender(); });
+        }, { danger: true }),
+      );
+    }
   }
 
   menu.append(sep(), item('🗑 列を削除', () => {
@@ -241,7 +258,7 @@ async function showColumnProps(field: ListField, x: number, y: number): Promise<
     const rel = relationForKeyField(S.dbList, field.InternalName);
     if (rel) {
       const dbPage = S.meta.pages.find((p) => p.type === 'database' && p.list === rel.targetTitle);
-      pop.appendChild(row('リレーション', '🔗 ' + rel.name));
+      pop.appendChild(row('リレーション', 'あり（セルは相手DBから選択）'));
       pop.appendChild(row('参照先DB', dbPage?.title || rel.targetTitle));
       // 参照先の列は表示名に解決して見せる(内部名は日本語列だと読めないため)。
       try {
