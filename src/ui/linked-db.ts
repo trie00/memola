@@ -120,6 +120,11 @@ async function renderOne(blockEl: HTMLElement): Promise<void> {
       sp.getListFields(listTitle),
       sp.getListItems(listTitle),
     ]);
+    // 管理用の内部列(Trashed/TrashedBy/Body_blocks)は表示しない(DB一覧と同じ扱い)。
+    const { stripInternalDbFields } = await import('../api/db');
+    fields = stripInternalDbFields(fields);
+    // ゴミ箱(ソフト削除)行も除外。
+    allItems = allItems.filter((it) => !(typeof it.Trashed === 'number' && it.Trashed > 0));
   } catch (e) {
     blockEl.innerHTML =
       '<div class="memola-linkdb-error">読み込み失敗: '
