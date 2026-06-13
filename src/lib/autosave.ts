@@ -33,6 +33,11 @@ function delayMs(): number {
   return n;     // 0 means "manual only"
 }
 
+/** 自動保存が有効か(=遅延 > 0)。手動のみ(0)のとき false。 */
+export function isAutosaveEnabled(): boolean {
+  return delayMs() > 0;
+}
+
 function clear(): void {
   if (_timer) {
     clearTimeout(_timer);

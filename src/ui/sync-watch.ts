@@ -94,15 +94,20 @@ async function checkOnce(): Promise<void> {
     // body) falls through.
     const applied = await tryLiveSync(id, meta.etag, meta.modified);
     if (applied) return;
-    // 編集中(dirty)の同一ブロック衝突: どうせ自動保存(≦10秒)が412→競合モーダルに
-    // なるので、バナーで予告せず保存フローを前倒しして即モーダルを出す
-    // (バナー→数秒後モーダルの二段通知をなくす)。
+    // 編集中(dirty)の同一ブロック衝突: 自動保存が有効ならどうせ間もなく412→競合
+    // モーダルになるので、バナーで予告せず保存フローを前倒しして即モーダルを出す
+    // (バナー→数秒後モーダルの二段通知をなくす)。ただし「手動のみ」設定の人は
+    // 保存タイミングを自分で決めたいので前倒しせず、バナーで知らせるに留める。
     if (saver.isDirty(id)) {
-      const { flushPendingSave } = await import('./save-control');
-      await flushPendingSave().catch(() => undefined);   // 412 → saver が conflict 状態に遷移しモーダル表示
-      return;
+      const { isAutosaveEnabled } = await import('../lib/autosave');
+      if (isAutosaveEnabled()) {
+        const { flushPendingSave } = await import('./save-control');
+        await flushPendingSave().catch(() => undefined);   // 412 → saver が conflict 状態に遷移しモーダル表示
+        return;
+      }
+      // 手動保存モード: 下の showStaleBanner にフォールスルー。
     }
-    // 編集していないのに自動反映できない稀なケースのみ、お知らせバナー。
+    // 編集していないのに自動反映できない / 手動保存モードで編集中、のときお知らせバナー。
     const editor = await getListItemEditor(id).catch(() => '');
     const me = await getCurrentUser().catch(() => '');
     if (S.currentId !== id) return;        // and again before painting
@@ -351,12 +356,16 @@ export function attachCrossTabSync(): void {
       const applied = await tryLiveSync(msg.pageId, msg.etag, msg.modified);
       if (applied) return;
       if (S.currentId !== msg.pageId) return;
-      // ポーリング経路と同じ: 編集中なら保存フローを前倒しして即競合モーダルへ
-      // (バナー→すぐモーダルの二段通知を避ける)。
+      // ポーリング経路と同じ: 自動保存が有効かつ編集中なら保存フローを前倒しして
+      // 即競合モーダルへ(バナー→すぐモーダルの二段通知を避ける)。手動保存モードは
+      // 前倒しせずバナーに留める。
       if (saver.isDirty(msg.pageId)) {
-        const { flushPendingSave } = await import('./save-control');
-        await flushPendingSave().catch(() => undefined);
-        return;
+        const { isAutosaveEnabled } = await import('../lib/autosave');
+        if (isAutosaveEnabled()) {
+          const { flushPendingSave } = await import('./save-control');
+          await flushPendingSave().catch(() => undefined);
+          return;
+        }
       }
       showStaleBanner('', msg.modified, msg.pageId, /*sameUser*/ true);
     })();
