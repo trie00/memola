@@ -23,7 +23,7 @@ import {
 import { getView } from './db-views-model';
 import { resolveTagColor } from './tag-colors';
 import { listFormulas } from './db-formulas';
-import { listLookups, getLookupValue } from './db-lookups';
+import { listLookups, getLookupValue, getRelationOptions, openLookupTarget } from './db-lookups';
 import { listRollups, getRollupValue } from './db-rollups';
 import { evalFormula, formatFormulaValue } from '../lib/formula';
 import type { DbColorRule, DbFormulaDef, DbLookupDef, DbRollupDef } from '../lib/prefs';
@@ -560,39 +560,45 @@ export function mkDbRow(item: ListItem, fields: ListField[]): HTMLTableRowElemen
       };
       const openPicker = (anchor: HTMLElement): void => {
         const cur = (item[f.InternalName] as string) || '';
-        void import('./db-lookups').then((m) => {
-          const opts = m.getRelationOptions(relDef.id);
-          const items2 = [
-            { value: '', label: '—' },
-            ...opts.map((v) => ({ value: v, label: v })),
-          ];
-          void import('./choice-popover').then((cp) => cp.openChoicePopover(anchor, items2, cur, apply));
-        });
+        const opts = getRelationOptions(relDef.id);
+        const items2 = [
+          { value: '', label: '—' },
+          // 選択肢にもタグ色を反映(選択肢列と同じ見た目)。
+          ...opts.map((v) => ({ value: v, label: v, color: resolveTagColor(S.dbList, f.InternalName, v, opts) })),
+        ];
+        void import('./choice-popover').then((cp) => cp.openChoicePopover(anchor, items2, cur, apply));
       };
       const renderVal = (val: string): void => {
         wrapper.innerHTML = '';
+        td.querySelector('.memola-row-open')?.remove();   // 再描画時の↗重複防止
         const chip = document.createElement('span');
         if (val) {
-          chip.className = 'memola-rel-chip';
+          // 選択肢列と同じ色付きチップ(色は タグ色設定 resolveTagColor に従う)。
+          chip.className = 'memola-select-chip';
+          chip.style.background = resolveTagColor(S.dbList, f.InternalName, val, getRelationOptions(relDef.id));
+          chip.style.color = '#2a2a26';
+          chip.style.cursor = 'pointer';
           chip.textContent = val;
-          // ↗ = 相手の行ページを開く(チップ本体クリックは選び直しピッカー)。
-          const jump = document.createElement('span');
-          jump.className = 'memola-rel-jump';
+          // ↗ はチップの外側(タイトル列の「行を開く」と同じ見た目・ホバーで表示)。
+          td.style.position = 'relative';
+          const jump = document.createElement('button');
+          jump.className = 'memola-row-open';
           jump.textContent = '↗';
           jump.title = '相手の行を開く';
           jump.addEventListener('click', (e) => {
             e.stopPropagation();
-            void import('./db-lookups').then((m) => m.openLookupTarget(relDef, item[f.InternalName]));
+            void openLookupTarget(relDef, item[f.InternalName]);
           });
-          chip.appendChild(jump);
+          wrapper.appendChild(chip);
+          td.appendChild(jump);
         } else {
           chip.textContent = '—';
           chip.style.color = 'var(--ink-4)';
           chip.style.cursor = 'pointer';
+          wrapper.appendChild(chip);
         }
         chip.title = relDef.targetTitle + ' から選択';
         chip.addEventListener('click', (e) => { e.stopPropagation(); openPicker(chip); });
-        wrapper.appendChild(chip);
       };
       renderVal((item[f.InternalName] as string) || '');
       td.appendChild(wrapper);

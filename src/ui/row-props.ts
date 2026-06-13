@@ -66,43 +66,54 @@ function buildEditor(
   {
     const relDef = relationForKeyField(listTitle, field.InternalName);
     if (relDef && field.FieldTypeKind !== 4 && field.FieldTypeKind !== 8) {
+      // ピッカー(色付きチップ) + チップの外側に ↗(相手行を開く)。
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'display:flex;align-items:center;gap:4px;min-width:0';
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'memola-rp-input memola-rp-choice';
+      btn.style.flex = '1';
       btn.title = relDef.targetTitle + ' から選択';
+      const jump = document.createElement('button');
+      jump.type = 'button';
+      jump.className = 'memola-row-open';
+      jump.textContent = '↗';
+      jump.title = '相手の行を開く';
+      jump.style.opacity = '0.6';                 // プロパティ欄では常時うっすら表示
+      jump.addEventListener('click', (e) => {
+        e.stopPropagation();
+        void import('./db-lookups').then((m) => m.openLookupTarget(relDef, item[field.InternalName]));
+      });
       const renderLabel = (): void => {
         const v = (item[field.InternalName] as string) || '';
         btn.innerHTML = '';
         if (v) {
           const chip = document.createElement('span');
-          chip.className = 'memola-rel-chip';
+          chip.className = 'memola-select-chip';
+          chip.style.background = resolveTagColor(listTitle, field.InternalName, v, []);
+          chip.style.color = '#2a2a26';
           chip.textContent = v;
-          const jump = document.createElement('span');
-          jump.className = 'memola-rel-jump';
-          jump.textContent = '↗';
-          jump.title = '相手の行を開く';
-          jump.addEventListener('click', (e) => {
-            e.stopPropagation();
-            void import('./db-lookups').then((m) => m.openLookupTarget(relDef, item[field.InternalName]));
-          });
-          chip.appendChild(jump);
           btn.appendChild(chip);
+          jump.style.display = '';
         } else {
           btn.innerHTML = '<span class="memola-rp-placeholder">—</span>';
+          jump.style.display = 'none';
         }
       };
       renderLabel();
       btn.addEventListener('click', () => {
         void import('./db-lookups').then((m) => {
           const opts = m.getRelationOptions(relDef.id);
-          const items2 = [{ value: '', label: '—' }, ...opts.map((v) => ({ value: v, label: v }))];
+          const items2 = [{ value: '', label: '—' },
+            ...opts.map((v) => ({ value: v, label: v, color: resolveTagColor(listTitle, field.InternalName, v, opts) }))];
           const cur = (item[field.InternalName] as string) || '';
           openChoicePopover(btn, items2, cur, (nv) => {
             void commit(listTitle, item.Id, field, nv, item).then(renderLabel);
           });
         });
       });
-      return btn;
+      wrap.append(btn, jump);
+      return wrap;
     }
   }
   switch (field.FieldTypeKind) {

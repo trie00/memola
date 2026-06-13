@@ -96,6 +96,7 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
       item('🔗 リレーションを編集', () => {
         openLookupEditor(S.dbList, relDef, x, y, () => { void reRender(); });
       }),
+      item('🎨 チップの色を編集', () => { void openRelationColorEditor(field, relDef, x, y); }),
       item('🔗 リレーションを解除', () => {
         if (!confirm(`列「${field.Title}」のリレーションを解除しますか？\n(列と入力済みの値は残り、ただのテキスト列に戻ります)`)) return;
         void deleteLookup(S.dbList, relDef.id).then(() => { void reRender(); });
@@ -292,6 +293,66 @@ async function showComputedProps(
   if (r.bottom > window.innerHeight - 8) pop.style.top = Math.max(8, window.innerHeight - r.height - 8) + 'px';
   const onOut = (e: MouseEvent): void => {
     if (!pop.contains(e.target as Node)) { pop.remove(); document.removeEventListener('mousedown', onOut, true); }
+  };
+  setTimeout(() => document.addEventListener('mousedown', onOut, true), 0);
+}
+
+/** リレーション列の選択肢ごとのチップ色エディタ。選択肢列の色編集と同じ操作感:
+ *  相手DBの現在の選択肢を一覧し、スウォッチをクリック → パレットで色を選ぶ。
+ *  色は tag-colors(setTagColor)に保存され、セルのチップ/ピッカーに反映される。 */
+async function openRelationColorEditor(field: ListField, relDef: DbLookupDef, x: number, y: number): Promise<void> {
+  const overlay = document.getElementById('memola-overlay') || document.body;
+  document.getElementById('memola-relcolors')?.remove();
+  const [{ getRelationOptions }, { resolveTagColor, setTagColor }, { openColorPalette }] =
+    await Promise.all([import('./db-lookups'), import('./tag-colors'), import('./db-view-colors')]);
+  const opts = getRelationOptions(relDef.id);
+  const pop = document.createElement('div');
+  pop.id = 'memola-relcolors';
+  pop.className = 'memola-colmenu memola-colprops';
+  pop.style.left = Math.round(x) + 'px';
+  pop.style.top = Math.round(y) + 'px';
+  const hdr = document.createElement('div');
+  hdr.className = 'memola-colmenu-item';
+  hdr.style.cssText = 'font-weight:600;color:var(--ink-3);cursor:default';
+  hdr.textContent = '🎨 チップの色（' + field.Title + '）';
+  pop.appendChild(hdr);
+  if (opts.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'memola-colprops-row';
+    empty.textContent = '相手DBに行がありません';
+    pop.appendChild(empty);
+  }
+  for (const opt of opts) {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'memola-colprops-row';
+    rowEl.style.alignItems = 'center';
+    const sw = document.createElement('button');
+    sw.type = 'button';
+    sw.style.cssText = 'width:18px;height:18px;border-radius:4px;border:1px solid rgba(0,0,0,.15);cursor:pointer;flex:0 0 18px';
+    sw.style.background = resolveTagColor(S.dbList, field.InternalName, opt, opts);
+    sw.title = '色を変更';
+    sw.addEventListener('click', () => {
+      const r = sw.getBoundingClientRect();
+      openColorPalette(r.right + 4, r.top, (color) => {
+        setTagColor(S.dbList, field.InternalName, opt, color);
+        sw.style.background = color || resolveTagColor(S.dbList, field.InternalName, opt, opts);
+        void reRender();
+      });
+    });
+    const lb = document.createElement('span');
+    lb.className = 'memola-colprops-v';
+    lb.textContent = opt;
+    rowEl.append(sw, lb);
+    pop.appendChild(rowEl);
+  }
+  overlay.appendChild(pop);
+  const r = pop.getBoundingClientRect();
+  if (r.right > window.innerWidth - 8) pop.style.left = Math.max(8, window.innerWidth - r.width - 8) + 'px';
+  if (r.bottom > window.innerHeight - 8) pop.style.top = Math.max(8, window.innerHeight - r.height - 8) + 'px';
+  const onOut = (e: MouseEvent): void => {
+    if (!pop.contains(e.target as Node) && !(e.target as HTMLElement).closest('.memola-dbcolor-pop')) {
+      pop.remove(); document.removeEventListener('mousedown', onOut, true);
+    }
   };
   setTimeout(() => document.addEventListener('mousedown', onOut, true), 0);
 }
