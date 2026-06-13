@@ -77,7 +77,18 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
     typeItems.push(item('選択肢を編集', () => openOptionsEditor(field, x, y)));
   }
   if ([2, 4, 6, 9].includes(field.FieldTypeKind)) {
-    typeItems.push(item((field.Unique ? '☑' : '☐') + ' ユニーク（重複禁止）', () => {
+    // ☑/☐ の文字チェックは小さく判別しづらいため、右端に オン/オフ バッジで表示。
+    const uniq = document.createElement('div');
+    uniq.className = 'memola-colmenu-item';
+    uniq.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px';
+    const lbl = document.createElement('span');
+    lbl.textContent = 'ユニーク（重複禁止）';
+    const badge = document.createElement('span');
+    badge.className = 'memola-uniq-badge' + (field.Unique ? ' on' : '');
+    badge.textContent = field.Unique ? '✓ オン' : 'オフ';
+    uniq.append(lbl, badge);
+    uniq.addEventListener('click', () => {
+      closeColumnMenu();
       void (async () => {
         try {
           setLoad(true, 'ユニーク設定を変更中...');
@@ -88,7 +99,8 @@ export function openColumnMenu(field: ListField, x: number, y: number): void {
         } catch (e) { toast('ユニーク設定の変更に失敗(既存の重複値がある可能性): ' + (e as Error).message, 'err'); }
         finally { setLoad(false); }
       })();
-    }));
+    });
+    typeItems.push(uniq);
   }
   const relDef = relationForKeyField(S.dbList, field.InternalName);
   if (relDef) {

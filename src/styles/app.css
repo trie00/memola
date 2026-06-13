@@ -3259,6 +3259,14 @@
   font-size: 11px; cursor: pointer; border-radius: 3px;
 }
 #memola-overlay .memola-rel-jump:hover { color: var(--accent, #4a6fa5); background: rgba(0,0,0,.06); }
+/* 列メニューの ユニーク オン/オフ バッジ */
+#memola-overlay .memola-uniq-badge {
+  flex-shrink: 0; font-size: 11px; padding: 2px 10px; border-radius: 999px;
+  background: var(--paper-3, #eceae4); color: var(--ink-3, #9b9a97);
+}
+#memola-overlay .memola-uniq-badge.on {
+  background: var(--accent-soft, #e7eefb); color: var(--accent, #4a6fa5); font-weight: 600;
+}
 /* 列プロパティ パネル */
 #memola-overlay .memola-colprops { min-width: 260px; padding-bottom: 8px; }
 #memola-overlay .memola-colprops-row {
