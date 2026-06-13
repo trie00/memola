@@ -2691,7 +2691,19 @@
   background: rgba(135, 131, 120, 0.2); padding: 1px 4px; border-radius: 3px;
   font-family: "SFMono-Regular", Menlo, Consolas, monospace; font-size: 90%;
 }
-#memola-overlay .memola-ai-loading { opacity: 0.55; font-style: italic; }
+#memola-overlay .memola-ai-loading { opacity: 0.7; font-style: italic; }
+/* 処理中インジケータ: ドットが流れ続ける=生存中(ハングと区別できる) */
+#memola-overlay .memola-ai-loading::after {
+  content: ''; display: inline-block; width: 1.4em; text-align: left;
+  animation: memola-ai-dots 1.2s steps(4, end) infinite;
+}
+@keyframes memola-ai-dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+  100% { content: ''; }
+}
 #memola-overlay .memola-ai-trace {
   margin-top: 6px; padding-top: 6px;
   border-top: 1px dashed var(--paper-3);

@@ -40,6 +40,7 @@ export async function runAgent(
   systemPrompt: string | SystemBlock[],
   onTextDelta?: (delta: string) => void,
   signal?: AbortSignal,
+  onActivity?: (label: string) => void,
 ): Promise<AgentResult> {
   // Working copy of the conversation we send to the API
   const working: ApiMessage[] = history.slice();
@@ -50,6 +51,7 @@ export async function runAgent(
 
   for (let step = 0; step < MAX_STEPS; step++) {
     if (signal?.aborted) throw new Error('aborted');
+    onActivity?.(step === 0 ? '考え中' : '考え中 (' + (step + 1) + 'ターン目)');
     // Provider dispatch: Claude API / Azure OpenAI 互換 API / ローカル AI.
     // All three speak the same ClaudeResponse shape thanks to the
     // translation layers in openai-corp.ts and openai-local.ts.
@@ -82,6 +84,7 @@ export async function runAgent(
 
     const toolResults: ToolResultBlock[] = [];
     for (const tu of toolUses) {
+      onActivity?.('🔧 ' + tu.name + ' を実行中');
       const result = await executeTool(tu.name, tu.input);
       toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: result });
       let okFlag = false;

@@ -546,7 +546,7 @@ export function renderAiMessages(): void {
     label.textContent = 'AI';
     const card = document.createElement('div');
     card.className = 'memola-ai-msg memola-ai-assistant memola-ai-loading';
-    card.textContent = '考え中…';
+    card.textContent = '考え中';
     wrap.append(label, card);
     list.appendChild(wrap);
   }
@@ -598,7 +598,7 @@ export async function sendAiMessage(text: string): Promise<void> {
     // Provider routing happens inside runAgent → callClaudeRaw / corpAiChatRaw.
     // Both speak the same ClaudeResponse shape so tool execution, history,
     // and streaming all work uniformly here.
-    const result = await runAgent(S.ai.messages, systemPromptBlocks(), onTextDelta, ctrl.signal);
+    const result = await runAgent(S.ai.messages, systemPromptBlocks(), onTextDelta, ctrl.signal, updateLoadingActivity);
     S.ai.messages.push(...result.newMessages);
   } catch (err) {
     const e = err as Error;
@@ -616,6 +616,32 @@ export async function sendAiMessage(text: string): Promise<void> {
     persistCurrentSession();
     renderHistoryDropdown();
   }
+}
+
+/** ローディング吹き出しの文言を「いま何をしているか」で更新する(runAgent の
+ *  onActivity)。文言が変わる+CSSのドットが動き続けるので、ハングと区別できる。 */
+function updateLoadingActivity(label: string): void {
+  const list = g('ai-messages');
+  // ストリーミング中(テキスト受信中)はそちらの吹き出しが進捗そのものなので不要。
+  if (document.getElementById('memola-ai-streaming')) {
+    // ツール実行に移ったらストリーミング吹き出しを確定し、ローディングへ戻す。
+    if (!label.startsWith('🔧')) return;
+    document.getElementById('memola-ai-streaming-row')?.remove();
+  }
+  let bubble = list.querySelector<HTMLElement>('.memola-ai-loading');
+  if (!bubble) {
+    const wrap = document.createElement('div');
+    wrap.className = 'memola-ai-row';
+    const lb = document.createElement('div');
+    lb.className = 'memola-ai-label';
+    lb.textContent = 'AI';
+    bubble = document.createElement('div');
+    bubble.className = 'memola-ai-msg memola-ai-assistant memola-ai-loading';
+    wrap.append(lb, bubble);
+    list.appendChild(wrap);
+  }
+  bubble.textContent = label;
+  list.scrollTop = list.scrollHeight;
 }
 
 /** Render the streaming-text-only placeholder. Called per text delta. */
